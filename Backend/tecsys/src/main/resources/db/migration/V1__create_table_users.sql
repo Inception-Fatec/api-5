@@ -1,14 +1,14 @@
 CREATE TYPE user_role AS ENUM ('ADM', 'USER');
 
 CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id BIGSERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     role user_role DEFAULT 'USER' NOT NULL,
     must_change_password BOOLEAN DEFAULT TRUE NOT NULL,
     is_active BOOLEAN DEFAULT TRUE NOT NULL,
-    created_by UUID REFERENCES users(id),
+    created_by BIGINT REFERENCES users(id),
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
