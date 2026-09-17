@@ -8,6 +8,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class UserService {
@@ -32,4 +34,11 @@ public class UserService {
 
         return UserResponseDto.fromEntity(userRepository.save(user));
     }
+
+    public List<UserResponseDto> listAllUsers() {
+        return userRepository.findAll().stream()
+                .map(UserResponseDto::fromEntity)
+                .toList();
+    }
+
 }
