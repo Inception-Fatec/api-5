@@ -1,5 +1,6 @@
 package com.tecsys.domain.user;
 
+import com.tecsys.core.exception.BusinessRuleException;
 import com.tecsys.core.exception.EmailAlreadyExistsException;
 import com.tecsys.domain.user.dto.UserCreateDto;
 import com.tecsys.domain.user.dto.UserResponseDto;
@@ -39,6 +40,18 @@ public class UserService {
         return userRepository.findAll().stream()
                 .map(UserResponseDto::fromEntity)
                 .toList();
+    }
+
+    @Transactional
+    public void deleteUser(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new BusinessRuleException("Usuário não encontrado."));
+
+        if (user.getRole() == UserRole.ADM) {
+            throw new BusinessRuleException("Não é permitido excluir um usuário com perfil de Administrador.");
+        }
+
+        userRepository.delete(user);
     }
 
 }

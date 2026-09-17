@@ -42,4 +42,17 @@ public class GlobalExceptionHandler {
         );
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
     }
+
+    @ExceptionHandler(BusinessRuleException.class)
+    public ResponseEntity<StandardError> handleBusinessRuleException(BusinessRuleException ex, HttpServletRequest request) {
+        StandardError error = new StandardError(
+                Instant.now(),
+                HttpStatus.UNPROCESSABLE_ENTITY.value(),
+                "Unprocessable Entity",
+                ex.getMessage(),
+                request.getRequestURI(),
+                null
+        );
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(error);
+    }
 }

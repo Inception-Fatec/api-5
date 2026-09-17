@@ -30,4 +30,11 @@ public class UserController {
         List<UserResponseDto> response = userService.listAllUsers();
         return ResponseEntity.ok(response);
     }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADM')")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        userService.deleteUser(id);
+        return ResponseEntity.noContent().build();
+    }
 }
