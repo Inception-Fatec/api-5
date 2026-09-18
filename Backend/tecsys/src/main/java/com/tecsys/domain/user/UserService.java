@@ -5,6 +5,7 @@ import com.tecsys.core.exception.EmailAlreadyExistsException;
 import com.tecsys.domain.user.dto.UserCreateDto;
 import com.tecsys.domain.user.dto.UserResponseDto;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,7 +22,7 @@ public class UserService {
     @Transactional
     public UserResponseDto createUser(UserCreateDto dto) {
         if (userRepository.findByEmail(dto.email()).isPresent()) {
-            throw new EmailAlreadyExistsException("Já existe um usuário cadastrado com este e-mail.");
+            throw new EmailAlreadyExistsException("Já existe um utilizador registado com este e-mail.");
         }
 
         User user = User.builder()
@@ -43,15 +44,14 @@ public class UserService {
     }
 
     @Transactional
-    public void deleteUser(Long id) {
+    public void deleteUser(Long id, Long currentUserId) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new BusinessRuleException("Usuário não encontrado."));
+                .orElseThrow(() -> new BusinessRuleException("Utilizador não encontrado."));
 
-        if (user.getRole() == UserRole.ADM) {
-            throw new BusinessRuleException("Não é permitido excluir um usuário com perfil de Administrador.");
+        if (user.getRole() == UserRole.ADM && !user.getId().equals(currentUserId)) {
+            throw new AccessDeniedException("Ação não permitida: Não pode eliminar a conta de outro administrador.");
         }
 
         userRepository.delete(user);
     }
-
 }
