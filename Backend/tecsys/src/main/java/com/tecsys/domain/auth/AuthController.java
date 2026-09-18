@@ -2,16 +2,15 @@ package com.tecsys.domain.auth;
 
 import com.tecsys.domain.auth.dto.AuthRequestDto;
 import com.tecsys.domain.auth.dto.AuthResponseDto;
+import com.tecsys.domain.auth.dto.ChangePasswordDto;
 import com.tecsys.domain.user.User;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -20,6 +19,7 @@ public class AuthController {
 
     private final AuthenticationManager authenticationManager;
     private final TokenService tokenService;
+    private final AuthService authService;
 
     @PostMapping("/login")
     public ResponseEntity<AuthResponseDto> login(@RequestBody @Valid AuthRequestDto dto) {
@@ -36,5 +36,13 @@ public class AuthController {
         );
 
         return ResponseEntity.ok(response);
+    }
+
+    @PutMapping("/change-password")
+    public ResponseEntity<Void> changePassword(
+            @RequestBody @Valid ChangePasswordDto dto,
+            @AuthenticationPrincipal User user) {
+        authService.changePassword(user.getEmail(), dto.newPassword());
+        return ResponseEntity.noContent().build();
     }
 }
