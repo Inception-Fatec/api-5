@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -19,6 +20,7 @@ public class UserController {
     private final UserService userService;
 
     @PostMapping
+    @PreAuthorize("hasRole('ADM')")
     public ResponseEntity<UserResponseDto> create(@RequestBody @Valid UserCreateDto dto) {
         UserResponseDto response = userService.createUser(dto);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
@@ -33,8 +35,8 @@ public class UserController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADM')")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
-        userService.deleteUser(id);
+    public ResponseEntity<Void> delete(@PathVariable Long id, @AuthenticationPrincipal User currentUser) {
+        userService.deleteUser(id, currentUser.getId());
         return ResponseEntity.noContent().build();
     }
 }

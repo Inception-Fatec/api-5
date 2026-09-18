@@ -38,11 +38,11 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
-    @PutMapping("/change-password")
-    public ResponseEntity<Void> changePassword(
+    @PostMapping("/change-password")
+    public ResponseEntity<String> changePassword(
             @RequestBody @Valid ChangePasswordDto dto,
             @AuthenticationPrincipal User user) {
         authService.changePassword(user.getEmail(), dto.newPassword());
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok("Senha redefinida com sucesso. Acesso liberado ao sistema.");
     }
 }
