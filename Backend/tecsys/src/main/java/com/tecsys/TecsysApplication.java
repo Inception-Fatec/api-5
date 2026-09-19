@@ -6,8 +6,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class TecsysApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(TecsysApplication.class, args);
-	}
+    public static void main(String[] args) {
+        SpringApplication.run(TecsysApplication.class, args);
+    }
 
 }
