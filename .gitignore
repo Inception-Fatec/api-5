@@ -71,3 +71,13 @@ out/
 
 **/.env
 **/.env.properties
+
+# Python virtual environment
+venv/
+.venv/
+**/venv/
+**/.venv/
+
+# Dados locais pesados da BDGD
+Backend/tecsys/bdgd/dados-bdgd/EDP_SP_391_2025-12-31_V11_20260830-0340.gdb/
+Backend/tecsys/bdgd/dados-bdgd/UCBT_PJ.zip
