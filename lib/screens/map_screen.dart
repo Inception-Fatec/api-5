@@ -1,10 +1,40 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/common/app_footer.dart';
 import '../widgets/common/page_body.dart';
+
+/// Bounding box já pronto no formato que o OpenTopography espera
+/// (south/north/west/east), junto com a diagonal aproximada em km.
+class SelectedArea {
+  final double south;
+  final double north;
+  final double west;
+  final double east;
+  final double diagonalKm;
+
+  const SelectedArea({
+    required this.south,
+    required this.north,
+    required this.west,
+    required this.east,
+    required this.diagonalKm,
+  });
+
+  /// Os 4 cantos, na ordem certa pra desenhar o [Polygon] no
+  /// flutter_map (fecha o retângulo).
+  List<LatLng> get corners => [
+        LatLng(north, west),
+        LatLng(north, east),
+        LatLng(south, east),
+        LatLng(south, west),
+      ];
+}
 
 /// Map screen — mobile layout unchanged (header, active-project card,
 /// map, topology overview, bottom nav). Acima de [_webBreakpoint] a
@@ -20,15 +50,38 @@ class MapScreen extends StatefulWidget {
 class _MapScreenState extends State<MapScreen> {
   static const _webBreakpoint = 900.0;
 
-  static const _gatewayPosition = LatLng(-23.5505, -46.6333);
+  // FATEC São José dos Campos
+  static const _gatewayPosition = LatLng(-23.16236, -45.79553);
   static const _sensorPositions = [
-    LatLng(-23.5498, -46.6320), // SN-102
-    LatLng(-23.5512, -46.6348), // SN-088
-    LatLng(-23.5518, -46.6329), // SN-094
+    LatLng(-23.16166, -45.79423), // SN-102
+    LatLng(-23.16306, -45.79703), // SN-088
+    LatLng(-23.16366, -45.79513), // SN-094
   ];
   static const _sensorLabels = ['SN-102', 'SN-088', 'SN-094'];
 
   final MapController _mapController = MapController();
+
+  // Seleção de área (retângulo arrastável) — precisa do switch
+  // ligado pra não brigar com o gesto de mover o mapa 
+  static const _distanciaCalc = Distance();
+  // 5km era alto demais: em zooms próximos (nível de rua/bairro), um
+  // arraste normal cobre só algumas centenas de metros e sempre caía
+  // no aviso de "área muito pequena" — por isso nunca preenchia nada.
+  static const _minDiagonalKm = 0.05; // só evita clique sem arrastar
+  static const _maxDiagonalKm = 700.0; // ~ cobre até 1-2 estados médios
+
+  bool _selecionandoArea = false;
+  Offset? _dragStartOffset;
+  Offset? _dragCurrentOffset;
+  SelectedArea? _areaSelecionada; // área ATIVA (mostrada no badge + no mapa)
+  SelectedArea? _ultimaAreaSalva; // fica guardada mesmo quando a ativa some
+
+  // --- Camada de relevo NASA GIBS ----------------------------------------
+  bool _mostrarRelevoNasa = false;
+  double _opacidadeRelevo = 0.6;
+
+  // --- Painel de camadas (só relevo agora) -------------------------------
+  bool _mostrarPainelCamadas = false;
 
   /// Approximates a dashed line: several short Polyline segments with
   /// gaps between the gateway and a sensor (flutter_map's Polyline has
@@ -53,14 +106,194 @@ class _MapScreenState extends State<MapScreen> {
     return segs;
   }
 
+  // -----------------------------------------------------------------------
+  // Seleção de área — só captura o arraste quando _selecionandoArea = true;
+  // caso contrário o gesto passa direto pro mapa (pan normal).
+  // -----------------------------------------------------------------------
+
+  void _onAreaPanStart(DragStartDetails details) {
+    if (!_selecionandoArea) return;
+    setState(() {
+      _dragStartOffset = details.localPosition;
+      _dragCurrentOffset = details.localPosition;
+    });
+  }
+
+  void _onAreaPanUpdate(DragUpdateDetails details) {
+    if (!_selecionandoArea || _dragStartOffset == null) return;
+    setState(() => _dragCurrentOffset = details.localPosition);
+  }
+
+  void _onAreaPanEnd(DragEndDetails details) {
+    if (!_selecionandoArea || _dragStartOffset == null || _dragCurrentOffset == null) {
+      return;
+    }
+
+    final camera = _mapController.camera;
+    final p1 = camera.offsetToCrs(_dragStartOffset!);
+    final p2 = camera.offsetToCrs(_dragCurrentOffset!);
+
+    final south = math.min(p1.latitude, p2.latitude);
+    final north = math.max(p1.latitude, p2.latitude);
+    final west = math.min(p1.longitude, p2.longitude);
+    final east = math.max(p1.longitude, p2.longitude);
+
+    final diagonalKm = _distanciaCalc.as(
+      LengthUnit.Kilometer,
+      LatLng(south, west),
+      LatLng(north, east),
+    );
+
+    setState(() {
+      _dragStartOffset = null;
+      _dragCurrentOffset = null;
+    });
+
+    // debug — confirma no terminal que a coordenada foi capturada
+    debugPrint(
+        'Área arrastada: S=$south N=$north W=$west E=$east (~${diagonalKm.toStringAsFixed(2)} km)');
+
+    if (diagonalKm < _minDiagonalKm) {
+      _avisarArea(
+          'Área muito pequena — arraste um retângulo maior (mínimo ~${_minDiagonalKm.toStringAsFixed(0)} km).');
+      return;
+    }
+
+    if (diagonalKm > _maxDiagonalKm) {
+      _avisarArea(
+          'Área muito grande (${diagonalKm.toStringAsFixed(0)} km) — limite de ~${_maxDiagonalKm.toStringAsFixed(0)} km (aprox. 1-2 estados). Selecione uma área menor.');
+      return;
+    }
+
+    setState(() {
+      _areaSelecionada = SelectedArea(
+        south: south,
+        north: north,
+        west: west,
+        east: east,
+        diagonalKm: diagonalKm,
+      );
+      _ultimaAreaSalva = _areaSelecionada; // salva permanentemente⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+      // TODO: é aqui que entra a chamada ao backend/OpenTopography,
+      // usando _areaSelecionada!.south/north/west/east
+      // Ex: backendService.buscarRelevo(_areaSelecionada!);
+    });
+  }
+
+  /// Some com a área ativa (badge + polígono no mapa) mas MANTÉM o que
+  /// já foi salvo em [_ultimaAreaSalva] — chamado ao clicar fora do
+  /// mapa ou ao desligar o switch de seleção.
+  void _limparSelecaoAtiva() {
+    if (_areaSelecionada == null) return;
+    setState(() => _areaSelecionada = null);
+  }
+
+  /// Traz de volta a última área salva como área ativa — chamado ao
+  /// tocar no card "Última Área Selecionada".
+  void _restaurarUltimaArea() {
+    if (_ultimaAreaSalva == null) return;
+    setState(() => _areaSelecionada = _ultimaAreaSalva);
+  }
+
+  Future<void> _copiarCoordenadas(SelectedArea area) async {
+    final texto =
+        'south: ${area.south}, north: ${area.north}, west: ${area.west}, east: ${area.east}';
+    await Clipboard.setData(ClipboardData(text: texto));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Coordenadas copiadas!'), duration: Duration(seconds: 2)),
+    );
+  }
+
+  void _avisarArea(String mensagem) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(mensagem), duration: const Duration(seconds: 3)),
+    );
+  }
+
+  /// Camada de gesto (transparente) que captura o arraste só quando
+  /// [_selecionandoArea] está ligado. Fica FORA do FlutterMap (é espaço
+  /// de tela, não camada georreferenciada) — por isso entra como irmão
+  /// dele no Stack.
+  Widget _buildAreaSelectionGestureOverlay() {
+    Rect? liveRect;
+    if (_dragStartOffset != null && _dragCurrentOffset != null) {
+      liveRect = Rect.fromPoints(_dragStartOffset!, _dragCurrentOffset!);
+    }
+
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: IgnorePointer(
+            ignoring: !_selecionandoArea,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onPanStart: _onAreaPanStart,
+              onPanUpdate: _onAreaPanUpdate,
+              onPanEnd: _onAreaPanEnd,
+              child: Container(color: Colors.transparent),
+            ),
+          ),
+        ),
+        if (liveRect != null)
+          Positioned.fromRect(
+            rect: liveRect,
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.coverageFill,
+                border: Border.all(color: AppColors.coverageBorder, width: 2),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Row compacta com o switch "Selecionar área" — usada na legenda
+  /// (web) e acima do mapa (mobile).
+  Widget _buildSelectAreaSwitch() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.crop_free, size: 16, color: AppColors.textSecondary),
+        const SizedBox(width: 6),
+        const Text('Selecionar área',
+            style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+        Switch(
+          value: _selecionandoArea,
+          onChanged: (v) {
+            setState(() {
+              _selecionandoArea = v;
+              if (!v) _areaSelecionada = null; // some ao desligar
+            });
+          },
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return PageBody(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isWeb = constraints.maxWidth >= _webBreakpoint;
-          return isWeb ? _buildWebBody(context) : _buildMobileBody(context);
-        },
+      child: Stack(
+        children: [
+          // Camada de fundo: qualquer toque em espaço "vazio" (fora de
+          // botões, switches, cards, mapa) cai aqui e limpa a seleção
+          // ativa. Fica ATRÁS do conteúdo normal no Stack, então
+          // qualquer widget interativo por cima consome o toque antes.
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: _limparSelecaoAtiva,
+            ),
+          ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isWeb = constraints.maxWidth >= _webBreakpoint;
+              return isWeb ? _buildWebBody(context) : _buildMobileBody(context);
+            },
+          ),
+        ],
       ),
     );
   }
@@ -137,17 +370,14 @@ class _MapScreenState extends State<MapScreen> {
         const _LegendDot(color: AppColors.primary, label: 'Gateway (GW-01)'),
         const _LegendDot(color: Color(0xFF20232E), label: 'Sensor Node'),
         const _LegendRing(label: 'Coverage Mesh'),
-        const Spacer(),
-        _ToggleChip(label: 'Vector', selected: true, onTap: () {}),
-        const SizedBox(width: 8),
-        _ToggleChip(label: 'Telemetry', selected: false, onTap: () {}),
+        _buildSelectAreaSwitch(),
       ],
     );
   }
 
   Widget _buildWebMapContainer() {
     return Container(
-      height: 560,
+      height: 720,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: AppColors.background,
@@ -161,7 +391,10 @@ class _MapScreenState extends State<MapScreen> {
             options: const MapOptions(
               initialCenter: _gatewayPosition,
               initialZoom: 15.5,
-              minZoom: 10,
+              // minZoom reduzido — antes travava em 10 (só dava pra ver
+              // no nível de quarteirão), o que impedia selecionar uma
+              // área grande.
+              minZoom: 3,
               maxZoom: 18,
               interactionOptions: InteractionOptions(
                 flags: InteractiveFlag.all, // habilita zoom com scroll do mouse
@@ -173,6 +406,27 @@ class _MapScreenState extends State<MapScreen> {
                     'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
                 userAgentPackageName: 'com.tecsys.app',
               ),
+
+              // Camada de relevo NASA GIBS, condicional ao toggle.
+              // maxNativeZoom: 12 — esse layer só tem imagem nativa até
+              // o zoom 12; sem isso, em zooms mais próximos (o mapa abre
+              // em 15.5) ele pede um tile que não existe e não aparece
+              // nada. Com maxNativeZoom, o flutter_map reaproveita o
+              // tile do zoom 12 e amplia.
+              if (_mostrarRelevoNasa)
+                Opacity(
+                  opacity: _opacidadeRelevo,
+                  child: TileLayer(
+                    urlTemplate:
+                        'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/'
+                        'ASTER_GDEM_Greyscale_Shaded_Relief/default/'
+                        'GoogleMapsCompatible_Level12/{z}/{y}/{x}.png',
+                    tileProvider: NetworkTileProvider(),
+                    maxNativeZoom: 12,
+                    maxZoom: 22,
+                  ),
+                ),
+
               CircleLayer(
                 circles: [
                   CircleMarker(
@@ -185,6 +439,21 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                 ],
               ),
+
+              // Retângulo de área confirmado (georreferenciado, acompanha
+              // pan/zoom corretamente)
+              if (_areaSelecionada != null)
+                PolygonLayer(
+                  polygons: [
+                    Polygon(
+                      points: _areaSelecionada!.corners,
+                      color: AppColors.coverageFill,
+                      borderColor: AppColors.coverageBorder,
+                      borderStrokeWidth: 2,
+                    ),
+                  ],
+                ),
+
               PolylineLayer(
                 polylines: [
                   for (final s in _sensorPositions)
@@ -221,15 +490,19 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ],
           ),
-          // Location badge (top-left)
-          const Positioned(
+
+          // Camada de gesto de seleção de área (por cima do mapa; só
+          // intercepta o arraste quando o switch acima está ligado)
+          Positioned.fill(child: _buildAreaSelectionGestureOverlay()),
+
+          // Badge de coordenada — agora mostra a área REAL selecionada,
+          // atualiza sempre que uma nova área é confirmada.
+          Positioned(
             top: AppSpacing.sm,
             left: AppSpacing.sm,
-            child: _LocationBadge(
-              title: 'Distrito Industrial Leste, SP',
-              subtitle: '-23.1585°, -46.6333°',
-            ),
+            child: _LocationBadge(area: _areaSelecionada, onCopy: _copiarCoordenadas),
           ),
+
           // Zoom / map controls (top-right)
           Positioned(
             top: AppSpacing.sm,
@@ -255,10 +528,15 @@ class _MapScreenState extends State<MapScreen> {
                   onTap: () => _mapController.move(_gatewayPosition, 15.5),
                 ),
                 const SizedBox(height: 8),
-                _MapControlButton(icon: Icons.layers_outlined, onTap: () {}),
+                _MapControlButton(
+                  icon: Icons.layers_outlined,
+                  onTap: () =>
+                      setState(() => _mostrarPainelCamadas = !_mostrarPainelCamadas),
+                ),
               ],
             ),
           ),
+
           // Floating gateway status card (bottom-left)
           Positioned(
             left: AppSpacing.sm,
@@ -271,6 +549,30 @@ class _MapScreenState extends State<MapScreen> {
             bottom: AppSpacing.sm,
             child: _ScaleBadge(),
           ),
+
+          // Barreira invisível + painel de camadas — fecham ao tocar
+          // fora. Ficam por último no Stack pra renderizar por cima
+          // de tudo enquanto abertos.
+          if (_mostrarPainelCamadas) ...[
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => setState(() => _mostrarPainelCamadas = false),
+                child: Container(color: Colors.transparent),
+              ),
+            ),
+            Positioned(
+              top: AppSpacing.sm,
+              right: 60,
+              child: _MapLayersPanel(
+                mostrarRelevo: _mostrarRelevoNasa,
+                onMostrarRelevoChanged: (v) =>
+                    setState(() => _mostrarRelevoNasa = v),
+                opacidadeRelevo: _opacidadeRelevo,
+                onOpacidadeChanged: (v) => setState(() => _opacidadeRelevo = v),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -281,7 +583,6 @@ class _MapScreenState extends State<MapScreen> {
   static const _metrics = [
     (icon: Icons.dns_outlined, label: 'Operational Gateways', value: '1/1', caption: '100% Online', captionColor: AppColors.success),
     (icon: Icons.podcasts, label: 'Active Linked Sensors', value: '14 Nodes', caption: '2 Standby', captionColor: AppColors.textSecondary),
-    (icon: Icons.map_outlined, label: 'Area Coverage Ratio', value: '19.6 km²', caption: 'Full Density', captionColor: AppColors.success),
     (icon: Icons.speed_outlined, label: 'Mesh Health Latency', value: '32 ms', caption: 'Optimal', captionColor: AppColors.success),
   ];
 
@@ -291,21 +592,24 @@ class _MapScreenState extends State<MapScreen> {
         final columns = constraints.maxWidth >= 700 ? 4 : 2;
         const spacing = AppSpacing.sm;
         final cardWidth = (constraints.maxWidth - spacing * (columns - 1)) / columns;
+        final cards = <Widget>[
+          ..._metrics.map((m) => _WebMetricCard(
+                icon: m.icon,
+                label: m.label,
+                value: m.value,
+                caption: m.caption,
+                captionColor: m.captionColor,
+              )),
+          _SavedAreaCard(
+            area: _ultimaAreaSalva,
+            onTap: _restaurarUltimaArea,
+            onCopy: _copiarCoordenadas,
+          ),
+        ];
         return Wrap(
           spacing: spacing,
           runSpacing: spacing,
-          children: _metrics
-              .map((m) => SizedBox(
-                    width: cardWidth,
-                    child: _WebMetricCard(
-                      icon: m.icon,
-                      label: m.label,
-                      value: m.value,
-                      caption: m.caption,
-                      captionColor: m.captionColor,
-                    ),
-                  ))
-              .toList(),
+          children: cards.map((c) => SizedBox(width: cardWidth, child: c)).toList(),
         );
       },
     );
@@ -382,14 +686,18 @@ class _MapScreenState extends State<MapScreen> {
                   children: [
                     const Row(
                       children: [
-                        Text(
-                          'Project Alpha',
-                          style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textPrimary),
+                        Flexible(
+                          child: Text(
+                            'Project Alpha',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary),
+                          ),
                         ),
                         Text('  •  São Paulo',
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                                 fontSize: 14, color: AppColors.textSecondary)),
                       ],
@@ -414,13 +722,14 @@ class _MapScreenState extends State<MapScreen> {
                   ],
                 ),
               ),
-              _CircleIconButton(icon: Icons.layers_outlined, onTap: () {}),
-              const SizedBox(width: 8),
-              _CircleIconButton(icon: Icons.gps_fixed, onTap: () {}),
             ],
           ),
         ),
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AppSpacing.sm),
+        // 2.5 Switch de seleção de área (mobile não tem legenda, então
+        // fica aqui, acima do mapa)
+        Align(alignment: Alignment.centerRight, child: _buildSelectAreaSwitch()),
+        const SizedBox(height: AppSpacing.sm),
         // 3. Map container
         Container(
           height: 620,
@@ -436,7 +745,7 @@ class _MapScreenState extends State<MapScreen> {
                 options: const MapOptions(
                   initialCenter: _gatewayPosition,
                   initialZoom: 15.5,
-                  minZoom: 10,
+                  minZoom: 3,
                   maxZoom: 18,
                   interactionOptions:
                       InteractionOptions(flags: InteractiveFlag.all),
@@ -447,6 +756,22 @@ class _MapScreenState extends State<MapScreen> {
                         'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
                     userAgentPackageName: 'com.tecsys.app',
                   ),
+
+                  // Camada de relevo NASA GIBS
+                  if (_mostrarRelevoNasa)
+                    Opacity(
+                      opacity: _opacidadeRelevo,
+                      child: TileLayer(
+                        urlTemplate:
+                            'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/'
+                            'ASTER_GDEM_Greyscale_Shaded_Relief/default/'
+                            'GoogleMapsCompatible_Level12/{z}/{y}/{x}.png',
+                        tileProvider: NetworkTileProvider(),
+                        maxNativeZoom: 12,
+                        maxZoom: 22,
+                      ),
+                    ),
+
                   CircleLayer(
                     circles: [
                       CircleMarker(
@@ -459,6 +784,20 @@ class _MapScreenState extends State<MapScreen> {
                       ),
                     ],
                   ),
+
+                  // Retângulo de área confirmado
+                  if (_areaSelecionada != null)
+                    PolygonLayer(
+                      polygons: [
+                        Polygon(
+                          points: _areaSelecionada!.corners,
+                          color: AppColors.coverageFill,
+                          borderColor: AppColors.coverageBorder,
+                          borderStrokeWidth: 2,
+                        ),
+                      ],
+                    ),
+
                   PolylineLayer(
                       polylines:
                           _dashedLine(_gatewayPosition, _sensorPositions[0])),
@@ -490,27 +829,16 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                 ],
               ),
+
+              // Camada de gesto de seleção de área
+              Positioned.fill(child: _buildAreaSelectionGestureOverlay()),
+
               Positioned(
                 top: AppSpacing.sm,
                 left: AppSpacing.sm,
-                child: _FloatingChip(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                          width: 6,
-                          height: 6,
-                          decoration: const BoxDecoration(
-                              color: AppColors.success,
-                              shape: BoxShape.circle)),
-                      const SizedBox(width: 6),
-                      const Text('915 MHz LoRaWAN',
-                          style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textPrimary)),
-                    ],
-                  ),
+                child: _CompactCoordinateChip(
+                  area: _areaSelecionada,
+                  onCopy: _copiarCoordenadas,
                 ),
               ),
               Positioned(
@@ -537,15 +865,45 @@ class _MapScreenState extends State<MapScreen> {
                       onTap: () =>
                           _mapController.move(_gatewayPosition, 15.5),
                     ),
+                    const SizedBox(height: 8),
+                    _MapControlButton(
+                      icon: Icons.layers_outlined,
+                      onTap: () => setState(
+                          () => _mostrarPainelCamadas = !_mostrarPainelCamadas),
+                    ),
                   ],
                 ),
               ),
+
               Positioned(
                 left: AppSpacing.sm,
                 right: AppSpacing.sm,
                 bottom: AppSpacing.sm,
                 child: _GatewayStatusCard(onTap: () {}),
               ),
+
+              // Barreira + painel — fecham ao tocar fora
+              if (_mostrarPainelCamadas) ...[
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => setState(() => _mostrarPainelCamadas = false),
+                    child: Container(color: Colors.transparent),
+                  ),
+                ),
+                Positioned(
+                  top: 56,
+                  right: AppSpacing.sm,
+                  child: _MapLayersPanel(
+                    mostrarRelevo: _mostrarRelevoNasa,
+                    onMostrarRelevoChanged: (v) =>
+                        setState(() => _mostrarRelevoNasa = v),
+                    opacidadeRelevo: _opacidadeRelevo,
+                    onOpacidadeChanged: (v) =>
+                        setState(() => _opacidadeRelevo = v),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -563,6 +921,68 @@ class _MapScreenState extends State<MapScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ===========================================================================
+// PAINEL DE CAMADAS (só relevo GIBS)
+// ===========================================================================
+
+class _MapLayersPanel extends StatelessWidget {
+  const _MapLayersPanel({
+    required this.mostrarRelevo,
+    required this.onMostrarRelevoChanged,
+    required this.opacidadeRelevo,
+    required this.onOpacidadeChanged,
+  });
+
+  final bool mostrarRelevo;
+  final ValueChanged<bool> onMostrarRelevoChanged;
+  final double opacidadeRelevo;
+  final ValueChanged<double> onOpacidadeChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 6,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.terrain, size: 16, color: AppColors.textSecondary),
+                const SizedBox(width: 6),
+                const Text('Relevo NASA',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                Switch(value: mostrarRelevo, onChanged: onMostrarRelevoChanged),
+              ],
+            ),
+            if (mostrarRelevo) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Opacidade: ${(opacidadeRelevo * 100).toStringAsFixed(0)}%',
+                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+              SizedBox(
+                width: 170,
+                child: Slider(
+                  value: opacidadeRelevo,
+                  min: 0.1,
+                  max: 1.0,
+                  divisions: 9,
+                  onChanged: onOpacidadeChanged,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -638,45 +1058,21 @@ class _LegendRing extends StatelessWidget {
   }
 }
 
-class _ToggleChip extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  const _ToggleChip({required this.label, required this.selected, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(100),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.infoBlueBg : Colors.transparent,
-          borderRadius: BorderRadius.circular(100),
-          border: Border.all(
-              color: selected ? AppColors.infoBlueBg : const Color(0xFFE4E8EF)),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: selected ? AppColors.infoBlue : AppColors.textSecondary,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _LocationBadge extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  const _LocationBadge({required this.title, required this.subtitle});
+  final SelectedArea? area;
+  final ValueChanged<SelectedArea>? onCopy;
+  const _LocationBadge({required this.area, this.onCopy});
 
   @override
   Widget build(BuildContext context) {
+    final title = area == null
+        ? 'Nenhuma área selecionada'
+        : 'Área selecionada (~${area!.diagonalKm.toStringAsFixed(0)} km)';
+    final subtitle = area == null
+        ? 'Ligue "Selecionar área" e arraste no mapa'
+        : 'SW ${area!.south.toStringAsFixed(4)}, ${area!.west.toStringAsFixed(4)}  •  '
+            'NE ${area!.north.toStringAsFixed(4)}, ${area!.east.toStringAsFixed(4)}';
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
@@ -699,7 +1095,56 @@ class _LocationBadge extends StatelessWidget {
                   style: const TextStyle(fontSize: 10, color: AppColors.textSecondary)),
             ],
           ),
+          if (area != null && onCopy != null) ...[
+            const SizedBox(width: 4),
+            _CopyIconButton(onCopy: () => onCopy!(area!), size: 14),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+/// Botão de copiar reutilizável — mostra um ✓ por 2s depois de copiar,
+/// antes de voltar ao ícone normal.
+class _CopyIconButton extends StatefulWidget {
+  final VoidCallback onCopy;
+  final double size;
+  final Color color;
+
+  const _CopyIconButton({
+    required this.onCopy,
+    this.size = 14,
+    this.color = AppColors.textSecondary,
+  });
+
+  @override
+  State<_CopyIconButton> createState() => _CopyIconButtonState();
+}
+
+class _CopyIconButtonState extends State<_CopyIconButton> {
+  bool _copiado = false;
+
+  void _handleTap() {
+    widget.onCopy();
+    setState(() => _copiado = true);
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _copiado = false);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: _handleTap,
+      borderRadius: BorderRadius.circular(100),
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Icon(
+          _copiado ? Icons.check : Icons.copy,
+          size: widget.size,
+          color: _copiado ? AppColors.success : widget.color,
+        ),
       ),
     );
   }
@@ -852,6 +1297,72 @@ class _WebMetricCard extends StatelessWidget {
   }
 }
 
+class _SavedAreaCard extends StatelessWidget {
+  final SelectedArea? area;
+  final VoidCallback onTap;
+  final ValueChanged<SelectedArea> onCopy;
+
+  const _SavedAreaCard({required this.area, required this.onTap, required this.onCopy});
+
+  @override
+  Widget build(BuildContext context) {
+    final semArea = area == null;
+    return InkWell(
+      onTap: semArea ? null : onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE4E8EF)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(color: AppColors.infoBlueBg, borderRadius: BorderRadius.circular(10)),
+              child: const Icon(Icons.bookmark_outline, size: 18, color: AppColors.infoBlue),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Última Área Selecionada',
+                      style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                  Text(
+                    semArea
+                        ? '—'
+                        : 'SW ${area!.south.toStringAsFixed(3)}, ${area!.west.toStringAsFixed(3)}',
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    semArea
+                        ? 'Nenhuma área salva ainda'
+                        : 'NE ${area!.north.toStringAsFixed(3)}, ${area!.east.toStringAsFixed(3)}',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            if (!semArea)
+              _CopyIconButton(
+                onCopy: () => onCopy(area!),
+                size: 16,
+                color: AppColors.infoBlue,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ===========================================================================
 // SHARED WIDGETS (mobile + web)
 // ===========================================================================
@@ -916,6 +1427,36 @@ class _FloatingChip extends StatelessWidget {
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 6)],
       ),
       child: child,
+    );
+  }
+}
+
+/// Chip mínimo pro mobile — só a coordenada (canto SW da área) e o
+/// botão de copiar. Some (não ocupa espaço) quando não há seleção,
+/// pra não poluir a tela.
+class _CompactCoordinateChip extends StatelessWidget {
+  final SelectedArea? area;
+  final ValueChanged<SelectedArea> onCopy;
+
+  const _CompactCoordinateChip({required this.area, required this.onCopy});
+
+  @override
+  Widget build(BuildContext context) {
+    if (area == null) return const SizedBox.shrink();
+
+    return _FloatingChip(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '${area!.south.toStringAsFixed(4)}, ${area!.west.toStringAsFixed(4)}',
+            style: const TextStyle(
+                fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+          ),
+          const SizedBox(width: 4),
+          _CopyIconButton(onCopy: () => onCopy(area!), size: 13),
+        ],
+      ),
     );
   }
 }
