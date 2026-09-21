@@ -1,11 +1,20 @@
 import 'package:flutter/material.dart';
 
+import '../app_shell.dart';
 import '../theme/app_theme.dart';
+import '../widgets/auth_scaffold.dart';
 import '../widgets/auth_text_field.dart';
+import 'map_screen.dart';
+import 'new_project_screen.dart';
+import 'projects_screen.dart';
+import 'reset_password_screen.dart';
+import '../navigation/bottom_nav_bar.dart' show showAccountMenu;
 
-/// Login screen — built strictly to spec: exact English copy, exact
-/// colors, pill-shaped trust badge, centered form with a max width of
-/// ~390px (works on web/desktop/mobile alike).
+/// Login screen — tela de pré-autenticação: sem navbar em nenhuma
+/// plataforma (web e mobile ficam idênticos aqui; a ausência de nav
+/// chrome é simétrica, então não quebra a paridade). Card centralizado
+/// com largura máxima de ~390px funciona igual em qualquer largura de
+/// tela.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -17,6 +26,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
+  bool _rememberMe = false;
 
   @override
   void dispose() {
@@ -30,28 +40,49 @@ class _LoginScreenState extends State<LoginScreen> {
     await Future.delayed(const Duration(milliseconds: 600));
     if (!mounted) return;
     setState(() => _isLoading = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Signed in (mock)')),
+
+    // Login bem-sucedido: entra no AppShell, que a partir daqui é o
+    // único lugar que decide navbar web / bottom nav mobile para as
+    // três abas principais. O item "Login" do nav sempre abre o menu
+    // de conta (Reset Password / Logout) — nunca volta pra esta tela.
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => AppShell(
+          tabs: const [
+            ProjectsScreen(),
+            NewProjectScreen(),
+            MapScreen(),
+          ],
+          onLoginTap: (ctx) => showAccountMenu(ctx),
+        ),
+      ),
+    );
+  }
+
+  void _handleForgotPassword() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const ResetPasswordScreen(fromLogin: true),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.xl),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 390),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Image.asset('assets/images/logo.png', height: 40),
-                const SizedBox(height: 40),
+    return AuthScaffold(
+      card: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Image.asset('assets/images/logo.png', height: 40),
+          const SizedBox(height: 16),
                 const Text(
-                  'Supply Chain Intelligence',
-                  style: TextStyle(fontSize: 20, color: AppColors.textPrimary),
+                  'ENTERPRISE SUPPLY CHAIN PLATFORM',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textSecondary,
+                    letterSpacing: 0.8,
+                  ),
                 ),
                 const SizedBox(height: 40),
                 AuthTextField(
@@ -72,16 +103,33 @@ class _LoginScreenState extends State<LoginScreen> {
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
-                    onPressed: () {},
+                    onPressed: _handleForgotPassword,
                     child: const Text(
                       'Forgot?',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primary,
-                      ),
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.primary),
                     ),
                   ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: Checkbox(
+                        value: _rememberMe,
+                        onChanged: (v) => setState(() => _rememberMe = v ?? false),
+                        activeColor: AppColors.primary,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Remember for 30 days',
+                      style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 28),
                 SizedBox(
@@ -92,9 +140,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       elevation: 0,
                     ),
                     child: _isLoading
@@ -113,40 +159,30 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                   ),
                 ),
-                const SizedBox(height: 28),
-                const _SsoBadge(),
-              ],
-            ),
-          ),
-        ),
+          const SizedBox(height: 28),
+          const _StatusFooter(),
+        ],
       ),
     );
   }
 }
 
-/// Pill-shaped trust badge: "🛡✓ Enterprise SSO Active".
-class _SsoBadge extends StatelessWidget {
-  const _SsoBadge();
+/// Rodapé "🟢 Systems Operational   v24.2 Enterprise", no lugar do
+/// badge de SSO anterior.
+class _StatusFooter extends StatelessWidget {
+  const _StatusFooter();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppColors.badgeBg,
-        borderRadius: BorderRadius.circular(100),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.verified_user, size: 15, color: AppColors.primary),
-          const SizedBox(width: 6),
-          const Text(
-            'Enterprise SSO Active',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-          ),
-        ],
-      ),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(width: 6, height: 6, decoration: const BoxDecoration(color: AppColors.success, shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        const Text('Systems Operational', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+        const SizedBox(width: 16),
+        const Text('v24.2 Enterprise', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+      ],
     );
   }
 }
