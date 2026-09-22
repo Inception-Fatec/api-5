@@ -2,16 +2,22 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 import 'account_menu_button.dart';
-import 'nav_items.dart';
 
 /// Navbar superior usada só no layout web (largura >= AppShell.webBreakpoint).
-/// Espelha o mesmo conjunto de abas do BottomNavBar mobile, lido de
-/// [NavItems.all], então as duas navbars nunca ficam fora de sincronia.
+/// Itens vêm de [navItems] (calculados pelo AppShell via
+/// `NavItems.forRole(role)` — RN04: "Users" só aparece pra ADM), então
+/// a navbar web nunca fica fora de sincronia com o BottomNavBar mobile.
 class TopNavBar extends StatelessWidget {
   final int currentIndex;
+  final List<({IconData icon, String label})> navItems;
   final ValueChanged<int> onNavTap;
 
-  const TopNavBar({super.key, required this.currentIndex, required this.onNavTap});
+  const TopNavBar({
+    super.key,
+    required this.currentIndex,
+    required this.navItems,
+    required this.onNavTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -31,9 +37,11 @@ class TopNavBar extends StatelessWidget {
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
           ),
           const SizedBox(width: AppSpacing.xl),
-          for (var i = 0; i < NavItems.all.length - 1; i++) ...[
+          // Exclui o último item (Login/conta) — esse vira o
+          // AccountMenuButton lá embaixo, nunca um link de aba.
+          for (var i = 0; i < navItems.length - 1; i++) ...[
             _NavLink(
-              label: NavItems.all[i].label,
+              label: navItems[i].label,
               active: i == currentIndex,
               onTap: () => onNavTap(i),
             ),
