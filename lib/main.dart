@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-
+import 'screens/login_screen.dart';
 import 'screens/dev_menu_screen.dart';
 import 'theme/app_theme.dart';
 
@@ -16,7 +16,7 @@ class TecsysApp extends StatelessWidget {
       title: 'Tecsys',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
-      home: const DevMenuScreen(),
+      home: const LoginScreen(),
     );
   }
 }

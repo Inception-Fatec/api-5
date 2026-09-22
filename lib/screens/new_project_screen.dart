@@ -2,15 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/auth_text_field.dart';
-import '../widgets/bottom_nav_bar.dart';
-import 'map_screen.dart';
-import 'projects_screen.dart';
+import '../widgets/common/page_body.dart';
 
-/// "New Project" screen — built strictly to spec: top bar with logo +
-/// "TECSYS B2B" / "New Project" + profile avatar, "Deployment 01 •
-/// Draft Mode" badge row, page header, three labeled fields with
-/// prefix icons, the "Advanced Settings" expandable card, the "Save
-/// and Continue" button, footer note, and the bottom nav bar.
+/// "New Project" screen — conteúdo igual ao original (top bar, badge
+/// "Deployment 01 • Draft Mode", header, os três campos com ícone, o
+/// card expansível "Advanced Settings", o botão "Save and Continue" e
+/// o rodapé). O Scaffold, o BottomNavBar e o _handleTabTap próprios
+/// saíram daqui — mesma razão do ProjectsScreen e do MapScreen: quem
+/// monta a navegação agora é só o AppShell.
 class NewProjectScreen extends StatefulWidget {
   const NewProjectScreen({super.key});
 
@@ -40,173 +39,150 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
     super.dispose();
   }
 
-  void _handleTabTap(int index) {
-    switch (index) {
-      case 0:
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const ProjectsScreen()),
-        );
-        break;
-      case 1:
-        break; // already here
-      case 2:
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const MapScreen()),
-        );
-        break;
-      default:
-        showAccountMenu(context);
-    }
-  }
-
   Widget _subLabel(String text) {
     return Text(text, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary));
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      bottomNavigationBar: BottomNavBar(currentIndex: 1, onTap: _handleTabTap),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(AppSpacing.lg),
+    return PageBody(
+      child: ListView(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        children: [
+        // Top bar
+        Row(
           children: [
-            // Top bar
-            Row(
+            Image.asset('assets/images/logo.png', height: 26),
+            const Spacer(),
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Image.asset('assets/images/logo.png', height: 26),
-                const Spacer(),
-                const Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      'TECSYS B2B',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary, letterSpacing: 0.3),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'New Project',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-                    ),
-                  ],
+                Text(
+                  'TECSYS B2B',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary, letterSpacing: 0.3),
                 ),
-                const SizedBox(width: 12),
-                const CircleAvatar(
-                  radius: 18,
-                  backgroundColor: AppColors.primary,
-                  child: Icon(Icons.person, size: 18, color: Colors.white),
+                SizedBox(height: 2),
+                Text(
+                  'New Project',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
                 ),
               ],
             ),
-            const SizedBox(height: AppSpacing.lg),
-            // Deployment 01 • Draft Mode
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: AppColors.chipBg,
-                    borderRadius: BorderRadius.circular(100),
-                  ),
-                  child: const Text(
-                    'Deployment 01',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primary),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(width: 6, height: 6, decoration: const BoxDecoration(color: AppColors.textSecondary, shape: BoxShape.circle)),
-                const SizedBox(width: 4),
-                const Text('Draft Mode', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            const Text(
-              'New Project',
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'Configure basic deployment parameters.',
-              style: TextStyle(fontSize: 15, color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: AppSpacing.xl),
-            AuthTextField(
-              label: 'Region *',
-              hint: 'e.g., Southeast / SP',
-              controller: _regionController,
-              prefixIcon: Icons.public,
-              trailing: _subLabel('Geographic Zone'),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            AuthTextField(
-              label: 'Energy Provider *',
-              hint: 'e.g., Enel Distribuição',
-              controller: _providerController,
-              prefixIcon: Icons.bolt,
-              trailing: _subLabel('Local Grid'),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            AuthTextField(
-              label: 'Equipment Type *',
-              hint: 'e.g., Solar Inverter B2',
-              controller: _equipmentController,
-              prefixIcon: Icons.settings_input_antenna,
-              trailing: _subLabel('Hardware profile'),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            _AdvancedSettingsCard(
-              hostController: _hostController,
-              portController: _portController,
-              protocol: _protocol,
-              onProtocolChanged: (v) => setState(() => _protocol = v ?? _protocol),
-              syncInterval: _syncInterval,
-              onSyncIntervalChanged: (v) => setState(() => _syncInterval = v ?? _syncInterval),
-              offlineBuffer: _offlineBuffer,
-              onOfflineBufferChanged: (v) => setState(() => _offlineBuffer = v),
-              teamAccess: _teamAccess,
-              onTeamAccessChanged: (v) => setState(() => _teamAccess = v ?? _teamAccess),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Project created with advanced configuration!')),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  elevation: 0,
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text('Save and Continue', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                    SizedBox(width: 8),
-                    Icon(Icons.arrow_forward, size: 20),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.verified_user, size: 14, color: AppColors.primary),
-                const SizedBox(width: 6),
-                const Text(
-                  'Parameters saved automatically to cloud inventory',
-                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                ),
-              ],
+            const SizedBox(width: 12),
+            const CircleAvatar(
+              radius: 18,
+              backgroundColor: AppColors.primary,
+              child: Icon(Icons.person, size: 18, color: Colors.white),
             ),
           ],
         ),
+        const SizedBox(height: AppSpacing.lg),
+        // Deployment 01 • Draft Mode
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: AppColors.chipBg,
+                borderRadius: BorderRadius.circular(100),
+              ),
+              child: const Text(
+                'Deployment 01',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primary),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(width: 6, height: 6, decoration: const BoxDecoration(color: AppColors.textSecondary, shape: BoxShape.circle)),
+            const SizedBox(width: 4),
+            const Text('Draft Mode', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        const Text(
+          'New Project',
+          style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Configure basic deployment parameters.',
+          style: TextStyle(fontSize: 15, color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: AppSpacing.xl),
+        AuthTextField(
+          label: 'Region *',
+          hint: 'e.g., Southeast / SP',
+          controller: _regionController,
+          prefixIcon: Icons.public,
+          trailing: _subLabel('Geographic Zone'),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        AuthTextField(
+          label: 'Energy Provider *',
+          hint: 'e.g., Enel Distribuição',
+          controller: _providerController,
+          prefixIcon: Icons.bolt,
+          trailing: _subLabel('Local Grid'),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        AuthTextField(
+          label: 'Equipment Type *',
+          hint: 'e.g., Solar Inverter B2',
+          controller: _equipmentController,
+          prefixIcon: Icons.settings_input_antenna,
+          trailing: _subLabel('Hardware profile'),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        _AdvancedSettingsCard(
+          hostController: _hostController,
+          portController: _portController,
+          protocol: _protocol,
+          onProtocolChanged: (v) => setState(() => _protocol = v ?? _protocol),
+          syncInterval: _syncInterval,
+          onSyncIntervalChanged: (v) => setState(() => _syncInterval = v ?? _syncInterval),
+          offlineBuffer: _offlineBuffer,
+          onOfflineBufferChanged: (v) => setState(() => _offlineBuffer = v),
+          teamAccess: _teamAccess,
+          onTeamAccessChanged: (v) => setState(() => _teamAccess = v ?? _teamAccess),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: ElevatedButton(
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Project created with advanced configuration!')),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              elevation: 0,
+            ),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('Save and Continue', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                SizedBox(width: 8),
+                Icon(Icons.arrow_forward, size: 20),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.verified_user, size: 14, color: AppColors.primary),
+            const SizedBox(width: 6),
+            const Text(
+              'Parameters saved automatically to cloud inventory',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+          ],
+        ),
+      ],
       ),
     );
   }
