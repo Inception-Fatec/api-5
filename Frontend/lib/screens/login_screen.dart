@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../app_shell.dart';
+import '../services/api_exception.dart';
+import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/auth_scaffold.dart';
 import '../widgets/auth_text_field.dart';
+import '../widgets/first_access_modal.dart';
+import '../navigation/account_actions.dart' show openResetPassword;
 import 'map_screen.dart';
 import 'new_project_screen.dart';
 import 'projects_screen.dart';
-import 'reset_password_screen.dart';
+import 'users_screen.dart';
 import '../navigation/bottom_nav_bar.dart' show showAccountMenu;
 
 /// Login screen — tela de pré-autenticação: sem navbar em nenhuma
@@ -15,6 +19,12 @@ import '../navigation/bottom_nav_bar.dart' show showAccountMenu;
 /// chrome é simétrica, então não quebra a paridade). Card centralizado
 /// com largura máxima de ~390px funciona igual em qualquer largura de
 /// tela.
+///
+/// Integrado com POST /api/v1/auth/login (task #52). O link "Forgot?"
+/// já abre a ResetPasswordScreen (fromLogin: true) pra mostrar o
+/// fluxo pronto — a tela em si ainda não bate numa rota de
+/// recuperação por e-mail real, porque o backend não tem essa rota
+/// ainda (o botão "Send Reset Link" de lá continua sem ação).
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -26,7 +36,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
-  bool _rememberMe = false;
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -36,33 +46,70 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleSignIn() async {
-    setState(() => _isLoading = true);
-    await Future.delayed(const Duration(milliseconds: 600));
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await AuthService.instance.login(
+        _emailController.text.trim(),
+        _passwordController.text,
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = e.message;
+      });
+      return;
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Não foi possível conectar ao servidor.';
+      });
+      return;
+    }
+
     if (!mounted) return;
     setState(() => _isLoading = false);
 
+    // RN02: primeiro acesso não navega no app sem antes trocar a
+    // senha padrão — modal bloqueante da task #53.
+    if (AuthService.instance.mustChangePassword) {
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const FirstAccessModal(),
+      );
+      if (!mounted) return;
+    }
+
+    _goToAppShell();
+  }
+
+  void _goToAppShell() {
     // Login bem-sucedido: entra no AppShell, que a partir daqui é o
     // único lugar que decide navbar web / bottom nav mobile para as
-    // três abas principais. O item "Login" do nav sempre abre o menu
+    // abas principais. O item "Login" do nav sempre abre o menu
     // de conta (Reset Password / Logout) — nunca volta pra esta tela.
+    //
+    // RN04 (US-34): UsersScreen só entra nas tabs pra quem logou como
+    // ADM — mesma condição que NavItems.forRole usa lá no AppShell,
+    // então a aba e o item de navegação nunca ficam fora de sincronia.
+    final isAdmin = AuthService.instance.role == 'ADM';
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => AppShell(
-          tabs: const [
-            ProjectsScreen(),
-            NewProjectScreen(),
-            MapScreen(),
+          tabs: [
+            const ProjectsScreen(),
+            const NewProjectScreen(),
+            const MapScreen(),
+            if (isAdmin) const UsersScreen(),
           ],
           onLoginTap: (ctx) => showAccountMenu(ctx),
         ),
-      ),
-    );
-  }
-
-  void _handleForgotPassword() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const ResetPasswordScreen(fromLogin: true),
       ),
     );
   }
@@ -103,34 +150,22 @@ class _LoginScreenState extends State<LoginScreen> {
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
-                    onPressed: _handleForgotPassword,
+                    // Rota de recuperação por e-mail ainda não existe
+                    // no backend — isso só abre a tela já pronta.
+                    onPressed: () => openResetPassword(context, fromLogin: true),
                     child: const Text(
                       'Forgot?',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.primary),
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
                     ),
                   ),
                 ),
-                const SizedBox(height: AppSpacing.md),
-                Row(
-                  children: [
-                    SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: Checkbox(
-                        value: _rememberMe,
-                        onChanged: (v) => setState(() => _rememberMe = v ?? false),
-                        activeColor: AppColors.primary,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Remember for 30 days',
-                      style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
-                    ),
-                  ],
-                ),
+                if (_errorMessage != null) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  Text(
+                    _errorMessage!,
+                    style: const TextStyle(fontSize: 13, color: Colors.red),
+                  ),
+                ],
                 const SizedBox(height: 28),
                 SizedBox(
                   width: double.infinity,

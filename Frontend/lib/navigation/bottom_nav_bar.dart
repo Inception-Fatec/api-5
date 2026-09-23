@@ -2,15 +2,22 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 import 'account_actions.dart';
-import 'nav_items.dart';
 
-/// Bottom nav bar mobile: mesmas 4 abas de [NavItems.all]. Cada tap é
-/// repassado pra [onTap] — quem decide o que fazer é o AppShell.
+/// Bottom nav bar mobile: itens vêm de [navItems] (calculados pelo
+/// AppShell via `NavItems.forRole(role)` — RN04: "Users" só aparece
+/// pra ADM). Cada tap é repassado pra [onTap] — quem decide o que
+/// fazer é o AppShell.
 class BottomNavBar extends StatelessWidget {
   final int currentIndex;
+  final List<({IconData icon, String label})> navItems;
   final ValueChanged<int> onTap;
 
-  const BottomNavBar({super.key, required this.currentIndex, required this.onTap});
+  const BottomNavBar({
+    super.key,
+    required this.currentIndex,
+    required this.navItems,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -23,8 +30,8 @@ class BottomNavBar extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: Row(
-          children: List.generate(NavItems.all.length, (i) {
-            final item = NavItems.all[i];
+          children: List.generate(navItems.length, (i) {
+            final item = navItems[i];
             final active = i == currentIndex;
             final color = active ? AppColors.primary : AppColors.textSecondary;
 

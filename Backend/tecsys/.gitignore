@@ -1,0 +1,68 @@
+# ==========================================
+# Arquivos do Sistema Operativo e IDEs
+# ==========================================
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+Thumbs.db
+.atom/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+
+# IntelliJ IDEA
+*.iml
+*.ipr
+*.iws
+.idea/
+**/out/
+
+# VS Code
+.vscode/
+
+# ==========================================
+# Java / Maven (Backend/tecsys)
+# ==========================================
+**/target/
+**/pom.xml.tag
+**/pom.xml.releaseBackup
+**/pom.xml.versionsBackup
+**/pom.xml.next
+**/release.properties
+**/dependency-reduced-pom.xml
+**/buildNumber.properties
+**/.mvn/timing.properties
+**/.mvn/wrapper/maven-wrapper.jar
+
+# ==========================================
+# Flutter / Dart (Frontend)
+# ==========================================
+**/.dart_tool/
+**/.flutter-plugins-dependencies
+**/.pub-cache/
+**/.pub/
+**/build/
+**/coverage/
+**/doc/api/
+.widget_preview/
+
+# Build artifacts
+app.*.symbols
+app.*.map.json
+**/android/app/debug
+**/android/app/profile
+**/android/app/release
+
+# ==========================================
+# Variáveis de Ambiente e Arquivos Sensíveis
+# ==========================================
+.env
+*.env
+.env.properties
+*.env.properties
+**/.env
+**/.env.properties
+!*.env.properties-example
