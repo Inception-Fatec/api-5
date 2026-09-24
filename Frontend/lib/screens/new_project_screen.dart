@@ -1,15 +1,26 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
-import '../widgets/auth_text_field.dart';
 import '../widgets/common/page_body.dart';
+import '../widgets/map/points_refinement_map.dart';
+import '../widgets/map/selected_area.dart';
+import '../services/points_filter_service.dart';
+import '../services/geocoding_service.dart';
+import '../services/ibge_service.dart';
 
-/// "New Project" screen — conteúdo igual ao original (top bar, badge
-/// "Deployment 01 • Draft Mode", header, os três campos com ícone, o
-/// card expansível "Advanced Settings", o botão "Save and Continue" e
-/// o rodapé). O Scaffold, o BottomNavBar e o _handleTabTap próprios
-/// saíram daqui — mesma razão do ProjectsScreen e do MapScreen: quem
-/// monta a navegação agora é só o AppShell.
+/// "New Project" screen — fluxo oficial em 2 etapas:
+///
+///   ETAPA 1 (obrigatória): Empresa/Distribuidora + Município(s).
+///   Dispara a busca real no backend (`POST /api/v1/points/filter`
+///   só com dist_codes + mun_codes). Sem resultado → avisa e NÃO
+///   libera a etapa 2 (RN02). Com resultado → mostra o mapa com os
+///   pontos de verdade.
+///
+///   ETAPA 2 (só aparece com dados): mapa com os pontos + refinamento
+///   espacial por UM polígono desenhado (RN04 — filtra dentro do que
+///   já foi carregado, não define área do zero), níveis de tensão
+///   (alto/medio/baixo/all — RN03), e os demais filtros opcionais.
+///   Botão final "Salvar Projeto" reenvia tudo consolidado.
 class NewProjectScreen extends StatefulWidget {
   const NewProjectScreen({super.key});
 
@@ -18,38 +29,383 @@ class NewProjectScreen extends StatefulWidget {
 }
 
 class _NewProjectScreenState extends State<NewProjectScreen> {
-  final _regionController = TextEditingController();
-  final _providerController = TextEditingController();
-  final _equipmentController = TextEditingController();
+  final _nomeProjetoController = TextEditingController();
+  // Etapa 1 — voltou a ser dropdown: o backend guarda o CÓDIGO da
+  // distribuidora na coluna dist (confirmado: "391"), não o nome por
+  // extenso — texto livre não bate com isso.
+  String _distCode = '391';
 
-  final _hostController = TextEditingController();
-  final _portController = TextEditingController();
-  String _protocol = 'HTTPS';
-  String _syncInterval = 'Real-time';
-  bool _offlineBuffer = false;
-  String _teamAccess = 'Distribution Center Staff';
+  static const _distribuidoras = {
+    '391': 'EDP São Paulo',
+    // TODO: popular dinamicamente quando existir um endpoint de
+    // distribuidoras/concessionárias no backend.
+  };
+  final _service = PointsFilterService();
+  final _geocoding = GeocodingService();
+
+  // Etapa 1
+  final List<Municipio> _municipios = [];
+  bool _buscandoEtapa1 = false;
+  String? _erroEtapa1;
+  String? _avisoEtapa1; // informativo, não bloqueia (ex: backend indisponível)
+  List<Map<String, dynamic>> _features = [];
+  int? _totalEtapa1;
+
+  // Área combinada das cidades (geocoding, client-side) — é isso que
+  // decide se a Etapa 2 aparece, já que hoje o backend ainda não
+  // existe pra confirmar pontos reais. Quando o endpoint existir de
+  // verdade, os pontos (_features) vêm junto e são plotados por cima
+  // dessa mesma área.
+  Map<Municipio, SelectedArea> _areasCidades = {};
+
+  // Etapa 2 — só relevante depois de ter pontos carregados
+  List<Map<String, dynamic>> _areasMonitoramento = [];
+  final List<String> _conjCodes = [];
+  final List<String> _subCodes = [];
+  List<String> _targetLayers = [];
+  final List<String> _clasSub = [];
+  final List<String> _cnaeCodes = [];
+  final List<String> _bairroNames = [];
+  bool _includeCustomCsv = true;
+
+  bool _salvando = false;
+  bool _projetoSalvo = false;
+  int? _totalFinal;
+
+  static const _targetLayerOptions = ['alto', 'medio', 'baixo', 'all'];
+
+  // TODO: valores de exemplo — confirmar com o dicionário oficial de
+  // CLAS_SUB da BDGD antes de fechar essa lista.
+  static const _clasSubOptions = ['Residencial', 'Industrial', 'Comercial', 'Rural', 'Poder Público', 'Serviço Público'];
 
   @override
   void dispose() {
-    _regionController.dispose();
-    _providerController.dispose();
-    _equipmentController.dispose();
-    _hostController.dispose();
-    _portController.dispose();
+    _nomeProjetoController.dispose();
     super.dispose();
   }
 
-  Widget _subLabel(String text) {
-    return Text(text, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary));
+  // -----------------------------------------------------------------------
+  // Etapa 1 — busca inicial (RN01, RN02)
+  // -----------------------------------------------------------------------
+
+  Future<void> _buscarEtapa1() async {
+    final empresa = _distCode;
+
+    if (empresa.isEmpty || _municipios.isEmpty) {
+      setState(() => _erroEtapa1 = 'Informe a Empresa/Distribuidora e ao menos um Município.');
+      return;
+    }
+
+    setState(() {
+      _buscandoEtapa1 = true;
+      _erroEtapa1 = null;
+      _avisoEtapa1 = null;
+    });
+
+    // 1) Geocoding das cidades escolhidas — sempre roda, client-side,
+    // não depende do backend. É isso que garante o mapa aparecer.
+    // Cada cidade guarda a PRÓPRIA área (não combina mais tudo num
+    // retângulo só).
+    final novasAreas = <Municipio, SelectedArea>{};
+    for (final m in _municipios) {
+      final resultados = await _geocoding.buscar('${m.nome}, ${m.uf}, Brasil');
+      if (resultados.isEmpty) continue;
+      novasAreas[m] = resultados.first.area;
+    }
+
+    if (!mounted) return;
+
+    if (novasAreas.isEmpty) {
+      setState(() {
+        _buscandoEtapa1 = false;
+        _erroEtapa1 = 'Não foi possível localizar a(s) cidade(s) escolhida(s) no mapa.';
+      });
+      return;
+    }
+
+    setState(() {
+      _areasCidades = novasAreas;
+      // Busca nova — reseta o que a etapa 2 já tinha.
+      _areasMonitoramento = [];
+      _totalFinal = null;
+      _features = [];
+      _totalEtapa1 = null;
+    });
+
+    // 2) Tenta o backend de verdade, por trás — se ele ainda não
+    // existir/responder, não trava a tela: o mapa já apareceu com a
+    // área geocodificada no passo 1. Assim que o endpoint existir,
+    // isso passa a preencher pontos reais automaticamente, sem
+    // precisar mudar mais nada aqui.
+    try {
+      final resultado = await _service.buscarPontos(
+        distCodes: [empresa],
+        munCodes: _municipios.map((m) => m.codigoIbge.toString()).toList(),
+      );
+      if (!mounted) return;
+      setState(() {
+        _totalEtapa1 = resultado.totalPoints;
+        _features = resultado.features;
+        _buscandoEtapa1 = false;
+        if (resultado.totalPoints == 0) {
+          _avisoEtapa1 = 'Backend não retornou pontos ainda (endpoint em desenvolvimento) — mostrando a área pela cidade.';
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _buscandoEtapa1 = false;
+        _avisoEtapa1 = 'Backend ainda não disponível — mostrando a área pela cidade, sem pontos reais por enquanto.';
+      });
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Etapa 2 — "Salvar Projeto": manda o conjunto consolidado pro
+  // backend (CA06). Como ainda não existe persistência de projeto de
+  // verdade, isso só troca o botão pra um estado "Salvo" por alguns
+  // segundos — não mexe mais no mapa (quem filtra o mapa agora é o
+  // toggle de nível de tensão, na hora, sem chamada de rede).
+  // -----------------------------------------------------------------------
+
+  Future<void> _salvarProjeto() async {
+    setState(() {
+      _salvando = true;
+      _totalFinal = null;
+      _projetoSalvo = false;
+    });
+
+    try {
+      final resultado = await _service.buscarPontos(
+        distCodes: [_distCode],
+        munCodes: _municipios.map((m) => m.codigoIbge.toString()).toList(),
+        conjCodes: _conjCodes,
+        subCodes: _subCodes,
+        polygonGeoJson: _montarMultiPolygon(),
+        targetLayers: _targetLayers,
+        clasSub: _clasSub,
+        cnaeCodes: _cnaeCodes,
+        bairroNames: _bairroNames,
+        includeCustomCsv: _includeCustomCsv,
+      );
+      if (!mounted) return;
+      setState(() {
+        _totalFinal = resultado.totalPoints;
+        _projetoSalvo = true;
+      });
+      // Volta o botão ao normal depois de um tempo — sem persistência
+      // de verdade ainda, "Salvo" é só uma confirmação visual.
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) setState(() => _projetoSalvo = false);
+      });
+    } on PointsFilterException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('Erro inesperado. Tente novamente.')));
+    } finally {
+      if (mounted) setState(() => _salvando = false);
+    }
+  }
+
+  /// Combina as áreas de monitoramento desenhadas (0, 1 ou várias) num
+  /// único GeoJSON — `MultiPolygon` quando existe mais de uma, pra
+  /// mandar tudo numa única chamada de `polygon_geojson`. O PostGIS
+  /// aceita `ST_Intersects`/`ST_Within` normalmente contra um
+  /// MultiPolygon, então não precisa de tratamento especial no
+  /// backend. Vazio = null (busca nas cidades inteiras).
+  Map<String, dynamic>? _montarMultiPolygon() {
+    if (_areasMonitoramento.isEmpty) return null;
+    if (_areasMonitoramento.length == 1) return _areasMonitoramento.first;
+
+    final coordinates = _areasMonitoramento.map((p) => (p['coordinates'] as List)).toList();
+    return {'type': 'MultiPolygon', 'coordinates': coordinates};
   }
 
   @override
   Widget build(BuildContext context) {
+    final mostrarEtapa2 = _areasCidades.isNotEmpty;
+
     return PageBody(
       child: ListView(
         padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
-        // Top bar
+          _buildTopo(),
+          const SizedBox(height: AppSpacing.xl),
+
+          // --- Etapa 1 ---------------------------------------------------
+          _sectionLabel('Etapa 1 — Empresa e Município(s) *'),
+          const SizedBox(height: AppSpacing.sm),
+          _fieldLabel('Empresa / Distribuidora *'),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(color: AppColors.inputFill, borderRadius: BorderRadius.circular(12)),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _distCode,
+                isExpanded: true,
+                icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.textSecondary),
+                style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
+                items: _distribuidoras.entries.map((e) => DropdownMenuItem(value: e.key, child: Text('${e.value} (${e.key})'))).toList(),
+                onChanged: (v) => setState(() => _distCode = v!),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          _fieldLabel('Município(s) *'),
+          _MunicipioMultiSelectField(
+            selecionados: _municipios,
+            distCode: _distCode,
+            onChanged: (c) => setState(() { _municipios..clear()..addAll(c); }),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+
+          if (_erroEtapa1 != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(_erroEtapa1!, style: const TextStyle(fontSize: 12, color: Colors.redAccent)),
+            ),
+          if (_avisoEtapa1 != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(_avisoEtapa1!, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+            ),
+
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: OutlinedButton(
+              onPressed: _buscandoEtapa1 ? null : _buscarEtapa1,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                side: const BorderSide(color: AppColors.primary),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: _buscandoEtapa1
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.2))
+                  : const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.search, size: 18),
+                        SizedBox(width: 8),
+                        Text('Buscar Pontos', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                      ],
+                    ),
+            ),
+          ),
+
+          // --- Etapa 2 -----------------------------------------------------
+          if (mostrarEtapa2) ...[
+            const SizedBox(height: AppSpacing.xl),
+            _sectionLabel('Etapa 2 — Refinamento'),
+            const SizedBox(height: AppSpacing.sm),
+            const Text(
+              'Sem desenhar nada, a busca considera a(s) cidade(s) inteira(s). '
+              'Desenhe uma ou mais áreas no mapa pra restringir a busca só a elas.',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            PointsRefinementMap(
+              areasCidades: _areasCidades,
+              onRemoverCidade: (m) => setState(() {
+                _municipios.remove(m);
+                _areasCidades = Map.of(_areasCidades)..remove(m);
+              }),
+              features: _features,
+              areasMonitoramento: _areasMonitoramento,
+              onAreasMonitoramentoChanged: (areas) => setState(() => _areasMonitoramento = areas),
+              targetLayers: _targetLayers,
+              permitirDesenho: true,
+              height: 360,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            _fieldLabel('Nível de Tensão'),
+            _MultiSelectSheetField(
+              label: 'Alto / Médio / Baixo / Todos',
+              options: _targetLayerOptions,
+              selected: _targetLayers,
+              onChanged: (v) => setState(() => _targetLayers = List<String>.from(v)),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _ChipInputField(
+              label: 'Conjunto Elétrico',
+              hint: 'ex: 17113',
+              values: _conjCodes,
+              onChanged: (v) => setState(() { _conjCodes..clear()..addAll(v); }),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _ChipInputField(
+              label: 'Subestação',
+              hint: 'ex: SJC',
+              values: _subCodes,
+              onChanged: (v) => setState(() { _subCodes..clear()..addAll(v); }),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            _OptionalFiltersCard(
+              clasSubOptions: _clasSubOptions,
+              clasSub: _clasSub,
+              onClasSubChanged: (v) => setState(() { _clasSub..clear()..addAll(v); }),
+              cnaeCodes: _cnaeCodes,
+              onCnaeChanged: (v) => setState(() { _cnaeCodes..clear()..addAll(v); }),
+              bairroNames: _bairroNames,
+              onBairroChanged: (v) => setState(() { _bairroNames..clear()..addAll(v); }),
+              includeCustomCsv: _includeCustomCsv,
+              onIncludeCustomCsvChanged: (v) => setState(() => _includeCustomCsv = v),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            if (_totalFinal != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                child: Text('$_totalFinal ponto(s) no resultado final.',
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+              ),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: _salvando ? null : _salvarProjeto,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _projetoSalvo ? AppColors.success : AppColors.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  elevation: 0,
+                ),
+                child: _salvando
+                    ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
+                    : _projetoSalvo
+                        ? const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text('Salvo', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                              SizedBox(width: 8),
+                              Icon(Icons.check_circle_outline, size: 20),
+                            ],
+                          )
+                        : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text('Salvar Projeto', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                              SizedBox(width: 8),
+                              Icon(Icons.save_outlined, size: 20),
+                            ],
+                          ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopo() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         Row(
           children: [
             Image.asset('assets/images/logo.png', height: 26),
@@ -57,217 +413,519 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
             const Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text(
-                  'TECSYS B2B',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary, letterSpacing: 0.3),
-                ),
+                Text('TECSYS B2B',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary, letterSpacing: 0.3)),
                 SizedBox(height: 2),
-                Text(
-                  'New Project',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-                ),
+                Text('New Project', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
               ],
             ),
             const SizedBox(width: 12),
-            const CircleAvatar(
-              radius: 18,
-              backgroundColor: AppColors.primary,
-              child: Icon(Icons.person, size: 18, color: Colors.white),
-            ),
+            const CircleAvatar(radius: 18, backgroundColor: AppColors.primary, child: Icon(Icons.person, size: 18, color: Colors.white)),
           ],
         ),
         const SizedBox(height: AppSpacing.lg),
-        // Deployment 01 • Draft Mode
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: AppColors.chipBg,
-                borderRadius: BorderRadius.circular(100),
-              ),
-              child: const Text(
-                'Deployment 01',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primary),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(width: 6, height: 6, decoration: const BoxDecoration(color: AppColors.textSecondary, shape: BoxShape.circle)),
-            const SizedBox(width: 4),
-            const Text('Draft Mode', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.md),
-        const Text(
-          'New Project',
-          style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-        ),
+        const Text('New Project', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
         const SizedBox(height: 6),
-        const Text(
-          'Configure basic deployment parameters.',
-          style: TextStyle(fontSize: 15, color: AppColors.textSecondary),
-        ),
+        const Text('Busque a área de estudo, depois refine e salve o projeto.',
+            style: TextStyle(fontSize: 15, color: AppColors.textSecondary)),
         const SizedBox(height: AppSpacing.xl),
-        AuthTextField(
-          label: 'Region *',
-          hint: 'e.g., Southeast / SP',
-          controller: _regionController,
-          prefixIcon: Icons.public,
-          trailing: _subLabel('Geographic Zone'),
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        AuthTextField(
-          label: 'Energy Provider *',
-          hint: 'e.g., Enel Distribuição',
-          controller: _providerController,
-          prefixIcon: Icons.bolt,
-          trailing: _subLabel('Local Grid'),
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        AuthTextField(
-          label: 'Equipment Type *',
-          hint: 'e.g., Solar Inverter B2',
-          controller: _equipmentController,
-          prefixIcon: Icons.settings_input_antenna,
-          trailing: _subLabel('Hardware profile'),
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        _AdvancedSettingsCard(
-          hostController: _hostController,
-          portController: _portController,
-          protocol: _protocol,
-          onProtocolChanged: (v) => setState(() => _protocol = v ?? _protocol),
-          syncInterval: _syncInterval,
-          onSyncIntervalChanged: (v) => setState(() => _syncInterval = v ?? _syncInterval),
-          offlineBuffer: _offlineBuffer,
-          onOfflineBufferChanged: (v) => setState(() => _offlineBuffer = v),
-          teamAccess: _teamAccess,
-          onTeamAccessChanged: (v) => setState(() => _teamAccess = v ?? _teamAccess),
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        SizedBox(
-          width: double.infinity,
-          height: 52,
-          child: ElevatedButton(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Project created with advanced configuration!')),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              elevation: 0,
-            ),
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('Save and Continue', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                SizedBox(width: 8),
-                Icon(Icons.arrow_forward, size: 20),
-              ],
-            ),
+        _fieldLabel('Nome do Projeto'),
+        TextField(
+          controller: _nomeProjetoController,
+          style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
+          decoration: InputDecoration(
+            hintText: 'ex: Cobertura RF - Zona Leste SJC',
+            hintStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            filled: true,
+            fillColor: AppColors.inputFill,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
           ),
         ),
-        const SizedBox(height: AppSpacing.sm),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.verified_user, size: 14, color: AppColors.primary),
-            const SizedBox(width: 6),
-            const Text(
-              'Parameters saved automatically to cloud inventory',
-              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-            ),
-          ],
-        ),
       ],
-      ),
     );
   }
+
+  Widget _sectionLabel(String text) =>
+      Text(text, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary));
+
+  Widget _fieldLabel(String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Text(text, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+      );
 }
 
-class _AdvancedSettingsCard extends StatefulWidget {
-  final TextEditingController hostController;
-  final TextEditingController portController;
-  final String protocol;
-  final ValueChanged<String?> onProtocolChanged;
-  final String syncInterval;
-  final ValueChanged<String?> onSyncIntervalChanged;
-  final bool offlineBuffer;
-  final ValueChanged<bool> onOfflineBufferChanged;
-  final String teamAccess;
-  final ValueChanged<String?> onTeamAccessChanged;
+// ===========================================================================
+// Multi-select de município — busca na API do IBGE, permite escolher
+// 1 ou mais cidades. Campo simples (sem mapa/geocoding embutido — a
+// Etapa 1 só usa o código, o mapa só aparece depois da busca real).
+// ===========================================================================
 
-  const _AdvancedSettingsCard({
-    required this.hostController,
-    required this.portController,
-    required this.protocol,
-    required this.onProtocolChanged,
-    required this.syncInterval,
-    required this.onSyncIntervalChanged,
-    required this.offlineBuffer,
-    required this.onOfflineBufferChanged,
-    required this.teamAccess,
-    required this.onTeamAccessChanged,
-  });
+class _MunicipioMultiSelectField extends StatefulWidget {
+  final List<Municipio> selecionados;
+  final String distCode;
+  final ValueChanged<List<Municipio>> onChanged;
+
+  const _MunicipioMultiSelectField({required this.selecionados, required this.distCode, required this.onChanged});
 
   @override
-  State<_AdvancedSettingsCard> createState() => _AdvancedSettingsCardState();
+  State<_MunicipioMultiSelectField> createState() => _MunicipioMultiSelectFieldState();
 }
 
-class _AdvancedSettingsCardState extends State<_AdvancedSettingsCard> {
-  bool _expanded = false;
+class _MunicipioMultiSelectFieldState extends State<_MunicipioMultiSelectField> {
+  final _ibge = IbgeService();
+  final _pointsService = PointsFilterService();
 
-  InputDecoration _fieldDecoration(String hint) {
-    return InputDecoration(
-      hintText: hint,
-      hintStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
-      isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      filled: true,
-      fillColor: AppColors.inputFill,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: AppColors.primary, width: 1.4),
-      ),
-    );
-  }
+  // Cache simples: já sabemos que essa cidade tem (true) ou não tem
+  // (false) dado no banco — evita checar de novo a cada reabertura.
+  final Map<int, bool> _validadas = {};
 
-  Widget _fieldLabel(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Text(text, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-    );
-  }
+  Future<void> _abrirSeletor() async {
+    final selecaoTemp = List<Municipio>.from(widget.selecionados);
+    final resultado = await showDialog<List<Municipio>>(
+      context: context,
+      builder: (context) {
+        final buscaController = TextEditingController();
+        List<Municipio> resultados = [];
+        bool buscando = false;
+        int? validandoCodigo; // código IBGE em checagem no momento, pra mostrar o spinner na linha certa
 
-  Widget _dropdown<T extends String>(List<String> options, String value, ValueChanged<String?> onChanged) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(color: AppColors.inputFill, borderRadius: BorderRadius.circular(12)),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: value,
-          isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.textSecondary),
-          style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
-          items: options.map((o) => DropdownMenuItem(value: o, child: Text(o))).toList(),
-          onChanged: onChanged,
-        ),
-      ),
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            Future<void> buscar(String texto) async {
+              if (texto.trim().length < 2) {
+                setModalState(() => resultados = []);
+                return;
+              }
+              setModalState(() => buscando = true);
+              final r = await _ibge.buscarPorNome(texto);
+              setModalState(() {
+                resultados = r;
+                buscando = false;
+              });
+            }
+
+            Future<void> alternar(Municipio m, bool marcar) async {
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+              if (!marcar) {
+                setModalState(() => selecaoTemp.remove(m));
+                return;
+              }
+
+              // Já validamos essa cidade antes (nessa sessão do seletor)?
+              final jaSabido = _validadas[m.codigoIbge];
+              if (jaSabido == false) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${m.nome} não tem dados carregados no banco ainda.')));
+                return;
+              }
+              if (jaSabido == true) {
+                setModalState(() => selecaoTemp.add(m));
+                return;
+              }
+
+              // Ainda não sabemos — pergunta pro backend (reaproveita o
+              // POST /api/v1/points/filter que já existe, só com essa
+              // cidade, pra ver se ele tem algum ponto cadastrado).
+              if (widget.distCode.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Preenche a Empresa/Distribuidora antes de escolher a cidade.')));
+                return;
+              }
+
+              setModalState(() => validandoCodigo = m.codigoIbge);
+              bool temDado;
+              try {
+                final resultadoBusca = await _pointsService.buscarPontos(
+                  distCodes: [widget.distCode],
+                  munCodes: [m.codigoIbge.toString()],
+                );
+                temDado = resultadoBusca.totalPoints > 0;
+              } catch (_) {
+                // Backend fora do ar ou erro de rede — não bloqueia a
+                // seleção nesse caso (evita travar o usuário por causa
+                // de instabilidade momentânea), só avisa.
+                temDado = true;
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context)
+                    ..hideCurrentSnackBar()
+                    ..showSnackBar(const SnackBar(content: Text('Não foi possível confirmar com o servidor agora — cidade adicionada mesmo assim.')));
+                }
+              }
+
+              _validadas[m.codigoIbge] = temDado;
+              setModalState(() => validandoCodigo = null);
+
+              if (temDado) {
+                setModalState(() => selecaoTemp.add(m));
+              } else if (context.mounted) {
+                ScaffoldMessenger.of(context)
+                  ..hideCurrentSnackBar()
+                  ..showSnackBar(SnackBar(content: Text('${m.nome} não tem dados carregados no banco ainda.')));
+              }
+            }
+
+            final tamanhoTela = MediaQuery.of(context).size;
+            final larguraDialogo = tamanhoTela.width < 520 ? tamanhoTela.width * 0.92 : 480.0;
+            final alturaDialogo = tamanhoTela.height * 0.8;
+
+            return Dialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: SizedBox(
+                width: larguraDialogo,
+                height: alturaDialogo,
+                child: Padding(
+                padding: EdgeInsets.only(
+                  left: AppSpacing.lg,
+                  right: AppSpacing.lg,
+                  top: AppSpacing.lg,
+                  bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.lg,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(child: Text('Município(s)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
+                        InkWell(
+                          onTap: () => Navigator.pop(context),
+                          borderRadius: BorderRadius.circular(20),
+                          child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.close, size: 20, color: AppColors.textSecondary)),
+                        ),
+                      ],
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.only(top: 2, bottom: 4),
+                      child: Text('Aparece o Brasil inteiro, mas só deixa marcar cidade com dado carregado no banco.',
+                          style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                    ),
+                    TextField(
+                      controller: buscaController,
+                      onChanged: buscar,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        hintText: 'Digite o nome da cidade (ex: São José)',
+                        prefixIcon: buscando
+                            ? const Padding(padding: EdgeInsets.all(14), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))
+                            : const Icon(Icons.search),
+                        isDense: true,
+                        filled: true,
+                        fillColor: AppColors.inputFill,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    if (selecaoTemp.isNotEmpty)
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: selecaoTemp
+                            .map((m) => Chip(
+                                  label: Text(m.rotulo, style: const TextStyle(fontSize: 12)),
+                                  onDeleted: () => setModalState(() => selecaoTemp.remove(m)),
+                                  backgroundColor: AppColors.chipBg,
+                                ))
+                            .toList(),
+                      ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: resultados.length,
+                        itemBuilder: (context, i) {
+                          final m = resultados[i];
+                          final jaSelecionado = selecaoTemp.contains(m);
+                          final validandoEssa = validandoCodigo == m.codigoIbge;
+                          return CheckboxListTile(
+                            value: jaSelecionado,
+                            enabled: !validandoEssa,
+                            title: Text(m.rotulo),
+                            secondary: validandoEssa ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : null,
+                            activeColor: AppColors.primary,
+                            onChanged: validandoEssa ? null : (v) => alternar(m, v ?? false),
+                          );
+                        },
+                      ),
+                    ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: validandoCodigo != null ? null : () => Navigator.pop(context, selecaoTemp),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          disabledBackgroundColor: AppColors.inputFill,
+                          foregroundColor: Colors.white,
+                          disabledForegroundColor: AppColors.textSecondary,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: const Text('Aplicar'),
+                      ),
+                    ),
+                  ],
+                ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
+    if (resultado != null) widget.onChanged(resultado);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFFE4E8EF)),
-        borderRadius: BorderRadius.circular(14),
+    return InkWell(
+      onTap: _abrirSeletor,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(color: AppColors.inputFill, borderRadius: BorderRadius.circular(12)),
+        child: Row(
+          children: [
+            const Icon(Icons.location_city, size: 18, color: AppColors.textSecondary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                widget.selecionados.isEmpty ? 'Buscar município(s)...' : widget.selecionados.map((m) => m.nome).join(', '),
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 14, color: widget.selecionados.isEmpty ? AppColors.textSecondary : AppColors.textPrimary),
+              ),
+            ),
+            const Icon(Icons.keyboard_arrow_down, color: AppColors.textSecondary),
+          ],
+        ),
       ),
+    );
+  }
+}
+
+// ===========================================================================
+// Campo de "chips" — digita um código/nome, vira chip removível.
+// ===========================================================================
+
+class _ChipInputField extends StatefulWidget {
+  final String label;
+  final String hint;
+  final List<String> values;
+  final ValueChanged<List<String>> onChanged;
+
+  const _ChipInputField({required this.label, required this.hint, required this.values, required this.onChanged});
+
+  @override
+  State<_ChipInputField> createState() => _ChipInputFieldState();
+}
+
+class _ChipInputFieldState extends State<_ChipInputField> {
+  final _controller = TextEditingController();
+
+  void _adicionar() {
+    final texto = _controller.text.trim();
+    if (texto.isEmpty || widget.values.contains(texto)) return;
+    widget.onChanged([...widget.values, texto]);
+    _controller.clear();
+  }
+
+  void _remover(String v) => widget.onChanged(widget.values.where((e) => e != v).toList());
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Text(widget.label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _controller,
+                onSubmitted: (_) => _adicionar(),
+                style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
+                decoration: InputDecoration(
+                  hintText: widget.hint,
+                  hintStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  filled: true,
+                  fillColor: AppColors.inputFill,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            InkWell(
+              onTap: _adicionar,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(color: AppColors.infoBlueBg, borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.add, color: AppColors.infoBlue),
+              ),
+            ),
+          ],
+        ),
+        if (widget.values.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: widget.values
+                .map((v) => Chip(
+                      label: Text(v, style: const TextStyle(fontSize: 12)),
+                      onDeleted: () => _remover(v),
+                      backgroundColor: AppColors.chipBg,
+                      deleteIconColor: AppColors.textSecondary,
+                    ))
+                .toList(),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ===========================================================================
+// Multi-select com lista fixa (bottom sheet com checkboxes).
+// ===========================================================================
+
+class _MultiSelectSheetField extends StatelessWidget {
+  final String label;
+  final List<String> options;
+  final List<String> selected;
+  final ValueChanged<List<String>> onChanged;
+
+  const _MultiSelectSheetField({required this.label, required this.options, required this.selected, required this.onChanged});
+
+  Future<void> _abrirSeletor(BuildContext context) async {
+    final selecaoTemp = List<String>.from(selected);
+    final resultado = await showModalBottomSheet<List<String>>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: AppSpacing.sm),
+                    ...options.map((opt) => CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: selecaoTemp.contains(opt),
+                          title: Text(opt),
+                          activeColor: AppColors.primary,
+                          onChanged: (v) {
+                            setModalState(() {
+                              if (v == true) {
+                                selecaoTemp.add(opt);
+                              } else {
+                                selecaoTemp.remove(opt);
+                              }
+                            });
+                          },
+                        )),
+                    const SizedBox(height: AppSpacing.sm),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(context, selecaoTemp),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: const Text('Aplicar'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (resultado != null) onChanged(resultado);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => _abrirSeletor(context),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(color: AppColors.inputFill, borderRadius: BorderRadius.circular(12)),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                selected.isEmpty ? label : selected.join(', '),
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 14, color: selected.isEmpty ? AppColors.textSecondary : AppColors.textPrimary),
+              ),
+            ),
+            const Icon(Icons.keyboard_arrow_down, color: AppColors.textSecondary),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ===========================================================================
+// Card "Filtros Adicionais" — Classe/Subclasse, CNAE, Bairro, CSV.
+// ===========================================================================
+
+class _OptionalFiltersCard extends StatefulWidget {
+  final List<String> clasSubOptions;
+  final List<String> clasSub;
+  final ValueChanged<List<String>> onClasSubChanged;
+  final List<String> cnaeCodes;
+  final ValueChanged<List<String>> onCnaeChanged;
+  final List<String> bairroNames;
+  final ValueChanged<List<String>> onBairroChanged;
+  final bool includeCustomCsv;
+  final ValueChanged<bool> onIncludeCustomCsvChanged;
+
+  const _OptionalFiltersCard({
+    required this.clasSubOptions,
+    required this.clasSub,
+    required this.onClasSubChanged,
+    required this.cnaeCodes,
+    required this.onCnaeChanged,
+    required this.bairroNames,
+    required this.onBairroChanged,
+    required this.includeCustomCsv,
+    required this.onIncludeCustomCsvChanged,
+  });
+
+  @override
+  State<_OptionalFiltersCard> createState() => _OptionalFiltersCardState();
+}
+
+class _OptionalFiltersCardState extends State<_OptionalFiltersCard> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE4E8EF)), borderRadius: BorderRadius.circular(14)),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
@@ -275,84 +933,29 @@ class _AdvancedSettingsCardState extends State<_AdvancedSettingsCard> {
           onExpansionChanged: (v) => setState(() => _expanded = v),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          trailing: Icon(
-            _expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-            size: 22,
-            color: AppColors.textSecondary,
-          ),
+          trailing: Icon(_expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 22, color: AppColors.textSecondary),
           leading: Container(
             width: 36,
             height: 36,
             decoration: BoxDecoration(color: AppColors.inputFill, borderRadius: BorderRadius.circular(10)),
             child: const Icon(Icons.tune, size: 18, color: AppColors.primary),
           ),
-          title: const Text(
-            'Advanced Settings',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-          ),
-          subtitle: const Text(
-            'Voltage & transmission scope',
-            style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
-          ),
+          title: const Text('Filtros Adicionais', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+          subtitle: const Text('Classe, CNAE, bairro e dados customizados', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
           children: [
-            _fieldLabel('IP / Server Host'),
-            TextField(
-              controller: widget.hostController,
-              style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
-              decoration: _fieldDecoration('192.168.1.100 or server.domain.com'),
-            ),
+            _MultiSelectSheetField(label: 'Classe / Subclasse', options: widget.clasSubOptions, selected: widget.clasSub, onChanged: widget.onClasSubChanged),
             const SizedBox(height: AppSpacing.md),
-            _fieldLabel('Port & Protocol'),
-            Row(
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: TextField(
-                    controller: widget.portController,
-                    keyboardType: TextInputType.number,
-                    style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
-                    decoration: _fieldDecoration('8080'),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  flex: 3,
-                  child: _dropdown(
-                    const ['HTTPS', 'MQTT', 'WebSocket'],
-                    widget.protocol,
-                    widget.onProtocolChanged,
-                  ),
-                ),
-              ],
-            ),
+            _ChipInputField(label: 'Código CNAE', hint: 'ex: 3511-5/01', values: widget.cnaeCodes, onChanged: widget.onCnaeChanged),
             const SizedBox(height: AppSpacing.md),
-            _fieldLabel('Sync Interval'),
-            _dropdown(
-              const ['Real-time', 'Every 15 minutes', 'Hourly', 'Daily'],
-              widget.syncInterval,
-              widget.onSyncIntervalChanged,
-            ),
+            _ChipInputField(label: 'Nome do Bairro', hint: 'ex: Jardim Aquarius', values: widget.bairroNames, onChanged: widget.onBairroChanged),
             const SizedBox(height: AppSpacing.sm),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              value: widget.offlineBuffer,
-              onChanged: widget.onOfflineBufferChanged,
+              value: widget.includeCustomCsv,
+              onChanged: widget.onIncludeCustomCsvChanged,
               activeColor: AppColors.primary,
-              title: const Text(
-                'Offline Buffer Mode',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-              ),
-              subtitle: const Text(
-                'Enable offline data buffering',
-                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            _fieldLabel('Team Access / Role'),
-            _dropdown(
-              const ['Distribution Center Staff', 'Regional Managers', 'Full Admin'],
-              widget.teamAccess,
-              widget.onTeamAccessChanged,
+              title: const Text('Incluir CSV Customizado', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+              subtitle: const Text('Considerar pontos importados manualmente via CSV', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
             ),
           ],
         ),

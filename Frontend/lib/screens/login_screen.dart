@@ -8,7 +8,6 @@ import '../widgets/auth_scaffold.dart';
 import '../widgets/auth_text_field.dart';
 import '../widgets/first_access_modal.dart';
 import '../navigation/account_actions.dart' show openResetPassword;
-import 'map_screen.dart';
 import 'new_project_screen.dart';
 import 'projects_screen.dart';
 import 'users_screen.dart';
@@ -105,7 +104,6 @@ class _LoginScreenState extends State<LoginScreen> {
           tabs: [
             const ProjectsScreen(),
             const NewProjectScreen(),
-            const MapScreen(),
             if (isAdmin) const UsersScreen(),
           ],
           onLoginTap: (ctx) => showAccountMenu(ctx),
