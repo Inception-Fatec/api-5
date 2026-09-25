@@ -30,6 +30,9 @@ class PointsRefinementMap extends StatefulWidget {
   const PointsRefinementMap({
     super.key,
     this.areasCidades = const {},
+    this.contagensCidades = const {},
+    this.contagensAreas = const {},
+    this.totalPontosBanco,
     this.onRemoverCidade,
     this.features = const [],
     this.areasMonitoramento = const [],
@@ -38,11 +41,24 @@ class PointsRefinementMap extends StatefulWidget {
     this.mostrarToggleRelevo = true,
     this.height = 320,
     this.permitirDesenho = true,
-    this.telaCheia = false,
   });
 
   /// Cidades escolhidas → sua própria área geocodificada.
   final Map<Municipio, SelectedArea> areasCidades;
+
+  /// Contagem EXATA (do backend, `count_only`) por cidade/área — usa
+  /// isso pro número do chip quando disponível; se a cidade/área
+  /// ainda não tiver entrada aqui (resposta ainda não voltou), cai de
+  /// volta pra estimativa local (retângulo) só como placeholder
+  /// temporário, marcada com "~".
+  final Map<Municipio, int> contagensCidades;
+  final Map<Map<String, dynamic>, int> contagensAreas;
+
+  /// Total oficial de pontos, vindo direto do backend (`total_points`
+  /// da última busca) — usado no seletor "Todos" pra garantir que
+  /// esse número sempre reflita o banco, sem depender de contagem
+  /// local derivada. null enquanto ainda não veio nenhuma resposta.
+  final int? totalPontosBanco;
 
   /// Chamado quando o X de uma cidade é tocado — só aparece quando
   /// tem mais de uma cidade selecionada (Grupo A exige pelo menos
@@ -68,11 +84,6 @@ class PointsRefinementMap extends StatefulWidget {
   final bool mostrarToggleRelevo;
   final double height;
   final bool permitirDesenho;
-
-  /// Marca que essa instância já É a versão em tela cheia — evita
-  /// mostrar o botão de "abrir tela cheia" dentro da própria tela
-  /// cheia (senão abriria uma tela cheia dentro da outra).
-  final bool telaCheia;
 
   @override
   State<PointsRefinementMap> createState() => _PointsRefinementMapState();
@@ -156,11 +167,6 @@ class _PointsRefinementMapState extends State<PointsRefinementMap> {
   bool _dentro(LatLng p, SelectedArea a) => p.latitude >= a.south && p.latitude <= a.north && p.longitude >= a.west && p.longitude <= a.east;
 
   /// Quantos pontos (do total real) caem dentro dessa área — usado
-  /// pra mostrar a contagem no chip. Comparação simples de
-  /// retângulo, barata mesmo com dezenas de milhares de pontos (só
-  /// não DESENHA todos eles).
-  int _contarDentro(SelectedArea a) => _pontosLatLng.where((p) => _dentro(p, a)).length;
-
   /// Resolve a [SelectedArea] de um id de isolamento (Municipio ou
   /// Map de área desenhada).
   SelectedArea? _areaDe(Object id) {
@@ -232,7 +238,7 @@ class _PointsRefinementMapState extends State<PointsRefinementMap> {
         if (!mounted) return;
         final bounds = _boundsGerais;
         if (bounds == null) return;
-        _mapController.fitCamera(CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(32)));
+        _mapController.fitCamera(CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(32), maxZoom: 16));
       });
     }
   }
@@ -250,13 +256,13 @@ class _PointsRefinementMapState extends State<PointsRefinementMap> {
       });
       final bounds = _boundsGerais;
       if (bounds != null) {
-        _mapController.fitCamera(CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(32)));
+        _mapController.fitCamera(CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(32), maxZoom: 16));
       }
       return;
     }
 
     _mapController.fitCamera(
-      CameraFit.bounds(bounds: LatLngBounds(LatLng(area.south, area.west), LatLng(area.north, area.east)), padding: const EdgeInsets.all(32)),
+      CameraFit.bounds(bounds: LatLngBounds(LatLng(area.south, area.west), LatLng(area.north, area.east)), padding: const EdgeInsets.all(32), maxZoom: 16),
     );
     setState(() => _areaIsolada = id);
     // Pisca duas vezes na entrada, pra dar um "pop" visual, e fica
@@ -384,7 +390,10 @@ class _PointsRefinementMapState extends State<PointsRefinementMap> {
   }
 
   Future<void> _escolherLimite() async {
-    final total = _pontosLatLng.length;
+    // Usa o total OFICIAL do banco (mandado pelo pai), não a
+    // contagem local de pontos já parseados — evita qualquer
+    // possibilidade dos dois divergirem.
+    final total = widget.totalPontosBanco ?? _pontosLatLng.length;
     final escolha = await showModalBottomSheet<int?>(
       context: context,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
@@ -440,9 +449,12 @@ class _PointsRefinementMapState extends State<PointsRefinementMap> {
           children: [
             Expanded(
               child: Text(
-                pontosTotal.length > pontosDesenhados.length
-                    ? 'Mostrando ${pontosDesenhados.length} de ${pontosTotal.length} pontos'
-                    : '${pontosTotal.length} ponto(s)',
+                () {
+                  final totalOficial = widget.totalPontosBanco ?? pontosTotal.length;
+                  return totalOficial > pontosDesenhados.length
+                      ? 'Mostrando ${pontosDesenhados.length} de $totalOficial pontos'
+                      : '$totalOficial ponto(s)';
+                }(),
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
               ),
@@ -497,35 +509,42 @@ class _PointsRefinementMapState extends State<PointsRefinementMap> {
               runSpacing: 6,
               children: [
                 ...widget.areasCidades.entries.map((e) {
-                  final contagem = _contarDentro(e.value);
+                  final contagemExata = widget.contagensCidades[e.key];
                   final selecionada = isolada == e.key;
                   final podeRemover = widget.areasCidades.length > 1 && widget.onRemoverCidade != null;
-                  return GestureDetector(
-                    onTap: () => _alternarIsolamento(e.key, e.value),
-                    child: Chip(
-                      avatar: Icon(Icons.location_city, size: 14, color: selecionada ? Colors.white : AppColors.infoBlue),
-                      label: Text('${e.key.rotulo} ($contagem)',
-                          style: TextStyle(fontSize: 12, color: selecionada ? Colors.white : null, fontWeight: selecionada ? FontWeight.w700 : null)),
-                      backgroundColor: selecionada ? AppColors.infoBlue : AppColors.infoBlueBg,
-                      side: selecionada ? const BorderSide(color: AppColors.infoBlue, width: 1.5) : null,
-                      onDeleted: podeRemover ? () => widget.onRemoverCidade!(e.key) : null,
-                      deleteIconColor: selecionada ? Colors.white : AppColors.textSecondary,
+                  return Tooltip(
+                    message: contagemExata != null ? 'Contagem exata do banco.' : 'Calculando a contagem exata...',
+                    child: GestureDetector(
+                      onTap: () => _alternarIsolamento(e.key, e.value),
+                      child: Chip(
+                        avatar: Icon(Icons.location_city, size: 14, color: selecionada ? Colors.white : AppColors.infoBlue),
+                        label: Text(
+                            contagemExata != null ? '${e.key.rotulo} ($contagemExata)' : '${e.key.rotulo} (...)',
+                            style: TextStyle(fontSize: 12, color: selecionada ? Colors.white : null, fontWeight: selecionada ? FontWeight.w700 : null)),
+                        backgroundColor: selecionada ? AppColors.infoBlue : AppColors.infoBlueBg,
+                        side: selecionada ? const BorderSide(color: AppColors.infoBlue, width: 1.5) : null,
+                        onDeleted: podeRemover ? () => widget.onRemoverCidade!(e.key) : null,
+                        deleteIconColor: selecionada ? Colors.white : AppColors.textSecondary,
+                      ),
                     ),
                   );
                 }),
                 ...widget.areasMonitoramento.asMap().entries.map((e) {
                   final area = _areaDoPoligono(e.value);
-                  final contagem = area == null ? 0 : _contarDentro(area);
+                  final contagemExata = widget.contagensAreas[e.value];
                   final selecionada = isolada == e.value;
-                  return GestureDetector(
-                    onTap: area == null ? null : () => _alternarIsolamento(e.value, area),
-                    child: Chip(
-                      avatar: Icon(Icons.crop_square, size: 14, color: selecionada ? Colors.white : Colors.deepOrange),
-                      label: Text('Área ${e.key + 1} ($contagem)',
-                          style: TextStyle(fontSize: 12, color: selecionada ? Colors.white : null, fontWeight: selecionada ? FontWeight.w700 : null)),
-                      onDeleted: () => _removerArea(e.key),
-                      backgroundColor: selecionada ? Colors.deepOrange : AppColors.chipBg,
-                      deleteIconColor: selecionada ? Colors.white : AppColors.textSecondary,
+                  return Tooltip(
+                    message: contagemExata != null ? 'Contagem exata do banco.' : 'Calculando a contagem exata...',
+                    child: GestureDetector(
+                      onTap: area == null ? null : () => _alternarIsolamento(e.value, area),
+                      child: Chip(
+                        avatar: Icon(Icons.crop_square, size: 14, color: selecionada ? Colors.white : Colors.deepOrange),
+                        label: Text(contagemExata != null ? 'Área ${e.key + 1} ($contagemExata)' : 'Área ${e.key + 1} (...)',
+                            style: TextStyle(fontSize: 12, color: selecionada ? Colors.white : null, fontWeight: selecionada ? FontWeight.w700 : null)),
+                        onDeleted: () => _removerArea(e.key),
+                        backgroundColor: selecionada ? Colors.deepOrange : AppColors.chipBg,
+                        deleteIconColor: selecionada ? Colors.white : AppColors.textSecondary,
+                      ),
                     ),
                   );
                 }),
@@ -550,7 +569,7 @@ class _PointsRefinementMapState extends State<PointsRefinementMap> {
                 options: MapOptions(
                   initialCenter: bounds?.center ?? const LatLng(-14.2350, -51.9253),
                   initialZoom: bounds != null ? 12 : 4,
-                  initialCameraFit: bounds != null ? CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(32)) : null,
+                  initialCameraFit: bounds != null ? CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(32), maxZoom: 16) : null,
                   minZoom: 3,
                   maxZoom: 18,
                   interactionOptions: const InteractionOptions(flags: InteractiveFlag.all),
@@ -657,10 +676,6 @@ class _PointsRefinementMapState extends State<PointsRefinementMap> {
                       const SizedBox(height: 6),
                       _botaoMapa(Icons.terrain, () => setState(() => _mostrarPainelCamadas = !_mostrarPainelCamadas)),
                     ],
-                    if (!widget.telaCheia) ...[
-                      const SizedBox(height: 6),
-                      _botaoMapa(Icons.fullscreen, _abrirTelaCheia),
-                    ],
                   ],
                 ),
               ),
@@ -700,35 +715,6 @@ class _PointsRefinementMapState extends State<PointsRefinementMap> {
         ),
       ],
     );
-  }
-
-  void _abrirTelaCheia() {
-    Navigator.of(context).push(MaterialPageRoute(
-      fullscreenDialog: true,
-      builder: (context) => Scaffold(
-        appBar: AppBar(
-          title: const Text('Mapa'),
-          leading: IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.of(context).pop()),
-        ),
-        body: Padding(
-          padding: const EdgeInsets.all(12),
-          child: PointsRefinementMap(
-            areasCidades: widget.areasCidades,
-            onRemoverCidade: widget.onRemoverCidade,
-            features: widget.features,
-            areasMonitoramento: widget.areasMonitoramento,
-            onAreasMonitoramentoChanged: widget.onAreasMonitoramentoChanged,
-            targetLayers: widget.targetLayers,
-            mostrarToggleRelevo: widget.mostrarToggleRelevo,
-            permitirDesenho: widget.permitirDesenho,
-            telaCheia: true,
-            // MediaQuery aqui já é o da tela nova (cheia), então isso
-            // preenche a altura toda disponível abaixo do AppBar.
-            height: MediaQuery.of(context).size.height - kToolbarHeight - 40,
-          ),
-        ),
-      ),
-    ));
   }
 
   Widget _botaoMapa(IconData icon, VoidCallback onTap) {

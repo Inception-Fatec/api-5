@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
@@ -59,6 +61,13 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
   // dessa mesma área.
   Map<Municipio, SelectedArea> _areasCidades = {};
 
+  // Contagem EXATA (vinda do backend, count_only) por cidade/área —
+  // substitui a estimativa por retângulo aproximado que o mapa fazia
+  // sozinho antes. null enquanto ainda não veio a resposta (o mapa
+  // usa a estimativa como placeholder só até isso chegar).
+  Map<Municipio, int> _contagensCidades = {};
+  Map<Map<String, dynamic>, int> _contagensAreas = {};
+
   // Etapa 2 — só relevante depois de ter pontos carregados
   List<Map<String, dynamic>> _areasMonitoramento = [];
   final List<String> _conjCodes = [];
@@ -74,6 +83,14 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
   int? _totalFinal;
 
   static const _targetLayerOptions = ['alto', 'medio', 'baixo', 'all'];
+
+  static String _rotuloNivelTensao(String valor) => switch (valor) {
+        'alto' => 'Alto',
+        'medio' => 'Médio',
+        'baixo' => 'Baixo',
+        'all' => 'Todos',
+        _ => valor,
+      };
 
   // TODO: valores de exemplo — confirmar com o dicionário oficial de
   // CLAS_SUB da BDGD antes de fechar essa lista.
@@ -95,6 +112,7 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
 
   @override
   void dispose() {
+    _debounceFiltro?.cancel();
     _nomeProjetoController.dispose();
     super.dispose();
   }
@@ -173,6 +191,8 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
       _totalFinal = null;
       _features = [];
       _totalEtapa1 = null;
+      _contagensCidades = {};
+      _contagensAreas = {};
     });
 
     // 2) Tenta o backend de verdade, por trás — se ele ainda não
@@ -188,6 +208,10 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
         _features = doCache.features;
         _buscandoEtapa1 = false;
       });
+      // Sem isso, os chips de cidade ficavam esperando pra sempre um
+      // filtro mudar — a contagem por cidade nunca rodava sozinha
+      // logo depois da busca inicial.
+      _atualizarContagensPorPeca(++_pedidoFiltroId);
       return;
     }
 
@@ -206,6 +230,7 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
           _avisoEtapa1 = 'Backend não retornou pontos ainda (endpoint em desenvolvimento) — mostrando a área pela cidade.';
         }
       });
+      _atualizarContagensPorPeca(++_pedidoFiltroId);
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -226,9 +251,30 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
 
   int _pedidoFiltroId = 0;
 
+  // Espera um instante depois da ÚLTIMA mudança de filtro antes de
+  // perguntar pro backend — sem isso, preencher vários campos rápido
+  // (ex: CNAE e Bairro em seguida) disparava uma busca por campo, e
+  // cada uma cancelava a anterior antes dela terminar, deixando os
+  // chips presos num valor de um filtro incompleto no meio do
+  // caminho. Com o debounce, só a combinação final (depois que você
+  // para de mexer) realmente vai pro backend.
+  Timer? _debounceFiltro;
+
+  void _agendarAtualizacaoFiltros() {
+    _debounceFiltro?.cancel();
+    _debounceFiltro = Timer(const Duration(milliseconds: 500), _atualizarPontosComFiltros);
+  }
+
   Future<void> _atualizarPontosComFiltros() async {
     final meuPedido = ++_pedidoFiltroId;
-    setState(() => _aplicandoFiltros = true);
+    setState(() {
+      _aplicandoFiltros = true;
+      // Qualquer filtro mudando invalida o resultado do último
+      // "Salvar Projeto" — sem isso, aquele número ficava parado na
+      // tela parecendo atual mesmo depois de mudar os filtros.
+      _totalFinal = null;
+      _projetoSalvo = false;
+    });
 
     try {
       final poligono = _montarMultiPolygon();
@@ -251,6 +297,10 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
         _totalEtapa1 = resultado.totalPoints;
         _aplicandoFiltros = false;
       });
+      // Contagem exata por cidade/área, pros chips do mapa — roda
+      // depois da principal, não trava a atualização do mapa em si
+      // esperando isso (são N chamadas extras, uma por peça).
+      _atualizarContagensPorPeca(meuPedido);
     } catch (_) {
       if (!mounted || meuPedido != _pedidoFiltroId) return;
       setState(() => _aplicandoFiltros = false);
@@ -258,6 +308,72 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
         ..hideCurrentSnackBar()
         ..showSnackBar(const SnackBar(content: Text('Não foi possível atualizar os pontos com esses filtros agora.')));
     }
+  }
+
+  /// Contagem EXATA por peça (cada cidade **e** cada área desenhada,
+  /// sempre as duas, mesmo que só uma delas seja a que realmente vale
+  /// pro envio final — Grupo A continua mutuamente excludente pro
+  /// que é ENVIADO, mas os chips mostram tudo com filtro aplicado,
+  /// mesmo o que não está sendo usado no momento). Uma chamada
+  /// `count_only` por peça, com os MESMOS filtros de Grupo B já
+  /// aplicados — TODAS em paralelo (Future.wait), não uma atrás da
+  /// outra. Sequencial era lento demais: se você preenche vários
+  /// campos rápido, cada mudança cancela a busca anterior (pra não
+  /// mostrar dado desatualizado) — e uma busca sequencial por várias
+  /// cidades quase nunca tinha tempo de terminar antes do próximo
+  /// campo chegar, deixando o chip preso num valor antigo pra sempre.
+  Future<void> _atualizarContagensPorPeca(int meuPedido) async {
+    final resultadosAreas = await Future.wait(_areasMonitoramento.map((area) async {
+      try {
+        final r = await _service.buscarPontos(
+          distCodes: [_distCode],
+          polygonGeoJson: area,
+          conjCodes: _conjCodes,
+          subCodes: _subCodesNormalizados,
+          targetLayers: _targetLayers,
+          clasSub: _clasSub.map((v) => v.split(' — ').first).toList(),
+          cnaeCodes: _cnaeCodes,
+          bairroNames: _bairroNames.map(normalizarTexto).map((v) => v.toUpperCase()).toList(),
+          countOnly: true,
+        );
+        return MapEntry(area, r.totalPoints);
+      } catch (_) {
+        // Uma peça falhando não derruba as outras — só fica sem
+        // número exato pra essa (o chip cai de volta pra "...").
+        return null;
+      }
+    }));
+    if (meuPedido != _pedidoFiltroId) return; // desatualizado, descarta
+    final novasContagensAreas = <Map<String, dynamic>, int>{
+      for (final e in resultadosAreas)
+        if (e != null) e.key: e.value,
+    };
+    if (mounted) setState(() => _contagensAreas = novasContagensAreas);
+
+    final resultadosCidades = await Future.wait(_municipios.map((m) async {
+      try {
+        final r = await _service.buscarPontos(
+          distCodes: [_distCode],
+          munCodes: [m.codigoIbge.toString()],
+          conjCodes: _conjCodes,
+          subCodes: _subCodesNormalizados,
+          targetLayers: _targetLayers,
+          clasSub: _clasSub.map((v) => v.split(' — ').first).toList(),
+          cnaeCodes: _cnaeCodes,
+          bairroNames: _bairroNames.map(normalizarTexto).map((v) => v.toUpperCase()).toList(),
+          countOnly: true,
+        );
+        return MapEntry(m, r.totalPoints);
+      } catch (_) {
+        return null;
+      }
+    }));
+    if (meuPedido != _pedidoFiltroId) return;
+    final novasContagensCidades = <Municipio, int>{
+      for (final e in resultadosCidades)
+        if (e != null) e.key: e.value,
+    };
+    if (mounted) setState(() => _contagensCidades = novasContagensCidades);
   }
 
   // -----------------------------------------------------------------------
@@ -269,54 +385,52 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
   // já está filtrado/selecionado, pra mandar pra lá.
   // -----------------------------------------------------------------------
 
+  /// "Salvar Projeto" — não faz mais nenhuma chamada nova ao backend
+  /// pra "resultado final": simplesmente reaproveita [_totalEtapa1],
+  /// que é o MESMO total já calculado e mostrado ao vivo no mapa a
+  /// cada filtro (via [_atualizarPontosComFiltros]). Antes, isso
+  /// fazia uma segunda consulta independente — e mesmo mandando (na
+  /// teoria) o mesmo payload, às vezes voltava um número diferente
+  /// do que já estava na tela, sem causa raiz clara. Reaproveitar o
+  /// valor elimina esse risco por completo: os dois números agora
+  /// são literalmente a mesma variável, não duas consultas que podem
+  /// divergir.
   Future<void> _salvarProjeto() async {
-    setState(() {
-      _salvando = true;
-      _totalFinal = null;
-      _projetoSalvo = false;
-    });
-
-    try {
-      // Se existe área de monitoramento desenhada, delimita SÓ por
-      // ela (polygon_geojson) — não manda mun_codes junto. Sem área
-      // desenhada, delimita pelas cidades inteiras. São dois jeitos
-      // de definir o Grupo A que não devem se combinar: ou uma coisa,
-      // ou outra, nunca as duas ao mesmo tempo.
-      final poligono = _montarMultiPolygon();
-      final resultado = await _service.buscarPontos(
-        distCodes: [_distCode],
-        munCodes: poligono == null ? _municipios.map((m) => m.codigoIbge.toString()).toList() : const [],
-        conjCodes: _conjCodes,
-        subCodes: _subCodesNormalizados,
-        polygonGeoJson: poligono,
-        targetLayers: _targetLayers,
-        clasSub: _clasSub.map((v) => v.split(' — ').first).toList(),
-        cnaeCodes: _cnaeCodes,
-        bairroNames: _bairroNames.map(normalizarTexto).map((v) => v.toUpperCase()).toList(),
-      );
-      if (!mounted) return;
-      setState(() {
-        _totalFinal = resultado.totalPoints;
-        _projetoSalvo = true;
-      });
-      // Volta o botão ao normal depois de um tempo — sem persistência
-      // de verdade ainda, "Salvo" é só uma confirmação visual.
-      Future.delayed(const Duration(seconds: 3), () {
-        if (mounted) setState(() => _projetoSalvo = false);
-      });
-    } on PointsFilterException catch (e) {
-      if (!mounted) return;
+    final nomeProjeto = _nomeProjetoController.text.trim();
+    if (nomeProjeto.isEmpty) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(e.message)));
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('Erro inesperado. Tente novamente.')));
-    } finally {
-      if (mounted) setState(() => _salvando = false);
+        ..showSnackBar(const SnackBar(content: Text('Preenche o Nome do Projeto antes de salvar.')));
+      return;
     }
+
+    setState(() => _salvando = true);
+
+    // Se ainda não tem um total calculado com os filtros atuais
+    // (ex: primeira vez, ou algum filtro mudou e a atualização ainda
+    // não terminou), calcula agora antes de "salvar".
+    if (_totalEtapa1 == null || _aplicandoFiltros) {
+      await _atualizarPontosComFiltros();
+      if (!mounted) return;
+    }
+
+    if (_totalEtapa1 == null) {
+      // A atualização falhou (sem conexão, etc) — já mostrou o aviso
+      // lá dentro; aqui só não segue pra "salvar" sem um total real.
+      setState(() => _salvando = false);
+      return;
+    }
+
+    setState(() {
+      _totalFinal = _totalEtapa1;
+      _projetoSalvo = true;
+      _salvando = false;
+    });
+    // Volta o botão ao normal depois de um tempo — sem persistência
+    // de verdade ainda, "Salvo" é só uma confirmação visual.
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _projetoSalvo = false);
+    });
   }
 
   /// Combina as áreas de monitoramento desenhadas (0, 1 ou várias) num
@@ -429,15 +543,24 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
               ),
             PointsRefinementMap(
               areasCidades: _areasCidades,
-              onRemoverCidade: (m) => setState(() {
-                _municipios.remove(m);
-                _areasCidades = Map.of(_areasCidades)..remove(m);
-              }),
+              contagensCidades: _contagensCidades,
+              contagensAreas: _contagensAreas,
+              totalPontosBanco: _totalEtapa1,
+              onRemoverCidade: (m) {
+                setState(() {
+                  _municipios.remove(m);
+                  _areasCidades = Map.of(_areasCidades)..remove(m);
+                  _contagensCidades = Map.of(_contagensCidades)..remove(m);
+                });
+                // Sem isso, o total geral ficava parado com o valor
+                // de quando a cidade removida ainda estava incluída.
+                _agendarAtualizacaoFiltros();
+              },
               features: _features,
               areasMonitoramento: _areasMonitoramento,
               onAreasMonitoramentoChanged: (areas) {
                 setState(() => _areasMonitoramento = areas);
-                _atualizarPontosComFiltros();
+                _agendarAtualizacaoFiltros();
               },
               targetLayers: _targetLayers,
               permitirDesenho: true,
@@ -449,26 +572,32 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
               label: 'Alto / Médio / Baixo / Todos',
               options: _targetLayerOptions,
               selected: _targetLayers,
-              onChanged: (v) => setState(() => _targetLayers = List<String>.from(v)),
+              onChanged: (v) {
+                setState(() => _targetLayers = List<String>.from(v));
+                _agendarAtualizacaoFiltros();
+              },
+              rotulo: _rotuloNivelTensao,
             ),
             const SizedBox(height: AppSpacing.md),
             _ChipInputField(
+              key: const ValueKey('campo_conjunto'),
               label: 'Conjunto Elétrico',
               hint: 'ex: 17113',
               values: _conjCodes,
               onChanged: (v) {
                 setState(() { _conjCodes..clear()..addAll(v); });
-                _atualizarPontosComFiltros();
+                _agendarAtualizacaoFiltros();
               },
             ),
             const SizedBox(height: AppSpacing.md),
             _ChipInputField(
+              key: const ValueKey('campo_subestacao'),
               label: 'Subestação',
               hint: 'ex: SJC',
               values: _subCodes,
               onChanged: (v) {
                 setState(() { _subCodes..clear()..addAll(v); });
-                _atualizarPontosComFiltros();
+                _agendarAtualizacaoFiltros();
               },
             ),
             const SizedBox(height: AppSpacing.lg),
@@ -477,17 +606,17 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
               clasSub: _clasSub,
               onClasSubChanged: (v) {
                 setState(() { _clasSub..clear()..addAll(v); });
-                _atualizarPontosComFiltros();
+                _agendarAtualizacaoFiltros();
               },
               cnaeCodes: _cnaeCodes,
               onCnaeChanged: (v) {
                 setState(() { _cnaeCodes..clear()..addAll(v); });
-                _atualizarPontosComFiltros();
+                _agendarAtualizacaoFiltros();
               },
               bairroNames: _bairroNames,
               onBairroChanged: (v) {
                 setState(() { _bairroNames..clear()..addAll(v); });
-                _atualizarPontosComFiltros();
+                _agendarAtualizacaoFiltros();
               },
             ),
             const SizedBox(height: AppSpacing.lg),
@@ -564,7 +693,7 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
         const Text('Busque a área de estudo, depois refine e salve o projeto.',
             style: TextStyle(fontSize: 15, color: AppColors.textSecondary)),
         const SizedBox(height: AppSpacing.xl),
-        _fieldLabel('Nome do Projeto'),
+        _fieldLabel('Nome do Projeto *'),
         TextField(
           controller: _nomeProjetoController,
           style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
@@ -875,7 +1004,7 @@ class _ChipInputField extends StatefulWidget {
   final List<String> values;
   final ValueChanged<List<String>> onChanged;
 
-  const _ChipInputField({required this.label, required this.hint, required this.values, required this.onChanged});
+  const _ChipInputField({super.key, required this.label, required this.hint, required this.values, required this.onChanged});
 
   @override
   State<_ChipInputField> createState() => _ChipInputFieldState();
@@ -969,7 +1098,12 @@ class _MultiSelectSheetField extends StatelessWidget {
   final List<String> selected;
   final ValueChanged<List<String>> onChanged;
 
-  const _MultiSelectSheetField({required this.label, required this.options, required this.selected, required this.onChanged});
+  /// Opcional — traduz o valor real (o que é salvo/enviado, ex:
+  /// "medio") pra um rótulo bonito só pra mostrar na tela (ex:
+  /// "Médio"). Sem isso, mostra o valor cru mesmo.
+  final String Function(String valor)? rotulo;
+
+  const _MultiSelectSheetField({required this.label, required this.options, required this.selected, required this.onChanged, this.rotulo});
 
   Future<void> _abrirSeletor(BuildContext context) async {
     final selecaoTemp = List<String>.from(selected);
@@ -998,7 +1132,7 @@ class _MultiSelectSheetField extends StatelessWidget {
                               .map((opt) => CheckboxListTile(
                                     contentPadding: EdgeInsets.zero,
                                     value: selecaoTemp.contains(opt),
-                                    title: Text(opt),
+                                    title: Text(rotulo?.call(opt) ?? opt),
                                     activeColor: AppColors.primary,
                                     onChanged: (v) {
                                       setModalState(() {
@@ -1051,7 +1185,7 @@ class _MultiSelectSheetField extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                selected.isEmpty ? label : selected.join(', '),
+                selected.isEmpty ? label : selected.map((v) => rotulo?.call(v) ?? v).join(', '),
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 14, color: selected.isEmpty ? AppColors.textSecondary : AppColors.textPrimary),
               ),
@@ -1117,9 +1251,9 @@ class _OptionalFiltersCardState extends State<_OptionalFiltersCard> {
           children: [
             _MultiSelectSheetField(label: 'Classe / Subclasse', options: widget.clasSubOptions, selected: widget.clasSub, onChanged: widget.onClasSubChanged),
             const SizedBox(height: AppSpacing.md),
-            _ChipInputField(label: 'Código CNAE', hint: 'ex: 3511-5/01', values: widget.cnaeCodes, onChanged: widget.onCnaeChanged),
+            _ChipInputField(key: const ValueKey('campo_cnae'), label: 'Código CNAE', hint: 'ex: 3511-5/01', values: widget.cnaeCodes, onChanged: widget.onCnaeChanged),
             const SizedBox(height: AppSpacing.md),
-            _ChipInputField(label: 'Nome do Bairro', hint: 'ex: Jardim Aquarius', values: widget.bairroNames, onChanged: widget.onBairroChanged),
+            _ChipInputField(key: const ValueKey('campo_bairro'), label: 'Nome do Bairro', hint: 'ex: Jardim Aquarius', values: widget.bairroNames, onChanged: widget.onBairroChanged),
           ],
         ),
       ),

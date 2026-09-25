@@ -26,6 +26,20 @@ public class PointCustomRepository {
 
         Set<TableMetadata> targetTables = resolveTablesFromTensionLevels(request.targetLayers());
 
+        // clas_sub / cnae / brr só existem nas tabelas de consumidor
+        // (ucat_pj, ucmt_pj, ucbt). Se algum desses filtros estiver
+        // ativo, as tabelas de rede/estrutura (sub, untrat, untrmt,
+        // ssdat, ssdmt, ssdbt) saem da consulta de vez — sem isso,
+        // elas entravam SEM FILTRO nenhum (por não terem essas
+        // colunas pra restringir), inflando o total com segmentos de
+        // rede que não têm classe/CNAE/bairro nenhum.
+        boolean temFiltroDeAtributo = (request.clasSub() != null && !request.clasSub().isEmpty())
+                || (request.cnaeCodes() != null && !request.cnaeCodes().isEmpty())
+                || (request.bairroNames() != null && !request.bairroNames().isEmpty());
+        if (temFiltroDeAtributo) {
+            targetTables = targetTables.stream().filter(t -> t.hasAttributes).collect(Collectors.toSet());
+        }
+
         for (TableMetadata meta : targetTables) {
             StringBuilder subQuery = new StringBuilder();
 
@@ -94,8 +108,18 @@ public class PointCustomRepository {
                     params.addValue("cnaeCodes", request.cnaeCodes());
                 }
                 if (request.bairroNames() != null && !request.bairroNames().isEmpty()) {
-                    subQuery.append(" AND brr IN (:bairroNames) ");
-                    params.addValue("bairroNames", request.bairroNames());
+                    // Bairro funciona por TRECHO (ILIKE), não
+                    // igualdade exata — nomes de bairro são longos
+                    // e compostos (ex: "REGIAO DA FAZENDA RIALTA"),
+                    // então digitar só uma parte precisa achar mesmo
+                    // assim, igual já funciona na busca de cidade.
+                    List<String> condicoesBairro = new ArrayList<>();
+                    for (int i = 0; i < request.bairroNames().size(); i++) {
+                        String nomeParametro = "bairro" + i;
+                        condicoesBairro.add("brr ILIKE :" + nomeParametro);
+                        params.addValue(nomeParametro, "%" + request.bairroNames().get(i) + "%");
+                    }
+                    subQuery.append(" AND (").append(String.join(" OR ", condicoesBairro)).append(") ");
                 }
             }
 
