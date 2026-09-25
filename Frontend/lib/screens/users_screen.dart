@@ -1,43 +1,28 @@
 import 'package:flutter/material.dart';
-
-import '../app_shell.dart';
-import '../navigation/account_actions.dart' show handleLogout;
-import '../services/api_exception.dart';
-import '../services/auth_service.dart';
-import '../services/user_api_service.dart';
-import '../services/user_model.dart';
 import '../theme/app_theme.dart';
-import '../widgets/add_user_dialog.dart';
-import '../widgets/common/app_footer.dart';
-import '../widgets/common/page_body.dart';
+import 'add_user_dialog.dart';
 
+class _TeamMember {
+  final String name;
+  final String email;
+  final String role;
+  final String addedDate;
 
-/// Users screen — gestão de usuários (US-34). Mesmo padrão das outras
-/// telas do shell (ProjectsScreen/MapScreen/NewProjectScreen):
-/// [PageBody] garante Material ancestral, [LayoutBuilder] escolhe entre
-/// layout mobile (lista empilhada) e web (grade + header em linha), e a
-/// navegação/BottomNav some daqui — quem monta isso é só o AppShell.
-///
-/// RN04 / CA07: rota restrita a ADM. Um USER que cair aqui (deep link,
-/// state antigo etc.) vê um bloqueio inline com o mesmo aviso e é
-/// redirecionado pro AppShell.
-///
-/// RN03: o backend não devolve id de volta no login (AuthResponseDto
-/// só tem token/role/mustChangePassword), então "é você mesmo" é
-/// decidido comparando `AuthService.instance.email` com o e-mail de
-/// cada linha da lista — e-mail é único, funciona como um id faria.
-///
-/// Ponto que ainda depende de um arquivo que eu não tenho:
-/// pressupõe que `AddUserDialog` devolve um objeto com `fullName`,
-/// `email`, `password` e `role` (String 'ADM'/'USER') — o campo
-/// `password` é novo em relação ao protótipo original, porque o
-/// backend exige senha no cadastro (UserCreateDto). Se o dialog atual
-/// não tiver esse campo, precisa adicionar.
-///
-/// Também falta registrar esta tela como aba no AppShell (com item de
-/// nav visível só pra ADM) — não mexi em app_shell.dart/nav_items.dart
-/// porque isso toca a fonte única de navegação; confirma comigo antes
-/// se quiser que eu faça essa parte também.
+  const _TeamMember({
+    required this.name,
+    required this.email,
+    required this.role,
+    required this.addedDate,
+  });
+
+  String get initials {
+    final parts = name.trim().split(' ');
+    final first = parts.isNotEmpty ? parts.first[0] : '';
+    final last = parts.length > 1 ? parts.last[0] : '';
+    return (first + last).toUpperCase();
+  }
+}
+
 class UsersScreen extends StatefulWidget {
   const UsersScreen({super.key});
 
@@ -46,583 +31,557 @@ class UsersScreen extends StatefulWidget {
 }
 
 class _UsersScreenState extends State<UsersScreen> {
-  static const _webBreakpoint = 900.0;
-  static const _homeTabIndex = 0; // aba "Projects" no AppShell
+  String _searchQuery = '';
+  String _selectedRole = 'All';
 
-  List<AppUser> _members = [];
-  bool _isLoading = true;
-  String? _loadError;
-  bool _accessDenied = false;
+  final List<_TeamMember> _members = const [
+    _TeamMember(name: 'John Doe', email: 'john.doe@tecsys.com', role: 'ADMIN', addedDate: 'Sep 2024'),
+    _TeamMember(name: 'Ana Silva', email: 'ana.silva@tecsys.com', role: 'USER', addedDate: 'Oct 2024'),
+    _TeamMember(name: 'Carlos Santos', email: 'carlos.s@tecsys.com', role: 'USER', addedDate: 'Nov 2024'),
+    _TeamMember(name: 'Mariana Lima', email: 'mariana.l@tecsys.com', role: 'ADMIN', addedDate: 'Jan 2025'),
+  ];
 
-  @override
-  void initState() {
-    super.initState();
-    _checkAccessThenLoad();
+  List<_TeamMember> get _filteredMembers {
+    return _members.where((member) {
+      final matchesSearch = member.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          member.email.toLowerCase().contains(_searchQuery.toLowerCase());
+      final matchesRole = _selectedRole == 'All' || member.role == _selectedRole;
+      return matchesSearch && matchesRole;
+    }).toList();
   }
 
-  // RN04/CA07 — bloqueia USER antes mesmo de tentar carregar a lista
-  // (o backend também bloqueia via @PreAuthorize, isso aqui é só UX).
-  void _checkAccessThenLoad() {
-    final role = AuthService.instance.role;
-    if (role != 'ADM') {
-      setState(() {
-        _accessDenied = true;
-        _isLoading = false;
-      });
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Acesso negado: Requer privilégios de Administrador.'),
-          ),
-        );
-        final shell = AppShell.of(context);
-        if (shell != null) {
-          shell.goToTab(_homeTabIndex);
-        } else {
-          Navigator.of(context).pop();
-        }
-      });
-      return;
-    }
-    _loadUsers();
-  }
-
-  Future<void> _loadUsers() async {
-    setState(() {
-      _isLoading = true;
-      _loadError = null;
-    });
-    try {
-      final users = await UserApiService.instance.listUsers();
-      if (!mounted) return;
-      setState(() {
-        _members = users;
-        _isLoading = false;
-      });
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _loadError = e.message;
-        _isLoading = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _loadError = 'Não foi possível conectar ao servidor.';
-        _isLoading = false;
-      });
-    }
-  }
+  int get _adminCount => _members.where((m) => m.role == 'ADMIN').length;
+  int get _userCount => _members.where((m) => m.role == 'USER').length;
 
   Future<void> _openAddUser() async {
     final result = await showAddUserDialog(context);
     if (result == null || !mounted) return;
-
-    try {
-      await UserApiService.instance.createUser(
-        name: result.fullName,
-        email: result.email,
-        password: result.password,
-        role: result.role,
-      );
-      if (!mounted) return;
-      // CA02 — mensagem de sucesso mapeada no DoR.
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Usuário cadastrado com sucesso. A senha inicial exigirá alteração no primeiro acesso.',
-          ),
-        ),
-      );
-      await _loadUsers();
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      // Cobre o 409 de e-mail duplicado e outros erros de validação
-      // que o backend devolver — a mensagem já vem pronta do ApiClient.
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Não foi possível conectar ao servidor.')),
-      );
-    }
-  }
-
-  bool _isSelf(AppUser member) {
-    final myEmail = AuthService.instance.email;
-    if (myEmail == null) return false;
-    return member.email.toLowerCase() == myEmail.toLowerCase();
-  }
-
-  Future<void> _confirmDelete(AppUser member) async {
-    final isSelf = _isSelf(member);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(isSelf ? 'Excluir sua própria conta?' : 'Excluir usuário?'),
-        content: Text(
-          isSelf
-              ? 'Isso vai excluir sua conta e encerrar sua sessão agora.'
-              : 'Isso vai excluir a conta de ${member.name} (${member.email}).',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancelar')),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Excluir', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${result.fullName} added as ${result.role}')),
     );
-    if (confirmed != true) return;
-    await _deleteUser(member, isSelf: isSelf);
-  }
-
-  Future<void> _deleteUser(AppUser member, {required bool isSelf}) async {
-    try {
-      await UserApiService.instance.deleteUser(member.id);
-      if (!mounted) return;
-
-      if (isSelf) {
-        // CA06 — auto-exclusão de ADM encerra a sessão ativa. Reusa o
-        // mesmo helper de logout do menu de conta (account_actions.dart)
-        // em vez de reimplementar a navegação de volta ao login.
-        await AuthService.instance.logout();
-        if (!mounted) return;
-        handleLogout(context);
-        return;
-      }
-
-      setState(() => _members = _members.where((m) => m.id != member.id).toList());
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${member.name} removido.')),
-      );
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      // CA05 — 403 ao tentar excluir outro ADM (não deveria disparar,
-      // já que o botão fica oculto, mas cobre corrida/estado velho).
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Não foi possível conectar ao servidor.')),
-      );
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return PageBody(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isWeb = constraints.maxWidth >= _webBreakpoint;
-          return isWeb ? _buildWebBody(context) : _buildMobileBody(context);
-        },
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Ponto de corte para separar Web/Desktop de Mobile (768 pixéis)
+        bool isDesktop = constraints.maxWidth >= 768;
+
+        if (isDesktop) {
+          return _UsersWebView(
+            members: _members,
+            filteredMembers: _filteredMembers,
+            searchQuery: _searchQuery,
+            selectedRole: _selectedRole,
+            adminCount: _adminCount,
+            userCount: _userCount,
+            onSearchChanged: (val) => setState(() => _searchQuery = val),
+            onRoleChanged: (val) => setState(() => _selectedRole = val ?? 'All'),
+            onAddUser: _openAddUser,
+          );
+        } else {
+          return _UsersMobileView(
+            members: _members,
+            filteredMembers: _filteredMembers,
+            searchQuery: _searchQuery,
+            selectedRole: _selectedRole,
+            adminCount: _adminCount,
+            userCount: _userCount,
+            onSearchChanged: (val) => setState(() => _searchQuery = val),
+            onRoleChanged: (val) => setState(() => _selectedRole = val ?? 'All'),
+            onAddUser: _openAddUser,
+          );
+        }
+      },
     );
   }
+}
 
-  // ---------------------------------------------------------------------
-  // WEB LAYOUT
-  // ---------------------------------------------------------------------
+/// ==========================================
+/// VISTA WEB / DESKTOP (Ecrãs Largos)
+/// ==========================================
+class _UsersWebView extends StatelessWidget {
+  final List<_TeamMember> members;
+  final List<_TeamMember> filteredMembers;
+  final String searchQuery;
+  final String selectedRole;
+  final int adminCount;
+  final int userCount;
+  final ValueChanged<String> onSearchChanged;
+  final ValueChanged<String?> onRoleChanged;
+  final VoidCallback onAddUser;
 
-  Widget _buildWebBody(BuildContext context) {
-    return CustomScrollView(
-      slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl, vertical: AppSpacing.lg),
-          sliver: SliverToBoxAdapter(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+  const _UsersWebView({
+    required this.members,
+    required this.filteredMembers,
+    required this.searchQuery,
+    required this.selectedRole,
+    required this.adminCount,
+    required this.userCount,
+    required this.onSearchChanged,
+    required this.onRoleChanged,
+    required this.onAddUser,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 900),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(24, 28, 24, 100),
               children: [
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Text(
-                                'Users',
-                                style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-                              ),
-                              const SizedBox(width: 8),
-                              _CountChip(count: _members.length),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          const Text(
-                            'Contas e níveis de acesso da plataforma',
-                            style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
-                          ),
-                        ],
-                      ),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: _openAddUser,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        elevation: 0,
-                      ),
-                      icon: const Icon(Icons.add, size: 18),
-                      label: const Text('Add User', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                _buildContent(gridColumns: 2),
-              ],
-            ),
-          ),
-        ),
-        SliverFillRemaining(
-          hasScrollBody: false,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: const [AppFooter()],
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ---------------------------------------------------------------------
-  // MOBILE LAYOUT
-  // ---------------------------------------------------------------------
-
-  Widget _buildMobileBody(BuildContext context) {
-    return CustomScrollView(
-      slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          sliver: SliverList(
-            delegate: SliverChildListDelegate([
-              Row(
-                children: [
-                  Image.asset('assets/images/logo.png', height: 26),
-                  const Spacer(),
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        'TECSYS B2B',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary, letterSpacing: 0.3),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        'Users',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(width: 12),
-                  const CircleAvatar(
-                    radius: 18,
-                    backgroundColor: AppColors.primary,
-                    child: Icon(Icons.person, size: 18, color: Colors.white),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              Row(
-                children: [
-                  const Text(
-                    'Users',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-                  ),
-                  const SizedBox(width: 8),
-                  _CountChip(count: _members.length),
-                ],
-              ),
-              const SizedBox(height: 2),
-              const Text(
-                'Contas e níveis de acesso da plataforma',
-                style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton.icon(
-                  onPressed: _openAddUser,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    elevation: 0,
-                  ),
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Add User', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              _buildContent(gridColumns: 1),
-            ]),
-          ),
-        ),
-        SliverFillRemaining(
-          hasScrollBody: false,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: const [AppFooter()],
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ---------------------------------------------------------------------
-  // CONTEÚDO COMPARTILHADO (loading / erro / bloqueio / lista)
-  // ---------------------------------------------------------------------
-
-  Widget _buildContent({required int gridColumns}) {
-    if (_accessDenied) {
-      return const _InlineMessage(
-        icon: Icons.lock_outline,
-        title: 'Acesso negado',
-        message: 'Requer privilégios de Administrador.',
-      );
-    }
-    if (_isLoading) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 48),
-        child: Center(child: CircularProgressIndicator()),
-      );
-    }
-    if (_loadError != null) {
-      return _InlineMessage(
-        icon: Icons.error_outline,
-        title: 'Não foi possível carregar os usuários',
-        message: _loadError!,
-        onRetry: _loadUsers,
-      );
-    }
-    if (_members.isEmpty) {
-      return const _InlineMessage(
-        icon: Icons.people_outline,
-        title: 'Nenhum usuário cadastrado',
-        message: 'Use "Add User" para criar o primeiro acesso.',
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'TEAM MEMBERS (${_members.length})',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: 0.4),
-            ),
-            const Text('Role Filter: All', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        if (gridColumns == 1)
-          Column(
-            children: [
-              for (final member in _members) ...[
-                _MemberCard(
-                  member: member,
-                  isSelf: _isSelf(member),
-                  onDelete: () => _confirmDelete(member),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-              ],
-            ],
-          )
-        else
-          LayoutBuilder(
-            builder: (context, gridConstraints) {
-              const spacing = AppSpacing.md;
-              final cardWidth = (gridConstraints.maxWidth - spacing * (gridColumns - 1)) / gridColumns;
-              return Wrap(
-                spacing: spacing,
-                runSpacing: spacing,
-                children: _members
-                    .map((m) => SizedBox(
-                          width: cardWidth,
-                          child: _MemberCard(
-                            member: m,
-                            isSelf: _isSelf(m),
-                            onDelete: () => _confirmDelete(m),
-                          ),
-                        ))
-                    .toList(),
-              );
-            },
-          ),
-      ],
-    );
-  }
-}
-
-class _CountChip extends StatelessWidget {
-  final int count;
-  const _CountChip({required this.count});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: AppColors.chipBg, borderRadius: BorderRadius.circular(100)),
-      child: Text(
-        '$count ${count == 1 ? 'account' : 'accounts'}',
-        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-      ),
-    );
-  }
-}
-
-class _InlineMessage extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String message;
-  final VoidCallback? onRetry;
-
-  const _InlineMessage({
-    required this.icon,
-    required this.title,
-    required this.message,
-    this.onRetry,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFFE4E8EF)),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, size: 28, color: AppColors.textSecondary),
-          const SizedBox(height: AppSpacing.sm),
-          Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-          const SizedBox(height: 4),
-          Text(message, textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
-          if (onRetry != null) ...[
-            const SizedBox(height: AppSpacing.sm),
-            TextButton(onPressed: onRetry, child: const Text('Tentar novamente')),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// Mesmo visual do protótipo original, agora orientado por [AppUser] e
-/// por RN03: o botão de excluir some para ADMs que não sejam o próprio
-/// usuário logado.
-class _MemberCard extends StatelessWidget {
-  final AppUser member;
-  final bool isSelf;
-  final VoidCallback onDelete;
-
-  const _MemberCard({
-    required this.member,
-    required this.isSelf,
-    required this.onDelete,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isAdmin = member.role == UserRoleType.adm;
-    // RN03: ADM nunca pode excluir outro ADM — só USER ou a si mesmo.
-    final canDelete = !isAdmin || isSelf;
-
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFFE4E8EF)),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: const Color(0xFFF0F1F4),
-                child: Text(
-                  member.initials,
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
                       children: [
-                        Flexible(
-                          child: Text(
-                            member.name,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.primary.withOpacity(0.25),
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
                           ),
+                          alignment: Alignment.center,
+                          child: const Text('T', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22)),
                         ),
-                        if (isSelf) ...[
-                          const SizedBox(width: 6),
-                          const Text('(você)', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                        ],
+                        const SizedBox(width: 14),
+                        const Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Users Management', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: -0.5)),
+                            Text('Tecsys B2B Admin Console', style: TextStyle(fontSize: 13, color: Color(0xFF64748B))),
+                          ],
+                        ),
                       ],
                     ),
-                    Text(member.email, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+                    ElevatedButton.icon(
+                      onPressed: onAddUser,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        elevation: 2,
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.person_add_alt_1_rounded, color: Colors.white, size: 18),
+                      label: const Text('Add User', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                    ),
                   ],
                 ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: isAdmin ? AppColors.background : const Color(0xFFF0F1F4),
-                  borderRadius: BorderRadius.circular(100),
-                  border: isAdmin ? Border.all(color: AppColors.primary, width: 1.2) : null,
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(child: _StatPill(label: 'Total', value: '${members.length}', color: const Color(0xFF0F172A))),
+                    const SizedBox(width: 12),
+                    Expanded(child: _StatPill(label: 'Admins', value: '$adminCount', color: AppColors.primary)),
+                    const SizedBox(width: 12),
+                    Expanded(child: _StatPill(label: 'Users', value: '$userCount', color: const Color(0xFF64748B))),
+                  ],
                 ),
-                child: Text(
-                  member.role.label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.4,
-                    color: isAdmin ? AppColors.primary : AppColors.textSecondary,
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                          boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 8, offset: Offset(0, 2))],
+                        ),
+                        child: TextField(
+                          onChanged: onSearchChanged,
+                          decoration: const InputDecoration(
+                            hintText: 'Search members...',
+                            hintStyle: TextStyle(fontSize: 14, color: Color(0xFF94A3B8)),
+                            prefixIcon: Icon(Icons.search_rounded, size: 20, color: Color(0xFF94A3B8)),
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(vertical: 14),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 8, offset: Offset(0, 2))],
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: selectedRole,
+                          icon: const Icon(Icons.filter_list_rounded, size: 18, color: Color(0xFF64748B)),
+                          items: ['All', 'ADMIN', 'USER'].map((role) {
+                            return DropdownMenuItem(
+                              value: role,
+                              child: Text(role, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+                            );
+                          }).toList(),
+                          onChanged: onRoleChanged,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'TEAM MEMBERS (${filteredMembers.length})',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF64748B), letterSpacing: 0.8),
+                ),
+                const SizedBox(height: 12),
+                if (filteredMembers.isEmpty)
+                  const _EmptyState()
+                else
+                  for (final member in filteredMembers) ...[
+                    _MemberCard(member: member),
+                    const SizedBox(height: 12),
+                  ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// ==========================================
+/// VISTA MOBILE (Ecrãs Estreitos)
+/// ==========================================
+class _UsersMobileView extends StatelessWidget {
+  final List<_TeamMember> members;
+  final List<_TeamMember> filteredMembers;
+  final String searchQuery;
+  final String selectedRole;
+  final int adminCount;
+  final int userCount;
+  final ValueChanged<String> onSearchChanged;
+  final ValueChanged<String?> onRoleChanged;
+  final VoidCallback onAddUser;
+
+  const _UsersMobileView({
+    required this.members,
+    required this.filteredMembers,
+    required this.searchQuery,
+    required this.selectedRole,
+    required this.adminCount,
+    required this.userCount,
+    required this.onSearchChanged,
+    required this.onRoleChanged,
+    required this.onAddUser,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: onAddUser,
+        backgroundColor: AppColors.primary,
+        elevation: 3,
+        icon: const Icon(Icons.person_add_alt_1_rounded, color: Colors.white, size: 20),
+        label: const Text('Add User', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  alignment: Alignment.center,
+                  child: const Text('T', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18)),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Users Management', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: -0.5)),
+                      Text('Tecsys B2B Admin', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                    ],
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          const Divider(height: 1, color: Color(0xFFEDEFF3)),
-          const SizedBox(height: AppSpacing.sm),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              // Excluir fica oculto (não só desabilitado) pra ADM ler outro
-              // ADM — bate com o esboço de UX do DoR ("oculto/desabilitado").
-              if (canDelete)
-                InkWell(
-                  onTap: onDelete,
-                  borderRadius: BorderRadius.circular(8),
-                  child: const Padding(
-                    padding: EdgeInsets.all(4),
-                    child: Icon(Icons.delete_outline, size: 18, color: AppColors.textSecondary),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Expanded(child: _StatPill(label: 'Total', value: '${members.length}', color: const Color(0xFF0F172A))),
+                const SizedBox(width: 8),
+                Expanded(child: _StatPill(label: 'Admins', value: '$adminCount', color: AppColors.primary)),
+                const SizedBox(width: 8),
+                Expanded(child: _StatPill(label: 'Users', value: '$userCount', color: const Color(0xFF64748B))),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: TextField(
+                      onChanged: onSearchChanged,
+                      decoration: const InputDecoration(
+                        hintText: 'Search...',
+                        hintStyle: TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+                        prefixIcon: Icon(Icons.search_rounded, size: 18, color: Color(0xFF94A3B8)),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(vertical: 10),
+                      ),
+                    ),
                   ),
                 ),
-            ],
-          ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: selectedRole,
+                      icon: const Icon(Icons.filter_list_rounded, size: 16, color: Color(0xFF64748B)),
+                      items: ['All', 'ADMIN', 'USER'].map((role) {
+                        return DropdownMenuItem(
+                          value: role,
+                          child: Text(role, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
+                        );
+                      }).toList(),
+                      onChanged: onRoleChanged,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'TEAM MEMBERS (${filteredMembers.length})',
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF64748B), letterSpacing: 0.8),
+            ),
+            const SizedBox(height: 10),
+            if (filteredMembers.isEmpty)
+              const _EmptyState()
+            else
+              for (final member in filteredMembers) ...[
+                _MemberCard(member: member),
+                const SizedBox(height: 10),
+              ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// ==========================================
+/// WIDGETS AUXILIARES
+/// ==========================================
+class _StatPill extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _StatPill({required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFF1F5F9)),
+        boxShadow: const [BoxShadow(color: Color(0x08000000), blurRadius: 10, offset: Offset(0, 4))],
+      ),
+      child: Column(
+        children: [
+          Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: color)),
+          const SizedBox(height: 2),
+          Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8), letterSpacing: 0.3)),
         ],
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 40),
+      alignment: Alignment.center,
+      child: Column(
+        children: [
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(14)),
+            child: const Icon(Icons.search_off_rounded, size: 24, color: Color(0xFF94A3B8)),
+          ),
+          const SizedBox(height: 10),
+          const Text('No members found', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+          const SizedBox(height: 2),
+          const Text('Try a different search or filter', style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8))),
+        ],
+      ),
+    );
+  }
+}
+
+class _MemberCard extends StatelessWidget {
+  final _TeamMember member;
+
+  const _MemberCard({required this.member});
+
+  @override
+  Widget build(BuildContext context) {
+    final isAdmin = member.role == 'ADMIN';
+    final accent = isAdmin ? AppColors.primary : const Color(0xFF94A3B8);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFF1F5F9)),
+        boxShadow: const [BoxShadow(color: Color(0x08000000), blurRadius: 10, offset: Offset(0, 4))],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(width: 4, color: accent),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 20,
+                            backgroundColor: isAdmin ? AppColors.primary.withOpacity(0.12) : const Color(0xFFF1F5F9),
+                            child: Text(
+                              member.initials,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: isAdmin ? AppColors.primary : const Color(0xFF475569),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(member.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+                                const SizedBox(height: 2),
+                                Text(member.email, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: isAdmin ? AppColors.primary.withOpacity(0.1) : const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              member.role,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                color: isAdmin ? AppColors.primary : const Color(0xFF64748B),
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.calendar_today_outlined, size: 12, color: Color(0xFF94A3B8)),
+                              const SizedBox(width: 4),
+                              Text('Added ${member.addedDate}', style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontWeight: FontWeight.w500)),
+                            ],
+                          ),
+                          Row(
+                            children: [
+                              _ActionButton(icon: Icons.edit_outlined, color: const Color(0xFF64748B), onTap: () {}),
+                              const SizedBox(width: 6),
+                              _ActionButton(icon: Icons.delete_outline_rounded, color: const Color(0xFFEF4444), onTap: () {}),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionButton extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _ActionButton({required this.icon, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(color: color.withOpacity(0.08), borderRadius: BorderRadius.circular(6)),
+        child: Icon(icon, size: 15, color: color),
       ),
     );
   }

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'screens/login_screen.dart';
+import 'screens/users_screen.dart'; // <--- Import da sua tela
 import 'theme/app_theme.dart';
 
 void main() {
@@ -15,7 +15,7 @@ class TecsysApp extends StatelessWidget {
       title: 'Tecsys',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
-      home: const LoginScreen(),
+      home: const UsersScreen(), // <--- Abre direto a tela de usuários
     );
   }
 }
