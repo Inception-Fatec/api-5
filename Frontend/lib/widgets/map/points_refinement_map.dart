@@ -38,6 +38,7 @@ class PointsRefinementMap extends StatefulWidget {
     this.mostrarToggleRelevo = true,
     this.height = 320,
     this.permitirDesenho = true,
+    this.telaCheia = false,
   });
 
   /// Cidades escolhidas → sua própria área geocodificada.
@@ -67,6 +68,11 @@ class PointsRefinementMap extends StatefulWidget {
   final bool mostrarToggleRelevo;
   final double height;
   final bool permitirDesenho;
+
+  /// Marca que essa instância já É a versão em tela cheia — evita
+  /// mostrar o botão de "abrir tela cheia" dentro da própria tela
+  /// cheia (senão abriria uma tela cheia dentro da outra).
+  final bool telaCheia;
 
   @override
   State<PointsRefinementMap> createState() => _PointsRefinementMapState();
@@ -651,6 +657,10 @@ class _PointsRefinementMapState extends State<PointsRefinementMap> {
                       const SizedBox(height: 6),
                       _botaoMapa(Icons.terrain, () => setState(() => _mostrarPainelCamadas = !_mostrarPainelCamadas)),
                     ],
+                    if (!widget.telaCheia) ...[
+                      const SizedBox(height: 6),
+                      _botaoMapa(Icons.fullscreen, _abrirTelaCheia),
+                    ],
                   ],
                 ),
               ),
@@ -690,6 +700,35 @@ class _PointsRefinementMapState extends State<PointsRefinementMap> {
         ),
       ],
     );
+  }
+
+  void _abrirTelaCheia() {
+    Navigator.of(context).push(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (context) => Scaffold(
+        appBar: AppBar(
+          title: const Text('Mapa'),
+          leading: IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.of(context).pop()),
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(12),
+          child: PointsRefinementMap(
+            areasCidades: widget.areasCidades,
+            onRemoverCidade: widget.onRemoverCidade,
+            features: widget.features,
+            areasMonitoramento: widget.areasMonitoramento,
+            onAreasMonitoramentoChanged: widget.onAreasMonitoramentoChanged,
+            targetLayers: widget.targetLayers,
+            mostrarToggleRelevo: widget.mostrarToggleRelevo,
+            permitirDesenho: widget.permitirDesenho,
+            telaCheia: true,
+            // MediaQuery aqui já é o da tela nova (cheia), então isso
+            // preenche a altura toda disponível abaixo do AppBar.
+            height: MediaQuery.of(context).size.height - kToolbarHeight - 40,
+          ),
+        ),
+      ),
+    ));
   }
 
   Widget _botaoMapa(IconData icon, VoidCallback onTap) {

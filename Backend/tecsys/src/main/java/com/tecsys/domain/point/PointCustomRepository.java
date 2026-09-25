@@ -78,6 +78,27 @@ public class PointCustomRepository {
                 params.addValue("subCodes", request.subCodes());
             }
 
+            // clas_sub / cnae / brr só existem nas 3 tabelas de
+            // consumidor (ucat_pj, ucmt_pj, ucbt) — as tabelas de
+            // rede/estrutura (sub, untrat, untrmt, ssdat, ssdmt,
+            // ssdbt) não têm essas colunas, então só aplica quando
+            // meta.hasAttributes for true (senão o SQL quebraria
+            // referenciando coluna inexistente).
+            if (meta.hasAttributes) {
+                if (request.clasSub() != null && !request.clasSub().isEmpty()) {
+                    subQuery.append(" AND clas_sub IN (:clasSub) ");
+                    params.addValue("clasSub", request.clasSub());
+                }
+                if (request.cnaeCodes() != null && !request.cnaeCodes().isEmpty()) {
+                    subQuery.append(" AND cnae IN (:cnaeCodes) ");
+                    params.addValue("cnaeCodes", request.cnaeCodes());
+                }
+                if (request.bairroNames() != null && !request.bairroNames().isEmpty()) {
+                    subQuery.append(" AND brr IN (:bairroNames) ");
+                    params.addValue("bairroNames", request.bairroNames());
+                }
+            }
+
             if (request.polygonGeojson() != null && !request.polygonGeojson().isBlank()) {
                 subQuery.append(" AND ST_Intersects(geom, ST_Transform(ST_GeomFromGeoJSON(:polygon), 4674)) ");
                 params.addValue("polygon", request.polygonGeojson());
@@ -87,7 +108,27 @@ public class PointCustomRepository {
         }
 
         if (unionQueries.isEmpty()) {
-            return new PointFilterResponseDto(0L, objectMapper.createArrayNode());
+            return new PointFilterResponseDto(0L, emptyFeatureCollection());
+        }
+
+        boolean countOnly = Boolean.TRUE.equals(request.countOnly());
+        String unionSql = String.join(" UNION ALL ", unionQueries);
+
+        // count_only=true: só interessa "tem ponto ou não" (ex:
+        // validação de cidade no seletor do front) — pula de vez o
+        // ST_AsGeoJSON/jsonb_agg, que é a parte cara aqui (serializar
+        // geometria de cada ponto individualmente). Um SELECT COUNT
+        // sobre a mesma UNION é ordens de magnitude mais rápido com
+        // dezenas de milhares de linhas.
+        if (countOnly) {
+            String countSql = """
+                SELECT COUNT(*) AS total_points FROM (
+                    %s
+                ) f;
+            """.formatted(unionSql);
+
+            Long total = jdbcTemplate.queryForObject(countSql, params, Long.class);
+            return new PointFilterResponseDto(total == null ? 0L : total, emptyFeatureCollection());
         }
 
         String finalSql = """
@@ -107,7 +148,7 @@ public class PointCustomRepository {
                     ), '[]'::jsonb)
                 ) AS geojson_features
             FROM filtered_points f;
-        """.formatted(String.join(" UNION ALL ", unionQueries));
+        """.formatted(unionSql);
 
         return jdbcTemplate.queryForObject(finalSql, params, (rs, rowNum) -> {
             try {
@@ -120,17 +161,29 @@ public class PointCustomRepository {
         });
     }
 
+    private com.fasterxml.jackson.databind.JsonNode emptyFeatureCollection() {
+        // Mesmo formato do caminho "cheio" (objeto FeatureCollection),
+        // só com features vazio — evita que o front receba um []
+        // solto onde ele sempre espera um objeto com campo "features"
+        // dentro (foi exatamente essa inconsistência que quebrava a
+        // validação de cidade no seletor, mesmo com total_points > 0).
+        com.fasterxml.jackson.databind.node.ObjectNode empty = objectMapper.createObjectNode();
+        empty.put("type", "FeatureCollection");
+        empty.putArray("features");
+        return empty;
+    }
+
     private Set<TableMetadata> resolveTablesFromTensionLevels(List<String> targetLayers) {
         List<TableMetadata> allTables = List.of(
-                new TableMetadata("sub", "cod_id", "SUB", false, false),
-                new TableMetadata("ucat_pj", "cod_id_encr", "ALTO", true, true),
-                new TableMetadata("ssdat", "cod_id", "ALTO", false, true),
-                new TableMetadata("untrat", "cod_id", "ALTO", true, true),
-                new TableMetadata("ucmt_pj", "cod_id_encr", "MEDIO", true, true),
-                new TableMetadata("ssdmt", "cod_id", "MEDIO", false, true),
-                new TableMetadata("untrmt", "cod_id", "MEDIO", true, true),
-                new TableMetadata("ucbt", "cod_id_encr", "BAIXO", true, true),
-                new TableMetadata("ssdbt", "cod_id", "BAIXO", false, true)
+                new TableMetadata("sub", "cod_id", "SUB", false, false, false),
+                new TableMetadata("ucat_pj", "cod_id_encr", "ALTO", true, true, true),
+                new TableMetadata("ssdat", "cod_id", "ALTO", false, true, false),
+                new TableMetadata("untrat", "cod_id", "ALTO", true, true, false),
+                new TableMetadata("ucmt_pj", "cod_id_encr", "MEDIO", true, true, true),
+                new TableMetadata("ssdmt", "cod_id", "MEDIO", false, true, false),
+                new TableMetadata("untrmt", "cod_id", "MEDIO", true, true, false),
+                new TableMetadata("ucbt", "cod_id_encr", "BAIXO", true, true, true),
+                new TableMetadata("ssdbt", "cod_id", "BAIXO", false, true, false)
         );
 
         if (targetLayers == null || targetLayers.isEmpty() || targetLayers.contains("all")) {
@@ -143,5 +196,5 @@ public class PointCustomRepository {
                 .collect(Collectors.toSet());
     }
 
-    private record TableMetadata(String tableName, String idColumn, String layerName, boolean hasMun, boolean hasConj) {}
+    private record TableMetadata(String tableName, String idColumn, String layerName, boolean hasMun, boolean hasConj, boolean hasAttributes) {}
 }

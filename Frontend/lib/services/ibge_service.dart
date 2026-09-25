@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+import '../utils/normalizar_texto.dart';
+
 class Municipio {
   final int codigoIbge;
   final String nome;
@@ -61,9 +63,9 @@ class IbgeService {
   Future<List<Municipio>> buscarPorNome(String query) async {
     final todos = await _carregarTodos();
     if (query.trim().isEmpty) return [];
-    final termo = query.toLowerCase();
+    final termo = normalizarTexto(query.toLowerCase());
     return todos
-        .where((m) => m.nome.toLowerCase().contains(termo))
+        .where((m) => normalizarTexto(m.nome.toLowerCase()).contains(termo))
         .take(30)
         .toList();
   }

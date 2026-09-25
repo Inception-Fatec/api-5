@@ -33,7 +33,12 @@ class PointsFilterService {
     List<String>? clasSub,
     List<String>? cnaeCodes,
     List<String>? bairroNames,
-    bool includeCustomCsv = true,
+    // Quando true, pede pro backend pular a montagem do GeoJSON de
+    // cada ponto — só quer saber "tem ponto ou não" (ex: validação de
+    // cidade no seletor). Monta a mesma query, mas sem o custo pesado
+    // de serializar geometria de dezenas de milhares de pontos que
+    // ninguém vai usar nesse momento.
+    bool countOnly = false,
   }) async {
     // RN01 / CA02, espelhado no cliente: pelo menos um delimitador do
     // Grupo A precisa estar preenchido antes de mandar a requisição.
@@ -62,7 +67,7 @@ class PointsFilterService {
       if (clasSub != null && clasSub.isNotEmpty) 'clas_sub': clasSub,
       if (cnaeCodes != null && cnaeCodes.isNotEmpty) 'cnae_codes': cnaeCodes,
       if (bairroNames != null && bairroNames.isNotEmpty) 'bairro_names': bairroNames,
-      'include_custom_csv': includeCustomCsv,
+      if (countOnly) 'count_only': true,
     };
 
     late final Map<String, dynamic> corpo;
@@ -85,7 +90,11 @@ class PointsFilterService {
     // O backend devolve "features" como o FeatureCollection INTEIRO
     // ({"type": "FeatureCollection", "features": [...]}), não como
     // array direto — por isso o acesso ['features']['features'].
-    final featureCollection = corpo['features'] as Map<String, dynamic>?;
+    // Blindado contra o formato vindo como lista solta também (podia
+    // acontecer em respostas de count_only antes da correção no
+    // backend) — trata como "sem pontos" em vez de quebrar.
+    final featuresRaw = corpo['features'];
+    final featureCollection = featuresRaw is Map<String, dynamic> ? featuresRaw : null;
     final listaFeatures = featureCollection?['features'] as List? ?? const [];
     return PointsFilterResult(
       totalPoints: (corpo['total_points'] as num?)?.toInt() ?? 0,

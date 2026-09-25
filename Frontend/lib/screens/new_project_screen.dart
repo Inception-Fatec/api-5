@@ -7,6 +7,7 @@ import '../widgets/map/selected_area.dart';
 import '../services/points_filter_service.dart';
 import '../services/geocoding_service.dart';
 import '../services/ibge_service.dart';
+import '../utils/normalizar_texto.dart';
 
 /// "New Project" screen — fluxo oficial em 2 etapas:
 ///
@@ -66,17 +67,31 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
   final List<String> _clasSub = [];
   final List<String> _cnaeCodes = [];
   final List<String> _bairroNames = [];
-  bool _includeCustomCsv = true;
 
   bool _salvando = false;
   bool _projetoSalvo = false;
+  bool _aplicandoFiltros = false;
   int? _totalFinal;
 
   static const _targetLayerOptions = ['alto', 'medio', 'baixo', 'all'];
 
   // TODO: valores de exemplo — confirmar com o dicionário oficial de
   // CLAS_SUB da BDGD antes de fechar essa lista.
-  static const _clasSubOptions = ['Residencial', 'Industrial', 'Comercial', 'Rural', 'Poder Público', 'Serviço Público'];
+  // Códigos reais confirmados direto no banco (SELECT DISTINCT
+  // clas_sub) — bem diferentes do que a gente tinha chutado antes
+  // (nomes bonitos que não existem de verdade na coluna). Os
+  // prefixos CO/PP/RU/SP batem com o dicionário que o cliente já
+  // tinha passado (Grupo B: IN=Industrial, CO*=Comercial,
+  // RU*=Rural, PP*=Poder Público, SP*=Serviço Público); IP e CPR
+  // não têm significado confirmado ainda — ficam como código puro.
+  static const _clasSubOptions = [
+    'IN — Industrial',
+    'CO1 — Comercial', 'CO4 — Comercial', 'CO5 — Comercial', 'CO6 — Comercial', 'CO8 — Comercial',
+    'PP1 — Poder Público', 'PP2 — Poder Público', 'PP3 — Poder Público',
+    'RU1 — Rural', 'RU2 — Rural', 'RU5 — Rural',
+    'SP2 — Serviço Público',
+    'IP', 'CPR',
+  ];
 
   @override
   void dispose() {
@@ -87,6 +102,27 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
   // -----------------------------------------------------------------------
   // Etapa 1 — busca inicial (RN01, RN02)
   // -----------------------------------------------------------------------
+
+  // Cache simples da Etapa 1 — evita bater no backend de novo (e
+  // reprocessar dezenas de milhares de pontos) se você buscar
+  // exatamente a mesma combinação de empresa+cidades outra vez.
+  final Map<String, PointsFilterResult> _cacheEtapa1 = {};
+
+  // Cache do geocoding por cidade — a área de uma cidade não muda,
+  // então não faz sentido perguntar pro Nominatim nem uma segunda
+  // vez. Isso sozinho já era boa parte da demora de "buscar de novo".
+  final Map<Municipio, SelectedArea> _cacheGeocoding = {};
+
+  String _chaveCache(String dist, List<Municipio> municipios) {
+    final codigos = municipios.map((m) => m.codigoIbge).toList()..sort();
+    return '$dist|${codigos.join(",")}';
+  }
+
+  // Subestação também está gravada em maiúsculo no banco (igual
+  // bairro) — sem isso, "sjc" digitado minúsculo não bate com "SJC"
+  // (Postgres compara texto de forma sensível a maiúscula/minúscula
+  // por padrão).
+  List<String> get _subCodesNormalizados => _subCodes.map((v) => normalizarTexto(v).toUpperCase().trim()).toList();
 
   Future<void> _buscarEtapa1() async {
     final empresa = _distCode;
@@ -102,15 +138,22 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
       _avisoEtapa1 = null;
     });
 
-    // 1) Geocoding das cidades escolhidas — sempre roda, client-side,
-    // não depende do backend. É isso que garante o mapa aparecer.
+    // 1) Geocoding das cidades escolhidas — só busca de verdade a
+    // primeira vez; da segunda em diante, reaproveita o cache. Não
+    // depende do backend. É isso que garante o mapa aparecer.
     // Cada cidade guarda a PRÓPRIA área (não combina mais tudo num
     // retângulo só).
     final novasAreas = <Municipio, SelectedArea>{};
     for (final m in _municipios) {
+      final cacheada = _cacheGeocoding[m];
+      if (cacheada != null) {
+        novasAreas[m] = cacheada;
+        continue;
+      }
       final resultados = await _geocoding.buscar('${m.nome}, ${m.uf}, Brasil');
       if (resultados.isEmpty) continue;
       novasAreas[m] = resultados.first.area;
+      _cacheGeocoding[m] = resultados.first.area;
     }
 
     if (!mounted) return;
@@ -137,12 +180,24 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
     // área geocodificada no passo 1. Assim que o endpoint existir,
     // isso passa a preencher pontos reais automaticamente, sem
     // precisar mudar mais nada aqui.
+    final chave = _chaveCache(empresa, _municipios);
+    final doCache = _cacheEtapa1[chave];
+    if (doCache != null) {
+      setState(() {
+        _totalEtapa1 = doCache.totalPoints;
+        _features = doCache.features;
+        _buscandoEtapa1 = false;
+      });
+      return;
+    }
+
     try {
       final resultado = await _service.buscarPontos(
         distCodes: [empresa],
         munCodes: _municipios.map((m) => m.codigoIbge.toString()).toList(),
       );
       if (!mounted) return;
+      _cacheEtapa1[chave] = resultado;
       setState(() {
         _totalEtapa1 = resultado.totalPoints;
         _features = resultado.features;
@@ -161,11 +216,57 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
   }
 
   // -----------------------------------------------------------------------
+  // Filtros de Grupo B (Conjunto, Subestação, Classe/Subclasse, CNAE,
+  // Bairro) — ao contrário de nível de tensão, o app não sabe de
+  // qual conjunto/subestação/classe/CNAE/bairro é cada ponto só
+  // olhando os dados que já tem (o GeoJSON não carrega isso por
+  // ponto), então precisa perguntar pro backend de novo toda vez que
+  // um desses muda. Atualiza o mapa sozinho, sem precisar de botão.
+  // -----------------------------------------------------------------------
+
+  int _pedidoFiltroId = 0;
+
+  Future<void> _atualizarPontosComFiltros() async {
+    final meuPedido = ++_pedidoFiltroId;
+    setState(() => _aplicandoFiltros = true);
+
+    try {
+      final poligono = _montarMultiPolygon();
+      final resultado = await _service.buscarPontos(
+        distCodes: [_distCode],
+        munCodes: poligono == null ? _municipios.map((m) => m.codigoIbge.toString()).toList() : const [],
+        conjCodes: _conjCodes,
+        subCodes: _subCodesNormalizados,
+        polygonGeoJson: poligono,
+        targetLayers: _targetLayers,
+        clasSub: _clasSub.map((v) => v.split(' — ').first).toList(),
+        cnaeCodes: _cnaeCodes,
+        bairroNames: _bairroNames.map(normalizarTexto).map((v) => v.toUpperCase()).toList(),
+      );
+      // Se, enquanto esperava essa resposta, outro filtro já mudou de
+      // novo, essa resposta está desatualizada — descarta.
+      if (!mounted || meuPedido != _pedidoFiltroId) return;
+      setState(() {
+        _features = resultado.features;
+        _totalEtapa1 = resultado.totalPoints;
+        _aplicandoFiltros = false;
+      });
+    } catch (_) {
+      if (!mounted || meuPedido != _pedidoFiltroId) return;
+      setState(() => _aplicandoFiltros = false);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('Não foi possível atualizar os pontos com esses filtros agora.')));
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Etapa 2 — "Salvar Projeto": manda o conjunto consolidado pro
-  // backend (CA06). Como ainda não existe persistência de projeto de
-  // verdade, isso só troca o botão pra um estado "Salvo" por alguns
-  // segundos — não mexe mais no mapa (quem filtra o mapa agora é o
-  // toggle de nível de tensão, na hora, sem chamada de rede).
+  // backend (CA06) e confirma visualmente. Ainda não existe
+  // persistência de projeto de verdade (isso viraria uma task de
+  // tela de Projetos/relatórios, fora do escopo daqui) — quando
+  // existir, esse é o ponto onde entra o nome do projeto + tudo que
+  // já está filtrado/selecionado, pra mandar pra lá.
   // -----------------------------------------------------------------------
 
   Future<void> _salvarProjeto() async {
@@ -176,17 +277,22 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
     });
 
     try {
+      // Se existe área de monitoramento desenhada, delimita SÓ por
+      // ela (polygon_geojson) — não manda mun_codes junto. Sem área
+      // desenhada, delimita pelas cidades inteiras. São dois jeitos
+      // de definir o Grupo A que não devem se combinar: ou uma coisa,
+      // ou outra, nunca as duas ao mesmo tempo.
+      final poligono = _montarMultiPolygon();
       final resultado = await _service.buscarPontos(
         distCodes: [_distCode],
-        munCodes: _municipios.map((m) => m.codigoIbge.toString()).toList(),
+        munCodes: poligono == null ? _municipios.map((m) => m.codigoIbge.toString()).toList() : const [],
         conjCodes: _conjCodes,
-        subCodes: _subCodes,
-        polygonGeoJson: _montarMultiPolygon(),
+        subCodes: _subCodesNormalizados,
+        polygonGeoJson: poligono,
         targetLayers: _targetLayers,
-        clasSub: _clasSub,
+        clasSub: _clasSub.map((v) => v.split(' — ').first).toList(),
         cnaeCodes: _cnaeCodes,
-        bairroNames: _bairroNames,
-        includeCustomCsv: _includeCustomCsv,
+        bairroNames: _bairroNames.map(normalizarTexto).map((v) => v.toUpperCase()).toList(),
       );
       if (!mounted) return;
       setState(() {
@@ -310,6 +416,17 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
               style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),
             const SizedBox(height: AppSpacing.sm),
+            if (_aplicandoFiltros)
+              const Padding(
+                padding: EdgeInsets.only(bottom: AppSpacing.sm),
+                child: Row(
+                  children: [
+                    SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+                    SizedBox(width: 8),
+                    Text('Atualizando pontos com os filtros...', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                  ],
+                ),
+              ),
             PointsRefinementMap(
               areasCidades: _areasCidades,
               onRemoverCidade: (m) => setState(() {
@@ -318,10 +435,13 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
               }),
               features: _features,
               areasMonitoramento: _areasMonitoramento,
-              onAreasMonitoramentoChanged: (areas) => setState(() => _areasMonitoramento = areas),
+              onAreasMonitoramentoChanged: (areas) {
+                setState(() => _areasMonitoramento = areas);
+                _atualizarPontosComFiltros();
+              },
               targetLayers: _targetLayers,
               permitirDesenho: true,
-              height: 360,
+              height: MediaQuery.of(context).size.width >= 900 ? 560 : 360,
             ),
             const SizedBox(height: AppSpacing.lg),
             _fieldLabel('Nível de Tensão'),
@@ -336,28 +456,43 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
               label: 'Conjunto Elétrico',
               hint: 'ex: 17113',
               values: _conjCodes,
-              onChanged: (v) => setState(() { _conjCodes..clear()..addAll(v); }),
+              onChanged: (v) {
+                setState(() { _conjCodes..clear()..addAll(v); });
+                _atualizarPontosComFiltros();
+              },
             ),
             const SizedBox(height: AppSpacing.md),
             _ChipInputField(
               label: 'Subestação',
               hint: 'ex: SJC',
               values: _subCodes,
-              onChanged: (v) => setState(() { _subCodes..clear()..addAll(v); }),
+              onChanged: (v) {
+                setState(() { _subCodes..clear()..addAll(v); });
+                _atualizarPontosComFiltros();
+              },
             ),
             const SizedBox(height: AppSpacing.lg),
             _OptionalFiltersCard(
               clasSubOptions: _clasSubOptions,
               clasSub: _clasSub,
-              onClasSubChanged: (v) => setState(() { _clasSub..clear()..addAll(v); }),
+              onClasSubChanged: (v) {
+                setState(() { _clasSub..clear()..addAll(v); });
+                _atualizarPontosComFiltros();
+              },
               cnaeCodes: _cnaeCodes,
-              onCnaeChanged: (v) => setState(() { _cnaeCodes..clear()..addAll(v); }),
+              onCnaeChanged: (v) {
+                setState(() { _cnaeCodes..clear()..addAll(v); });
+                _atualizarPontosComFiltros();
+              },
               bairroNames: _bairroNames,
-              onBairroChanged: (v) => setState(() { _bairroNames..clear()..addAll(v); }),
-              includeCustomCsv: _includeCustomCsv,
-              onIncludeCustomCsvChanged: (v) => setState(() => _includeCustomCsv = v),
+              onBairroChanged: (v) {
+                setState(() { _bairroNames..clear()..addAll(v); });
+                _atualizarPontosComFiltros();
+              },
             ),
             const SizedBox(height: AppSpacing.lg),
+            _buildIndicadorDelimitacao(),
+            const SizedBox(height: AppSpacing.sm),
             if (_totalFinal != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -444,6 +579,32 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  /// Mostra, de forma clara, qual delimitador vai ser usado no envio
+  /// final — como os dois nunca se combinam (ou área desenhada, ou
+  /// cidade inteira), isso deixa explícito qual dos dois está valendo
+  /// no momento, sem precisar adivinhar.
+  Widget _buildIndicadorDelimitacao() {
+    final temArea = _areasMonitoramento.isNotEmpty;
+    final texto = temArea
+        ? 'Vai buscar só dentro da(s) ${_areasMonitoramento.length} área(s) desenhada(s) — as cidades inteiras não entram no envio.'
+        : 'Vai buscar em toda(s) a(s) cidade(s) selecionada(s) — nenhuma área foi desenhada ainda.';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: temArea ? Colors.deepOrange.withOpacity(0.08) : AppColors.infoBlueBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: temArea ? Colors.deepOrange.withOpacity(0.3) : AppColors.infoBlue.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(temArea ? Icons.crop_square : Icons.location_city, size: 16, color: temArea ? Colors.deepOrange : AppColors.infoBlue),
+          const SizedBox(width: 8),
+          Expanded(child: Text(texto, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
+        ],
+      ),
     );
   }
 
@@ -534,27 +695,31 @@ class _MunicipioMultiSelectFieldState extends State<_MunicipioMultiSelectField> 
               }
 
               setModalState(() => validandoCodigo = m.codigoIbge);
-              bool temDado;
+              bool? temDado;
               try {
                 final resultadoBusca = await _pointsService.buscarPontos(
                   distCodes: [widget.distCode],
                   munCodes: [m.codigoIbge.toString()],
+                  countOnly: true,
                 );
                 temDado = resultadoBusca.totalPoints > 0;
               } catch (_) {
-                // Backend fora do ar ou erro de rede — não bloqueia a
-                // seleção nesse caso (evita travar o usuário por causa
-                // de instabilidade momentânea), só avisa.
-                temDado = true;
+                // Erro de verdade (500, sem conexão, etc) — NÃO deixa
+                // passar. Fica sem marcar no cache (pra poder tentar
+                // de novo depois), mostra o erro, e não adiciona.
+                temDado = null;
                 if (context.mounted) {
                   ScaffoldMessenger.of(context)
                     ..hideCurrentSnackBar()
-                    ..showSnackBar(const SnackBar(content: Text('Não foi possível confirmar com o servidor agora — cidade adicionada mesmo assim.')));
+                    ..showSnackBar(const SnackBar(content: Text('Não foi possível confirmar com o servidor agora. Tente de novo em instantes.')));
                 }
               }
 
-              _validadas[m.codigoIbge] = temDado;
               setModalState(() => validandoCodigo = null);
+
+              if (temDado == null) return; // erro — já avisou acima, não adiciona
+
+              _validadas[m.codigoIbge] = temDado;
 
               if (temDado) {
                 setModalState(() => selecaoTemp.add(m));
@@ -810,6 +975,7 @@ class _MultiSelectSheetField extends StatelessWidget {
     final selecaoTemp = List<String>.from(selected);
     final resultado = await showModalBottomSheet<List<String>>(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) {
         return StatefulBuilder(
@@ -817,41 +983,51 @@ class _MultiSelectSheetField extends StatelessWidget {
             return SafeArea(
               child: Padding(
                 padding: const EdgeInsets.all(AppSpacing.lg),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                    const SizedBox(height: AppSpacing.sm),
-                    ...options.map((opt) => CheckboxListTile(
-                          contentPadding: EdgeInsets.zero,
-                          value: selecaoTemp.contains(opt),
-                          title: Text(opt),
-                          activeColor: AppColors.primary,
-                          onChanged: (v) {
-                            setModalState(() {
-                              if (v == true) {
-                                selecaoTemp.add(opt);
-                              } else {
-                                selecaoTemp.remove(opt);
-                              }
-                            });
-                          },
-                        )),
-                    const SizedBox(height: AppSpacing.sm),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () => Navigator.pop(context, selecaoTemp),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: AppSpacing.sm),
+                      Flexible(
+                        child: ListView(
+                          shrinkWrap: true,
+                          children: options
+                              .map((opt) => CheckboxListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    value: selecaoTemp.contains(opt),
+                                    title: Text(opt),
+                                    activeColor: AppColors.primary,
+                                    onChanged: (v) {
+                                      setModalState(() {
+                                        if (v == true) {
+                                          selecaoTemp.add(opt);
+                                        } else {
+                                          selecaoTemp.remove(opt);
+                                        }
+                                      });
+                                    },
+                                  ))
+                              .toList(),
                         ),
-                        child: const Text('Aplicar'),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: AppSpacing.sm),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(context, selecaoTemp),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: const Text('Aplicar'),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );
@@ -889,7 +1065,7 @@ class _MultiSelectSheetField extends StatelessWidget {
 }
 
 // ===========================================================================
-// Card "Filtros Adicionais" — Classe/Subclasse, CNAE, Bairro, CSV.
+// Card "Filtros Adicionais" — Classe/Subclasse, CNAE, Bairro.
 // ===========================================================================
 
 class _OptionalFiltersCard extends StatefulWidget {
@@ -900,8 +1076,6 @@ class _OptionalFiltersCard extends StatefulWidget {
   final ValueChanged<List<String>> onCnaeChanged;
   final List<String> bairroNames;
   final ValueChanged<List<String>> onBairroChanged;
-  final bool includeCustomCsv;
-  final ValueChanged<bool> onIncludeCustomCsvChanged;
 
   const _OptionalFiltersCard({
     required this.clasSubOptions,
@@ -911,8 +1085,6 @@ class _OptionalFiltersCard extends StatefulWidget {
     required this.onCnaeChanged,
     required this.bairroNames,
     required this.onBairroChanged,
-    required this.includeCustomCsv,
-    required this.onIncludeCustomCsvChanged,
   });
 
   @override
@@ -941,22 +1113,13 @@ class _OptionalFiltersCardState extends State<_OptionalFiltersCard> {
             child: const Icon(Icons.tune, size: 18, color: AppColors.primary),
           ),
           title: const Text('Filtros Adicionais', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-          subtitle: const Text('Classe, CNAE, bairro e dados customizados', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+          subtitle: const Text('Classe, CNAE e bairro', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
           children: [
             _MultiSelectSheetField(label: 'Classe / Subclasse', options: widget.clasSubOptions, selected: widget.clasSub, onChanged: widget.onClasSubChanged),
             const SizedBox(height: AppSpacing.md),
             _ChipInputField(label: 'Código CNAE', hint: 'ex: 3511-5/01', values: widget.cnaeCodes, onChanged: widget.onCnaeChanged),
             const SizedBox(height: AppSpacing.md),
             _ChipInputField(label: 'Nome do Bairro', hint: 'ex: Jardim Aquarius', values: widget.bairroNames, onChanged: widget.onBairroChanged),
-            const SizedBox(height: AppSpacing.sm),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              value: widget.includeCustomCsv,
-              onChanged: widget.onIncludeCustomCsvChanged,
-              activeColor: AppColors.primary,
-              title: const Text('Incluir CSV Customizado', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-              subtitle: const Text('Considerar pontos importados manualmente via CSV', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
-            ),
           ],
         ),
       ),
