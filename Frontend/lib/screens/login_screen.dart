@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey, SingleActivator;
 
 import '../app_shell.dart';
 import '../services/api_exception.dart';
@@ -8,10 +9,6 @@ import '../widgets/auth_scaffold.dart';
 import '../widgets/auth_text_field.dart';
 import '../widgets/first_access_modal.dart';
 import '../navigation/account_actions.dart' show openResetPassword;
-import 'map_screen.dart';
-import 'new_project_screen.dart';
-import 'projects_screen.dart';
-import 'users_screen.dart';
 import '../navigation/bottom_nav_bar.dart' show showAccountMenu;
 
 /// Login screen — tela de pré-autenticação: sem navbar em nenhuma
@@ -95,19 +92,15 @@ class _LoginScreenState extends State<LoginScreen> {
     // abas principais. O item "Login" do nav sempre abre o menu
     // de conta (Reset Password / Logout) — nunca volta pra esta tela.
     //
-    // RN04 (US-34): UsersScreen só entra nas tabs pra quem logou como
-    // ADM — mesma condição que NavItems.forRole usa lá no AppShell,
-    // então a aba e o item de navegação nunca ficam fora de sincronia.
+    // AppShell.tabsFor(isAdmin) é a mesma função que o SplashGate usa
+    // ao restaurar uma sessão persistida (F5 na web) — garante que
+    // login normal e sessão restaurada nunca montem tabs diferentes
+    // (RN04: Users só entra pra ADM nos dois casos).
     final isAdmin = AuthService.instance.role == 'ADM';
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => AppShell(
-          tabs: [
-            const ProjectsScreen(),
-            const NewProjectScreen(),
-            const MapScreen(),
-            if (isAdmin) const UsersScreen(),
-          ],
+          tabs: AppShell.tabsFor(isAdmin),
           onLoginTap: (ctx) => showAccountMenu(ctx),
         ),
       ),
@@ -117,7 +110,23 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return AuthScaffold(
-      card: Column(
+      card: Shortcuts(
+        // Enter em qualquer campo do form dispara o login — sem isso,
+        // apertar Enter depois da senha não fazia nada.
+        shortcuts: const <SingleActivator, Intent>{
+          SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+          SingleActivator(LogicalKeyboardKey.numpadEnter): ActivateIntent(),
+        },
+        child: Actions(
+          actions: <Type, Action<Intent>>{
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                if (!_isLoading) _handleSignIn();
+                return null;
+              },
+            ),
+          },
+          child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Image.asset('assets/images/logo.png', height: 40),
@@ -144,18 +153,18 @@ class _LoginScreenState extends State<LoginScreen> {
                   hint: '••••••••',
                   obscureText: true,
                   controller: _passwordController,
-                  trailing: TextButton(
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    // Rota de recuperação por e-mail ainda não existe
-                    // no backend — isso só abre a tela já pronta.
-                    onPressed: () => openResetPassword(context, fromLogin: true),
-                    child: const Text(
-                      'Forgot?',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+                  trailing: ExcludeFocus(
+                    child: TextButton(
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: () => openResetPassword(context, fromLogin: true),
+                      child: const Text(
+                        'Forgot?',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+                      ),
                     ),
                   ),
                 ),
@@ -197,6 +206,8 @@ class _LoginScreenState extends State<LoginScreen> {
           const SizedBox(height: 28),
           const _StatusFooter(),
         ],
+          ),
+        ),
       ),
     );
   }

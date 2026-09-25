@@ -16,7 +16,7 @@ import 'api_exception.dart';
 ///   ou pela URL de um ambiente publicado.
 class ApiConfig {
   static const _devHost = 'localhost';
-  static const _devPort = 8080;
+  static const _devPort = 8081;
 
   static String get baseUrl {
     if (kIsWeb) return 'http://$_devHost:$_devPort/api/v1';

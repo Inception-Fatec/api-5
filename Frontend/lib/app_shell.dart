@@ -5,6 +5,10 @@ import 'theme/app_theme.dart';
 import 'navigation/bottom_nav_bar.dart';
 import 'navigation/top_nav_bar.dart';
 import 'navigation/nav_items.dart';
+import 'screens/projects_screen.dart';
+import 'screens/new_project_screen.dart';
+import 'screens/map_screen.dart';
+import 'screens/users_screen.dart';
 
 /// Ponto único de navegação do app. Decide web vs. mobile UMA vez,
 /// mantém o índice da aba atual e troca o conteúdo com [IndexedStack]
@@ -16,10 +20,8 @@ import 'navigation/nav_items.dart';
 ///
 /// [tabs] precisa estar na MESMA ordem e ter o MESMO tamanho de
 /// `NavItems.forRole(AuthService.instance.role)` menos o último item
-/// (Login, que nunca é uma aba) — é quem constrói o AppShell
-/// (login_screen.dart) que decide incluir ou não UsersScreen conforme
-/// o role, então os dois lados (tabs aqui, nav items lá embaixo)
-/// ficam em sincronia por lerem o mesmo AuthService.instance.role.
+/// (Login, que nunca é uma aba) — use [AppShell.tabsFor] pra montar
+/// essa lista corretamente em vez de escrevê-la à mão de novo.
 class AppShell extends StatefulWidget {
   static const webBreakpoint = 900.0;
 
@@ -37,6 +39,20 @@ class AppShell extends StatefulWidget {
   /// um AppShell ancestral (ex: tela usada fora dele em testes).
   static _AppShellScope? of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<_AppShellScope>();
+
+  /// Lista de tabs pro role informado — única fonte usada tanto depois
+  /// de um login bem-sucedido (LoginScreen._goToAppShell) quanto ao
+  /// restaurar uma sessão existente no boot do app (SplashGate), pra
+  /// nunca divergir da lista de NavItems.forRole (RN04 — Users só
+  /// entra pra ADM nos dois casos).
+  static List<Widget> tabsFor(bool isAdmin) {
+    return [
+      const ProjectsScreen(),
+      const NewProjectScreen(),
+      const MapScreen(),
+      if (isAdmin) const UsersScreen(),
+    ];
+  }
 
   @override
   State<AppShell> createState() => _AppShellState();
