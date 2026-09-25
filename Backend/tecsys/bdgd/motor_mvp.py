@@ -15,7 +15,7 @@ CENTRO_LONGITUDE = -45.90906541157879
 CENTRO_LATITUDE = -23.217235515848046
 
 # Região escolhida pelo usuário no MVP
-RAIO_REGIAO_M = 2_000
+RAIO_REGIAO_M = 3_000
 
 # Alcance nominal informado pela Tecsys
 ALCANCE_GATEWAY_M = 1_000
