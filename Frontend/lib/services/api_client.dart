@@ -7,7 +7,7 @@ import 'api_exception.dart';
 
 /// Resolve a base URL da API conforme a plataforma que está rodando
 /// o app, já que "localhost" significa coisas diferentes em cada uma
-/// durante o desenvolvimento local (backend rodando na porta 8080):
+/// durante o desenvolvimento local (backend rodando na porta 8081):
 /// - Web e iOS/desktop: localhost aponta pra própria máquina.
 /// - Emulador Android: localhost do emulador não é o localhost da
 ///   máquina host — precisa do alias especial 10.0.2.2.
@@ -16,6 +16,9 @@ import 'api_exception.dart';
 ///   ou pela URL de um ambiente publicado.
 class ApiConfig {
   static const _devHost = 'localhost';
+  // Porta do backend (server.port no application.yml) — mudou de
+  // 8080 pra 8081 na branch TG-11-filtro-pontos-cobertura. Se mudar
+  // de novo, é só ajustar aqui.
   static const _devPort = 8081;
 
   static String get baseUrl {
