@@ -136,27 +136,24 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Image.asset('assets/images/logo.png', height: 40),
-          const SizedBox(height: 16),
-                const Text(
-                  'ENTERPRISE SUPPLY CHAIN PLATFORM',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textSecondary,
-                    letterSpacing: 0.8,
-                  ),
-                ),
+          const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.hub, color: AppColors.primary, size: 32),
+              SizedBox(width: 8),
+              Text('Tecsys', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+            ],
+          ),
                 const SizedBox(height: 40),
                 AuthTextField(
-                  label: 'Email address',
-                  hint: 'name@tecsys.com',
+                  label: 'E-mail',
+                  hint: 'nome@tecsys.com',
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
                 ),
                 const SizedBox(height: AppSpacing.md),
                 AuthTextField(
-                  label: 'Password',
+                  label: 'Senha',
                   hint: '••••••••',
                   obscureText: true,
                   controller: _passwordController,
@@ -169,7 +166,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       onPressed: () => openResetPassword(context, fromLogin: true),
                       child: const Text(
-                        'Forgot?',
+                        'Esqueceu a senha?',
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
                       ),
                     ),
@@ -203,39 +200,17 @@ class _LoginScreenState extends State<LoginScreen> {
                         : const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text('Sign In', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                              Text('Entrar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                               SizedBox(width: 8),
                               Icon(Icons.arrow_forward, size: 20),
                             ],
                           ),
                   ),
                 ),
-          const SizedBox(height: 28),
-          const _StatusFooter(),
         ],
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Rodapé "🟢 Systems Operational   v24.2 Enterprise", no lugar do
-/// badge de SSO anterior.
-class _StatusFooter extends StatelessWidget {
-  const _StatusFooter();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Container(width: 6, height: 6, decoration: const BoxDecoration(color: AppColors.success, shape: BoxShape.circle)),
-        const SizedBox(width: 6),
-        const Text('Systems Operational', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-        const SizedBox(width: 16),
-        const Text('v24.2 Enterprise', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-      ],
     );
   }
 }

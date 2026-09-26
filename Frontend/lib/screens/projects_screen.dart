@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../app_shell.dart';
 import '../services/project_model.dart';
-import '../services/project_service.dart';
+import '../services/project_store.dart';
+import '../services/user_store.dart';
 import '../theme/app_theme.dart';
 import '../utils/distribuidoras.dart';
 import '../widgets/common/app_footer.dart';
 import '../widgets/common/page_body.dart';
+import '../utils/normalizar_texto.dart';
 import 'new_project_screen.dart';
 import 'reports_screen.dart';
 
@@ -29,62 +31,59 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   // Índice da aba "New Project" no AppShell (Projects=0, New Project=1, Map=2).
   static const _newProjectTabIndex = 1;
 
-  final _service = ProjectsService();
+  // Store compartilhado com a NewProjectScreen — é ele quem guarda a
+  // lista de verdade, pra um projeto recém-criado aparecer aqui na
+  // hora, sem depender desta tela ainda estar montada ou refazer a
+  // busca sozinha.
+  final _store = ProjectsStore.instance;
   final _buscaController = TextEditingController();
 
-  List<Project> _projects = [];
-  bool _carregando = true;
-  String? _erro;
   String _busca = '';
 
   @override
   void initState() {
     super.initState();
-    _carregar();
+    _store.addListener(_onStoreChanged);
+    _store.carregar();
+    UserStore.instance.carregar();
   }
 
   @override
   void dispose() {
+    _store.removeListener(_onStoreChanged);
     _buscaController.dispose();
     super.dispose();
   }
 
-  Future<void> _carregar() async {
-    setState(() {
-      _carregando = true;
-      _erro = null;
-    });
-    try {
-      final resultado = await _service.listar();
-      if (!mounted) return;
-      setState(() {
-        _projects = resultado;
-        _carregando = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _carregando = false;
-        _erro = 'Não foi possível carregar os projetos agora.';
-      });
-    }
+  void _onStoreChanged() {
+    if (mounted) setState(() {});
   }
 
-  // Busca simples: nome do projeto ou nome/código da empresa,
-  // ignorando maiúscula/minúscula.
+  Future<void> _carregar() => _store.carregar(force: true);
+
+  // Busca simples e tolerante a acento (usa normalizarTexto, a mesma
+  // normalização já usada no resto do app) — nome do projeto ou
+  // nome/código da empresa, ignorando maiúscula/minúscula e acentos.
   List<Project> get _projetosFiltrados {
-    final termo = _busca.trim().toLowerCase();
-    if (termo.isEmpty) return _projects;
-    return _projects.where((p) {
-      final nomeEmpresa = nomeDistribuidora(p.distCode).toLowerCase();
-      return p.name.toLowerCase().contains(termo) ||
+    final termo = normalizarTexto(_busca.trim()).toLowerCase();
+    if (termo.isEmpty) return _store.projects;
+    return _store.projects.where((p) {
+      final nomeProjeto = normalizarTexto(p.name).toLowerCase();
+      final nomeEmpresa =
+          normalizarTexto(nomeDistribuidora(p.distCode)).toLowerCase();
+      return nomeProjeto.contains(termo) ||
           nomeEmpresa.contains(termo) ||
           p.distCode.toLowerCase().contains(termo);
     }).toList();
   }
 
-  int get _totalProjetos => _projects.length;
-  int get _totalCalculados => _projects.where((p) => p.status == 'SUCESSO').length;
+  int get _totalProjetos => _store.projects.length;
+
+  // TODO: por enquanto igual ao total de projetos. A lógica real de
+  // "calculado" vai bater o status de cada projeto com o backend
+  // (relatório pronto) quando esse fluxo existir — até lá os cards
+  // mostram "calculando"/indisponível com base nisso.
+  int get _totalCalculados => _store.projects.length;
 
   void _goToNewProject(BuildContext context) {
     final shell = AppShell.of(context);
@@ -119,14 +118,23 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   Widget _buildTitulo(double fontSize) {
     return Row(
       children: [
-        Text('My Projects', style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+        Text('Meus Projetos',
+            style: TextStyle(
+                fontSize: fontSize,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary)),
         const SizedBox(width: 8),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(color: AppColors.chipBg, borderRadius: BorderRadius.circular(100)),
+          decoration: BoxDecoration(
+              color: AppColors.chipBg,
+              borderRadius: BorderRadius.circular(100)),
           child: Text(
             '$_totalProjetos ${_totalProjetos == 1 ? "projeto" : "projetos"}',
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+            style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary),
           ),
         ),
       ],
@@ -144,16 +152,20 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         elevation: 0,
       ),
       child: Row(
-        mainAxisAlignment: full ? MainAxisAlignment.center : MainAxisAlignment.start,
+        mainAxisAlignment:
+            full ? MainAxisAlignment.center : MainAxisAlignment.start,
         mainAxisSize: full ? MainAxisSize.max : MainAxisSize.min,
         children: const [
           Icon(Icons.add, size: 18),
           SizedBox(width: 6),
-          Text('New Project', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+          Text('Novo Projeto',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
         ],
       ),
     );
-    return full ? SizedBox(width: double.infinity, height: 48, child: botao) : botao;
+    return full
+        ? SizedBox(width: double.infinity, height: 48, child: botao)
+        : botao;
   }
 
   Widget _buildMetricas() {
@@ -183,7 +195,8 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   Widget _buildBusca() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-      decoration: BoxDecoration(color: AppColors.inputFill, borderRadius: BorderRadius.circular(14)),
+      decoration: BoxDecoration(
+          color: AppColors.inputFill, borderRadius: BorderRadius.circular(14)),
       child: Row(
         children: [
           const Icon(Icons.search, size: 20, color: AppColors.textSecondary),
@@ -192,10 +205,12 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
             child: TextField(
               controller: _buscaController,
               onChanged: (v) => setState(() => _busca = v),
-              style: const TextStyle(fontSize: 15, color: AppColors.textPrimary),
+              style:
+                  const TextStyle(fontSize: 15, color: AppColors.textPrimary),
               decoration: const InputDecoration(
                 hintText: 'Buscar por nome do projeto ou empresa...',
-                hintStyle: TextStyle(fontSize: 15, color: AppColors.textSecondary),
+                hintStyle:
+                    TextStyle(fontSize: 15, color: AppColors.textSecondary),
                 border: InputBorder.none,
                 isDense: true,
                 contentPadding: EdgeInsets.symmetric(vertical: 12),
@@ -208,7 +223,8 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                 _busca = '';
                 _buscaController.clear();
               }),
-              child: const Icon(Icons.close, size: 18, color: AppColors.textSecondary),
+              child: const Icon(Icons.close,
+                  size: 18, color: AppColors.textSecondary),
             ),
         ],
       ),
@@ -216,20 +232,22 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   }
 
   Widget _buildListaOuEstado({required bool grid}) {
-    if (_carregando) {
+    if (_store.loading && _store.projects.isEmpty) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 48),
         child: Center(child: CircularProgressIndicator()),
       );
     }
-    if (_erro != null) {
+    if (_store.erro != null && _store.projects.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 32),
         child: Column(
           children: [
-            Text(_erro!, style: const TextStyle(fontSize: 14, color: Colors.redAccent)),
+            Text(_store.erro!,
+                style: const TextStyle(fontSize: 14, color: Colors.redAccent)),
             const SizedBox(height: 12),
-            OutlinedButton(onPressed: _carregar, child: const Text('Tentar de novo')),
+            OutlinedButton(
+                onPressed: _carregar, child: const Text('Tentar de novo')),
           ],
         ),
       );
@@ -240,8 +258,11 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         padding: const EdgeInsets.symmetric(vertical: 32),
         child: Center(
           child: Text(
-            _projects.isEmpty ? 'Nenhum projeto criado ainda.' : 'Nenhum projeto encontrado para essa busca.',
-            style: const TextStyle(fontSize: 14, color: AppColors.textSecondary),
+            _store.projects.isEmpty
+                ? 'Nenhum projeto criado ainda.'
+                : 'Nenhum projeto encontrado para essa busca.',
+            style:
+                const TextStyle(fontSize: 14, color: AppColors.textSecondary),
           ),
         ),
       );
@@ -251,11 +272,16 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         builder: (context, gridConstraints) {
           final columns = gridConstraints.maxWidth >= 1100 ? 3 : 2;
           const spacing = AppSpacing.md;
-          final cardWidth = (gridConstraints.maxWidth - spacing * (columns - 1)) / columns;
+          final cardWidth =
+              (gridConstraints.maxWidth - spacing * (columns - 1)) / columns;
           return Wrap(
             spacing: spacing,
             runSpacing: spacing,
-            children: projetos.map((p) => SizedBox(width: cardWidth, child: _ProjectCard(data: p))).toList(),
+            children: projetos
+                .map((p) => SizedBox(
+                    width: cardWidth,
+                    child: _ProjectCard(key: ValueKey(p.id), data: p)))
+                .toList(),
           );
         },
       );
@@ -263,7 +289,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
     return Column(
       children: [
         for (final p in projetos) ...[
-          _ProjectCard(data: p),
+          _ProjectCard(key: ValueKey(p.id), data: p),
           const SizedBox(height: AppSpacing.md),
         ],
       ],
@@ -278,7 +304,8 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
     return CustomScrollView(
       slivers: [
         SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl, vertical: AppSpacing.lg),
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.xl, vertical: AppSpacing.lg),
           sliver: SliverToBoxAdapter(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -291,8 +318,6 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _buildTitulo(26),
-                          const SizedBox(height: 4),
-                          const Text('Supply chain deployments', style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
                         ],
                       ),
                     ),
@@ -312,7 +337,9 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         ),
         SliverFillRemaining(
           hasScrollBody: false,
-          child: Column(mainAxisAlignment: MainAxisAlignment.end, children: const [AppFooter()]),
+          child: Column(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: const [AppFooter()]),
         ),
       ],
     );
@@ -331,27 +358,21 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
             delegate: SliverChildListDelegate([
               Row(
                 children: [
-                  Image.asset('assets/images/logo.png', height: 26),
                   const Spacer(),
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        'TECSYS B2B',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary, letterSpacing: 0.3),
-                      ),
-                      SizedBox(height: 2),
-                      Text('Projects', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-                    ],
-                  ),
+                  const Text('Projetos',
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary)),
                   const SizedBox(width: 12),
-                  const CircleAvatar(radius: 18, backgroundColor: AppColors.primary, child: Icon(Icons.person, size: 18, color: Colors.white)),
+                  const CircleAvatar(
+                      radius: 18,
+                      backgroundColor: AppColors.primary,
+                      child: Icon(Icons.person, size: 18, color: Colors.white)),
                 ],
               ),
               const SizedBox(height: AppSpacing.lg),
               _buildTitulo(24),
-              const SizedBox(height: 2),
-              const Text('Supply chain deployments', style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
               const SizedBox(height: AppSpacing.md),
               _buildNovoProjetoButton(context, full: true),
               const SizedBox(height: AppSpacing.lg),
@@ -365,7 +386,9 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         ),
         SliverFillRemaining(
           hasScrollBody: false,
-          child: Column(mainAxisAlignment: MainAxisAlignment.end, children: const [AppFooter()]),
+          child: Column(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: const [AppFooter()]),
         ),
       ],
     );
@@ -378,20 +401,30 @@ class _MetricCard extends StatelessWidget {
   final String value;
   final String caption;
 
-  const _MetricCard({required this.label, required this.icon, required this.value, required this.caption});
+  const _MetricCard(
+      {required this.label,
+      required this.icon,
+      required this.value,
+      required this.caption});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(color: AppColors.chipBg, borderRadius: BorderRadius.circular(14)),
+      decoration: BoxDecoration(
+          color: AppColors.chipBg, borderRadius: BorderRadius.circular(14)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: 0.3)),
+              Text(label,
+                  style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textSecondary,
+                      letterSpacing: 0.3)),
               Icon(icon, size: 17, color: AppColors.primary),
             ],
           ),
@@ -400,9 +433,15 @@ class _MetricCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-              Text(value, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+              Text(value,
+                  style: const TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary)),
               const SizedBox(width: 6),
-              Text(caption, style: const TextStyle(fontSize: 13, color: AppColors.primary)),
+              Text(caption,
+                  style:
+                      const TextStyle(fontSize: 13, color: AppColors.primary)),
             ],
           ),
         ],
@@ -411,81 +450,197 @@ class _MetricCard extends StatelessWidget {
   }
 }
 
-class _ProjectCard extends StatelessWidget {
+class _ProjectCard extends StatefulWidget {
   final Project data;
-  const _ProjectCard({required this.data});
+  const _ProjectCard({super.key, required this.data});
+
+  @override
+  State<_ProjectCard> createState() => _ProjectCardState();
+}
+
+class _ProjectCardState extends State<_ProjectCard> {
+  bool _hover = false;
+  bool _excluindo = false;
 
   void _abrirDetalhe(BuildContext context) {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => ProjectDetailScreen(project: data)),
+      MaterialPageRoute(
+          builder: (_) => ProjectDetailScreen(project: widget.data)),
     );
+  }
+
+  Future<void> _confirmarExclusao(BuildContext context) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Excluir projeto'),
+        content: Text(
+            'Tem certeza que deseja excluir "${widget.data.name}"? Essa ação não pode ser desfeita.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Excluir',
+                style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true || !mounted) return;
+
+    setState(() => _excluindo = true);
+    try {
+      await ProjectsStore.instance.excluir(widget.data.id);
+      // Se der certo o card some sozinho (a lista do store muda e a
+      // ProjectsScreen reconstrói) — não precisa fazer mais nada aqui.
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _excluindo = false);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+            content: Text('Não foi possível excluir o projeto agora.')));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final data = widget.data;
     final statusColor = ProjectStatusStyle.color(data.status);
-    return InkWell(
-      onTap: () => _abrirDetalhe(context),
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE4E8EF)), borderRadius: BorderRadius.circular(16)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Container(width: 6, height: 6, decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle)),
-                  const SizedBox(width: 6),
-                  Text(
-                    nomeDistribuidora(data.distCode),
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.primary, letterSpacing: 0.3),
-                  ),
-                ],
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(color: statusColor.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
-                child: Text(
-                  ProjectStatusStyle.label(data.status),
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: statusColor),
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
+        transform: Matrix4.translationValues(0, _hover ? -4 : 0, 0),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(
+              color: _hover
+                  ? AppColors.primary.withOpacity(0.35)
+                  : const Color(0xFFE4E8EF)),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(_hover ? 0.10 : 0.05),
+              blurRadius: _hover ? 22 : 14,
+              offset: Offset(0, _hover ? 10 : 6),
+            ),
+          ],
+        ),
+        child: Opacity(
+          opacity: _excluindo ? 0.5 : 1,
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(16),
+            child: InkWell(
+              onTap: _excluindo ? null : () => _abrirDetalhe(context),
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                    color: statusColor,
+                                    shape: BoxShape.circle)),
+                            const SizedBox(width: 6),
+                            Text(
+                              nomeDistribuidora(data.distCode),
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primary,
+                                  letterSpacing: 0.3),
+                            ),
+                          ],
+                        ),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                  color: statusColor.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(8)),
+                              child: Text(
+                                ProjectStatusStyle.label(data.status),
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: statusColor),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            InkWell(
+                              onTap: _excluindo
+                                  ? null
+                                  : () => _confirmarExclusao(context),
+                              borderRadius: BorderRadius.circular(20),
+                              child: const Padding(
+                                padding: EdgeInsets.all(4),
+                                child: Icon(Icons.delete_outline,
+                                    size: 18, color: AppColors.textSecondary),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(data.name,
+                        style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary)),
+                    const SizedBox(height: 2),
+                    Text('ID #${data.id}',
+                        style: const TextStyle(
+                            fontSize: 12, color: AppColors.textSecondary)),
+                    const SizedBox(height: 12),
+                    const Divider(height: 1, color: Color(0xFFEDEFF3)),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        const Icon(Icons.calendar_today_outlined,
+                            size: 14, color: AppColors.textSecondary),
+                        const SizedBox(width: 4),
+                        Text(data.dataFormatada,
+                            style: const TextStyle(
+                                fontSize: 13, color: AppColors.textSecondary)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const Icon(Icons.person_outline,
+                            size: 14, color: AppColors.textSecondary),
+                        const SizedBox(width: 4),
+                        Text(
+                          UserStore.instance.nomeDoUsuario(data.createdById) ?? 'Usuário #${data.createdById}',
+                          style: const TextStyle(
+                              fontSize: 13, color: AppColors.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
-          const SizedBox(height: 8),
-          Text(data.name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-          const SizedBox(height: 2),
-          Text('ID #${data.id}', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-          const SizedBox(height: 12),
-          const Divider(height: 1, color: Color(0xFFEDEFF3)),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              const Icon(Icons.calendar_today_outlined, size: 14, color: AppColors.textSecondary),
-              const SizedBox(width: 4),
-              Text(data.dataFormatada, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              const Icon(Icons.person_outline, size: 14, color: AppColors.textSecondary),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  data.criadoPorLabel,
-                  style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+        ),
       ),
     );
   }

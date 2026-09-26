@@ -29,9 +29,9 @@ class AuthScaffold extends StatelessWidget {
                     horizontal: AppSpacing.lg, vertical: AppSpacing.xl),
                 child: Center(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 390),
+                    constraints: const BoxConstraints(maxWidth: 420),
                     child: Container(
-                      padding: const EdgeInsets.all(AppSpacing.xl),
+                      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl, vertical: AppSpacing.xl),
                       decoration: BoxDecoration(
                         color: AppColors.background,
                         borderRadius: BorderRadius.circular(20),
@@ -70,7 +70,14 @@ class _AuthTopBar extends StatelessWidget {
         color: AppColors.background,
         border: Border(bottom: BorderSide(color: Color(0xFFEDEFF3))),
       ),
-      child: Image.asset('assets/images/logo.png', height: 24),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.hub, color: AppColors.primary, size: 24),
+          SizedBox(width: 8),
+          Text('Tecsys', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+        ],
+      ),
     );
   }
 }

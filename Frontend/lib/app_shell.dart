@@ -7,7 +7,6 @@ import 'navigation/top_nav_bar.dart';
 import 'navigation/nav_items.dart';
 import 'screens/projects_screen.dart';
 import 'screens/new_project_screen.dart';
-import 'screens/map_screen.dart';
 import 'screens/users_screen.dart';
 
 /// Ponto único de navegação do app. Decide web vs. mobile UMA vez,
@@ -49,7 +48,6 @@ class AppShell extends StatefulWidget {
     return [
       const ProjectsScreen(),
       const NewProjectScreen(),
-      const MapScreen(),
       if (isAdmin) const UsersScreen(),
     ];
   }

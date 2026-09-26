@@ -20,11 +20,13 @@ class AuthService extends ChangeNotifier {
   String? _token;
   String? _role;
   String? _email;
+  String? _name;
   bool _mustChangePassword = false;
 
   String? get token => _token;
   String? get role => _role;
   String? get email => _email;
+  String? get name => _name;
   bool get mustChangePassword => _mustChangePassword;
   bool get isAuthenticated => _token != null;
 
@@ -37,10 +39,11 @@ class AuthService extends ChangeNotifier {
     _token = data['token'] as String;
     _role = data['role'] as String;
     _email = email;
+    _name = data['name'] as String?;
     _mustChangePassword = data['mustChangePassword'] as bool? ?? false;
 
     ApiClient.instance.setToken(_token);
-    await TokenStorage.instance.save(token: _token!, role: _role!, email: _email!);
+    await TokenStorage.instance.save(token: _token!, role: _role!, email: _email!, name: _name);
     notifyListeners();
   }
 
@@ -61,10 +64,12 @@ class AuthService extends ChangeNotifier {
     final token = await TokenStorage.instance.readToken();
     final role = await TokenStorage.instance.readRole();
     final email = await TokenStorage.instance.readEmail();
+    final name = await TokenStorage.instance.readName();
     if (token != null) {
       _token = token;
       _role = role;
       _email = email;
+      _name = name;
       ApiClient.instance.setToken(token);
       notifyListeners();
     }
@@ -74,6 +79,7 @@ class AuthService extends ChangeNotifier {
     _token = null;
     _role = null;
     _email = null;
+    _name = null;
     _mustChangePassword = false;
     ApiClient.instance.setToken(null);
     await TokenStorage.instance.clear();

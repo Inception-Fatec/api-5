@@ -35,7 +35,7 @@ class AccountMenuButton extends StatelessWidget {
             children: [
               Icon(Icons.lock_reset, size: 18, color: AppColors.primary),
               SizedBox(width: 10),
-              Text('Reset Password'),
+              Text('Redefinir Senha'),
             ],
           ),
         ),
@@ -45,7 +45,7 @@ class AccountMenuButton extends StatelessWidget {
             children: [
               Icon(Icons.logout, size: 18, color: AppColors.textSecondary),
               SizedBox(width: 10),
-              Text('Logout'),
+              Text('Sair'),
             ],
           ),
         ),
