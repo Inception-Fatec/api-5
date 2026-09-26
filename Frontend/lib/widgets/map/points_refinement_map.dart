@@ -133,7 +133,7 @@ class _PointsRefinementMapState extends State<PointsRefinementMap> {
     final pontos = <LatLng>[];
     for (final f in widget.features) {
       final geom = f['geometry'] as Map<String, dynamic>?;
-      if (geom == null || geom['type'] != 'Point') continue;
+      if (geom == null) continue;
 
       if (filtroAtivo) {
         final props = f['properties'] as Map<String, dynamic>?;
@@ -144,13 +144,50 @@ class _PointsRefinementMapState extends State<PointsRefinementMap> {
         if (layer == null || !filtroLower.contains(layer)) continue;
       }
 
-      final coords = geom['coordinates'] as List?;
-      if (coords == null || coords.length < 2) continue;
-      final lon = (coords[0] as num).toDouble();
-      final lat = (coords[1] as num).toDouble();
-      pontos.add(LatLng(lat, lon));
+      final ponto = _extrairPontoRepresentativo(geom);
+      if (ponto != null) pontos.add(ponto);
     }
     return pontos;
+  }
+
+  /// Extrai um ponto pra desenhar no mapa a partir de QUALQUER
+  /// geometria — não só `Point`. Subestações (camada "SUB") vêm como
+  /// `MultiPolygon` (a área dela), não como ponto — sem isso, elas
+  /// entravam no `total_points` mas nunca apareciam desenhadas em
+  /// lugar nenhum, deixando "diz que tem X, mostra 0" sempre que só
+  /// sobrava subestação no resultado. Pra polígono, usa o centro
+  /// (média dos vértices do anel externo) como aproximação — não
+  /// precisa ser exato, é só pra ter ONDE mostrar aquele item no mapa.
+  LatLng? _extrairPontoRepresentativo(Map<String, dynamic> geom) {
+    final tipo = geom['type'];
+
+    if (tipo == 'Point') {
+      final coords = geom['coordinates'] as List?;
+      if (coords == null || coords.length < 2) return null;
+      return LatLng((coords[1] as num).toDouble(), (coords[0] as num).toDouble());
+    }
+
+    List? anelExterno;
+    if (tipo == 'Polygon') {
+      final aneis = geom['coordinates'] as List?;
+      anelExterno = (aneis != null && aneis.isNotEmpty) ? aneis.first as List? : null;
+    } else if (tipo == 'MultiPolygon') {
+      final poligonos = geom['coordinates'] as List?;
+      final primeiroPoligono = (poligonos != null && poligonos.isNotEmpty) ? poligonos.first as List? : null;
+      anelExterno = (primeiroPoligono != null && primeiroPoligono.isNotEmpty) ? primeiroPoligono.first as List? : null;
+    }
+    if (anelExterno == null || anelExterno.isEmpty) return null;
+
+    var somaLat = 0.0, somaLon = 0.0;
+    var n = 0;
+    for (final v in anelExterno) {
+      final vertice = v as List;
+      somaLon += (vertice[0] as num).toDouble();
+      somaLat += (vertice[1] as num).toDouble();
+      n++;
+    }
+    if (n == 0) return null;
+    return LatLng(somaLat / n, somaLon / n);
   }
 
   List<LatLng> get _pontosLatLng => _pontosCache;
@@ -213,6 +250,22 @@ class _PointsRefinementMapState extends State<PointsRefinementMap> {
         }
       }
     }
+
+    // "Sobra" — pontos reais (confirmados pelo backend) que não
+    // caíram em nenhuma área porque o retângulo aproximado da
+    // cidade (Nominatim) não é a fronteira exata, e algum ponto real
+    // ficou fora dele. Sem isso, um total pequeno (ex: 9 pontos,
+    // filtro bem restrito) podia sumir do mapa inteiro mesmo tendo
+    // pontos de sobra — o limite nunca deveria "comer" pontos que
+    // existem de verdade só por causa dessa aproximação.
+    final tetoGeral = _limiteRenderizacao! * todasAreas.length;
+    if (resultado.length < tetoGeral) {
+      for (final p in _pontosLatLng) {
+        if (resultado.length >= tetoGeral) break;
+        if (vistos.add(p)) resultado.add(p);
+      }
+    }
+
     return resultado;
   }
 
@@ -394,7 +447,13 @@ class _PointsRefinementMapState extends State<PointsRefinementMap> {
     // contagem local de pontos já parseados — evita qualquer
     // possibilidade dos dois divergirem.
     final total = widget.totalPontosBanco ?? _pontosLatLng.length;
-    final escolha = await showModalBottomSheet<int?>(
+
+    // "Todos" e "fechar sem escolher" (tocar fora) normalmente
+    // pareceriam a mesma coisa (os dois voltam null) — usa -1 como
+    // sinal só pra "Todos", deixando o null de verdade exclusivo
+    // pra "fechou sem escolher nada".
+    const sentinelaTodos = -1;
+    final escolhaSentinela = await showModalBottomSheet<int>(
       context: context,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (context) {
@@ -406,13 +465,19 @@ class _PointsRefinementMapState extends State<PointsRefinementMap> {
               return ListTile(
                 title: Text(label),
                 trailing: _limiteRenderizacao == opcao ? const Icon(Icons.check, color: AppColors.primary) : null,
-                onTap: () => Navigator.pop(context, opcao),
+                onTap: () => Navigator.pop(context, opcao ?? sentinelaTodos),
               );
             }).toList(),
           ),
         );
       },
     );
+
+    // Tocou fora do modal sem escolher nada — só fecha, sem abrir
+    // outro modal por cima.
+    if (escolhaSentinela == null) return;
+
+    final escolha = escolhaSentinela == sentinelaTodos ? null : escolhaSentinela;
     if (escolha == _limiteRenderizacao) return;
     if (escolha == null && total > 500) {
       if (!mounted) return;

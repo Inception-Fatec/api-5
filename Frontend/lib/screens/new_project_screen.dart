@@ -142,6 +142,18 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
   // por padrão).
   List<String> get _subCodesNormalizados => _subCodes.map((v) => normalizarTexto(v).toUpperCase().trim()).toList();
 
+  // Tem algum filtro de Grupo B já setado? Se sim, ao buscar de novo
+  // (ex: depois de adicionar uma cidade nova), precisa reaplicar
+  // tudo isso na busca — sem isso, os filtros ficavam "presos" só na
+  // primeira cidade, e a cidade nova entrava sem filtro nenhum.
+  bool get _temFiltroGrupoB =>
+      _conjCodes.isNotEmpty ||
+      _subCodes.isNotEmpty ||
+      (_targetLayers.isNotEmpty && !_targetLayers.contains('all')) ||
+      _clasSub.isNotEmpty ||
+      _cnaeCodes.isNotEmpty ||
+      _bairroNames.isNotEmpty;
+
   Future<void> _buscarEtapa1() async {
     final empresa = _distCode;
 
@@ -208,10 +220,17 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
         _features = doCache.features;
         _buscandoEtapa1 = false;
       });
-      // Sem isso, os chips de cidade ficavam esperando pra sempre um
-      // filtro mudar — a contagem por cidade nunca rodava sozinha
-      // logo depois da busca inicial.
-      _atualizarContagensPorPeca(++_pedidoFiltroId);
+      if (_temFiltroGrupoB) {
+        // Já tinha filtro setado (de uma cidade anterior) — reaplica
+        // em cima do conjunto novo de cidades, não deixa a cidade
+        // nova entrar sem filtro nenhum.
+        _atualizarPontosComFiltros();
+      } else {
+        // Sem isso, os chips de cidade ficavam esperando pra sempre um
+        // filtro mudar — a contagem por cidade nunca rodava sozinha
+        // logo depois da busca inicial.
+        _atualizarContagensPorPeca(++_pedidoFiltroId);
+      }
       return;
     }
 
@@ -230,7 +249,11 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
           _avisoEtapa1 = 'Backend não retornou pontos ainda (endpoint em desenvolvimento) — mostrando a área pela cidade.';
         }
       });
-      _atualizarContagensPorPeca(++_pedidoFiltroId);
+      if (_temFiltroGrupoB) {
+        _atualizarPontosComFiltros();
+      } else {
+        _atualizarContagensPorPeca(++_pedidoFiltroId);
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {
