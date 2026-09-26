@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import 'account_menu_button.dart';
 
@@ -48,27 +49,15 @@ class TopNavBar extends StatelessWidget {
             const SizedBox(width: AppSpacing.lg),
           ],
           const Spacer(),
-          Row(
-            children: const [
-              _SessionDot(),
-              SizedBox(width: 6),
-              Text('Active Session', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
-            ],
+          Text(
+            AuthService.instance.name ?? AuthService.instance.email ?? '',
+            style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
           ),
-          const SizedBox(width: AppSpacing.md),
+          const SizedBox(width: AppSpacing.sm),
           const AccountMenuButton(),
         ],
       ),
     );
-  }
-}
-
-class _SessionDot extends StatelessWidget {
-  const _SessionDot();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(width: 8, height: 8, decoration: const BoxDecoration(color: AppColors.success, shape: BoxShape.circle));
   }
 }
 

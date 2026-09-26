@@ -81,12 +81,12 @@ Future<void> showAccountMenu(BuildContext context) async {
             const SizedBox(height: AppSpacing.sm),
             ListTile(
               leading: const Icon(Icons.lock_reset, color: AppColors.primary),
-              title: const Text('Reset Password'),
+              title: const Text('Redefinir Senha'),
               onTap: () => Navigator.of(sheetContext).pop('reset'),
             ),
             ListTile(
               leading: const Icon(Icons.logout, color: AppColors.textSecondary),
-              title: const Text('Logout'),
+              title: const Text('Sair'),
               onTap: () => Navigator.of(sheetContext).pop('logout'),
             ),
             const SizedBox(height: AppSpacing.sm),
