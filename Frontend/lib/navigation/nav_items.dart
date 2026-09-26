@@ -15,7 +15,6 @@ class NavItems {
 
   static const _projects = (icon: Icons.folder_outlined, label: 'Projects');
   static const _newProject = (icon: Icons.add_circle_outline, label: 'New Project');
-  static const _mapView = (icon: Icons.location_on_outlined, label: 'Map View');
   static const _users = (icon: Icons.people_outline, label: 'Users');
   static const _login = (icon: Icons.lock_outline, label: 'Login');
 
@@ -23,7 +22,6 @@ class NavItems {
     return [
       _projects,
       _newProject,
-      _mapView,
       if (role == 'ADM') _users,
       _login,
     ];
