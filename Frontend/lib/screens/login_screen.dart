@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey, SingleActivator;
 
 import '../app_shell.dart';
 import '../services/api_exception.dart';
@@ -94,9 +95,10 @@ class _LoginScreenState extends State<LoginScreen> {
     // abas principais. O item "Login" do nav sempre abre o menu
     // de conta (Reset Password / Logout) — nunca volta pra esta tela.
     //
-    // RN04 (US-34): UsersScreen só entra nas tabs pra quem logou como
-    // ADM — mesma condição que NavItems.forRole usa lá no AppShell,
-    // então a aba e o item de navegação nunca ficam fora de sincronia.
+    // AppShell.tabsFor(isAdmin) é a mesma função que o SplashGate usa
+    // ao restaurar uma sessão persistida (F5 na web) — garante que
+    // login normal e sessão restaurada nunca montem tabs diferentes
+    // (RN04: Users só entra pra ADM nos dois casos).
     final isAdmin = AuthService.instance.role == 'ADM';
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
@@ -115,45 +117,58 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return AuthScaffold(
-      card: Column(
+      card: Shortcuts(
+        // Enter em qualquer campo do form dispara o login — sem isso,
+        // apertar Enter depois da senha não fazia nada.
+        shortcuts: const <SingleActivator, Intent>{
+          SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+          SingleActivator(LogicalKeyboardKey.numpadEnter): ActivateIntent(),
+        },
+        child: Actions(
+          actions: <Type, Action<Intent>>{
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                if (!_isLoading) _handleSignIn();
+                return null;
+              },
+            ),
+          },
+          child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Image.asset('assets/images/logo.png', height: 40),
-          const SizedBox(height: 16),
-                const Text(
-                  'ENTERPRISE SUPPLY CHAIN PLATFORM',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textSecondary,
-                    letterSpacing: 0.8,
-                  ),
-                ),
+          const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.hub, color: AppColors.primary, size: 32),
+              SizedBox(width: 8),
+              Text('Tecsys', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+            ],
+          ),
                 const SizedBox(height: 40),
                 AuthTextField(
-                  label: 'Email address',
-                  hint: 'name@tecsys.com',
+                  label: 'E-mail',
+                  hint: 'nome@tecsys.com',
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
                 ),
                 const SizedBox(height: AppSpacing.md),
                 AuthTextField(
-                  label: 'Password',
+                  label: 'Senha',
                   hint: '••••••••',
                   obscureText: true,
                   controller: _passwordController,
-                  trailing: TextButton(
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    // Rota de recuperação por e-mail ainda não existe
-                    // no backend — isso só abre a tela já pronta.
-                    onPressed: () => openResetPassword(context, fromLogin: true),
-                    child: const Text(
-                      'Forgot?',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+                  trailing: ExcludeFocus(
+                    child: TextButton(
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: () => openResetPassword(context, fromLogin: true),
+                      child: const Text(
+                        'Esqueceu a senha?',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+                      ),
                     ),
                   ),
                 ),
@@ -185,37 +200,17 @@ class _LoginScreenState extends State<LoginScreen> {
                         : const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text('Sign In', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                              Text('Entrar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                               SizedBox(width: 8),
                               Icon(Icons.arrow_forward, size: 20),
                             ],
                           ),
                   ),
                 ),
-          const SizedBox(height: 28),
-          const _StatusFooter(),
         ],
+          ),
+        ),
       ),
-    );
-  }
-}
-
-/// Rodapé "🟢 Systems Operational   v24.2 Enterprise", no lugar do
-/// badge de SSO anterior.
-class _StatusFooter extends StatelessWidget {
-  const _StatusFooter();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Container(width: 6, height: 6, decoration: const BoxDecoration(color: AppColors.success, shape: BoxShape.circle)),
-        const SizedBox(width: 6),
-        const Text('Systems Operational', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-        const SizedBox(width: 16),
-        const Text('v24.2 Enterprise', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-      ],
     );
   }
 }

@@ -246,7 +246,7 @@ class _UsersScreenState extends State<UsersScreen> {
                           Row(
                             children: [
                               const Text(
-                                'Users',
+                                'Usuários',
                                 style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
                               ),
                               const SizedBox(width: 8),
@@ -305,21 +305,10 @@ class _UsersScreenState extends State<UsersScreen> {
             delegate: SliverChildListDelegate([
               Row(
                 children: [
-                  Image.asset('assets/images/logo.png', height: 26),
                   const Spacer(),
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        'TECSYS B2B',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary, letterSpacing: 0.3),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        'Users',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-                      ),
-                    ],
+                  const Text(
+                    'Usuários',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
                   ),
                   const SizedBox(width: 12),
                   const CircleAvatar(
@@ -333,7 +322,7 @@ class _UsersScreenState extends State<UsersScreen> {
               Row(
                 children: [
                   const Text(
-                    'Users',
+                    'Usuários',
                     style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
                   ),
                   const SizedBox(width: 8),

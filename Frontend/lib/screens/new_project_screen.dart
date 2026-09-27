@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../services/project_service.dart';
+import '../services/project_store.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common/page_body.dart';
 import '../widgets/map/points_refinement_map.dart';
@@ -10,6 +12,7 @@ import '../services/points_filter_service.dart';
 import '../services/geocoding_service.dart';
 import '../services/ibge_service.dart';
 import '../utils/normalizar_texto.dart';
+import '../app_shell.dart';
 
 /// "New Project" screen — fluxo oficial em 2 etapas:
 ///
@@ -45,6 +48,11 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
   };
   final _service = PointsFilterService();
   final _geocoding = GeocodingService();
+  final _projectsService = ProjectsService();
+
+  // Índice da aba "Projects" no AppShell (Projects=0, New Project=1, Map=2)
+  // — pra onde a gente manda o usuário depois de salvar com sucesso.
+  static const _projectsTabIndex = 0;
 
   // Etapa 1
   final List<Municipio> _municipios = [];
@@ -142,18 +150,6 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
   // por padrão).
   List<String> get _subCodesNormalizados => _subCodes.map((v) => normalizarTexto(v).toUpperCase().trim()).toList();
 
-  // Tem algum filtro de Grupo B já setado? Se sim, ao buscar de novo
-  // (ex: depois de adicionar uma cidade nova), precisa reaplicar
-  // tudo isso na busca — sem isso, os filtros ficavam "presos" só na
-  // primeira cidade, e a cidade nova entrava sem filtro nenhum.
-  bool get _temFiltroGrupoB =>
-      _conjCodes.isNotEmpty ||
-      _subCodes.isNotEmpty ||
-      (_targetLayers.isNotEmpty && !_targetLayers.contains('all')) ||
-      _clasSub.isNotEmpty ||
-      _cnaeCodes.isNotEmpty ||
-      _bairroNames.isNotEmpty;
-
   Future<void> _buscarEtapa1() async {
     final empresa = _distCode;
 
@@ -220,17 +216,10 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
         _features = doCache.features;
         _buscandoEtapa1 = false;
       });
-      if (_temFiltroGrupoB) {
-        // Já tinha filtro setado (de uma cidade anterior) — reaplica
-        // em cima do conjunto novo de cidades, não deixa a cidade
-        // nova entrar sem filtro nenhum.
-        _atualizarPontosComFiltros();
-      } else {
-        // Sem isso, os chips de cidade ficavam esperando pra sempre um
-        // filtro mudar — a contagem por cidade nunca rodava sozinha
-        // logo depois da busca inicial.
-        _atualizarContagensPorPeca(++_pedidoFiltroId);
-      }
+      // Sem isso, os chips de cidade ficavam esperando pra sempre um
+      // filtro mudar — a contagem por cidade nunca rodava sozinha
+      // logo depois da busca inicial.
+      _atualizarContagensPorPeca(++_pedidoFiltroId);
       return;
     }
 
@@ -249,11 +238,7 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
           _avisoEtapa1 = 'Backend não retornou pontos ainda (endpoint em desenvolvimento) — mostrando a área pela cidade.';
         }
       });
-      if (_temFiltroGrupoB) {
-        _atualizarPontosComFiltros();
-      } else {
-        _atualizarContagensPorPeca(++_pedidoFiltroId);
-      }
+      _atualizarContagensPorPeca(++_pedidoFiltroId);
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -400,24 +385,15 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
   }
 
   // -----------------------------------------------------------------------
-  // Etapa 2 — "Salvar Projeto": manda o conjunto consolidado pro
-  // backend (CA06) e confirma visualmente. Ainda não existe
-  // persistência de projeto de verdade (isso viraria uma task de
-  // tela de Projetos/relatórios, fora do escopo daqui) — quando
-  // existir, esse é o ponto onde entra o nome do projeto + tudo que
-  // já está filtrado/selecionado, pra mandar pra lá.
+  // Etapa 2 — "Salvar Projeto": persiste o projeto de verdade via
+  // POST /api/v1/projects (CRUD Java já existente — ProjectController/
+  // ProjectService/ProjectRepository), usando o mesmo total já
+  // calculado ao vivo pelos filtros pra exibir o resultado. Os
+  // pontos/filtros da Etapa 2 (município, polígono, níveis de tensão
+  // etc.) ainda NÃO são enviados nem persistidos — hoje o Project só
+  // guarda nome + distribuidora; isso fica pra quando existir onde
+  // guardar esses critérios no backend.
   // -----------------------------------------------------------------------
-
-  /// "Salvar Projeto" — não faz mais nenhuma chamada nova ao backend
-  /// pra "resultado final": simplesmente reaproveita [_totalEtapa1],
-  /// que é o MESMO total já calculado e mostrado ao vivo no mapa a
-  /// cada filtro (via [_atualizarPontosComFiltros]). Antes, isso
-  /// fazia uma segunda consulta independente — e mesmo mandando (na
-  /// teoria) o mesmo payload, às vezes voltava um número diferente
-  /// do que já estava na tela, sem causa raiz clara. Reaproveitar o
-  /// valor elimina esse risco por completo: os dois números agora
-  /// são literalmente a mesma variável, não duas consultas que podem
-  /// divergir.
   Future<void> _salvarProjeto() async {
     final nomeProjeto = _nomeProjetoController.text.trim();
     if (nomeProjeto.isEmpty) {
@@ -444,16 +420,61 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
       return;
     }
 
-    setState(() {
-      _totalFinal = _totalEtapa1;
-      _projetoSalvo = true;
-      _salvando = false;
-    });
-    // Volta o botão ao normal depois de um tempo — sem persistência
-    // de verdade ainda, "Salvo" é só uma confirmação visual.
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) setState(() => _projetoSalvo = false);
-    });
+    try {
+      final novoProjeto = await _projectsService.criar(name: nomeProjeto, distCode: _distCode);
+      if (!mounted) return;
+      // Entra na lista compartilhada AGORA — a ProjectsScreen mostra
+      // ele na hora, mesmo que já esteja montada e não vá refazer o
+      // GET sozinha ao trocar de aba.
+      ProjectsStore.instance.adicionar(novoProjeto);
+      // Volta pro estado inicial — como o AppShell mantém essa tela
+      // viva ao trocar de aba, sem isso o próximo "New Project"
+      // abriria com a busca/filtros do projeto anterior ainda lá.
+      setState(_resetFormulario);
+      // Projeto criado de verdade — manda o usuário pro card dele na
+      // tela de Projetos.
+      AppShell.of(context)?.goToTab(_projectsTabIndex);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _salvando = false);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('Não foi possível salvar o projeto agora. Tente de novo em instantes.')));
+    }
+  }
+
+  /// Volta a tela inteira ao estado inicial — Etapa 1 e Etapa 2 —
+  /// depois de um "Salvar Projeto" bem-sucedido. Chamar dentro de um
+  /// setState; não chama setState sozinho.
+  void _resetFormulario() {
+    _debounceFiltro?.cancel();
+
+    _nomeProjetoController.clear();
+    _distCode = '391';
+
+    _municipios.clear();
+    _buscandoEtapa1 = false;
+    _erroEtapa1 = null;
+    _avisoEtapa1 = null;
+    _features = [];
+    _totalEtapa1 = null;
+
+    _areasCidades = {};
+    _contagensCidades = {};
+    _contagensAreas = {};
+
+    _areasMonitoramento = [];
+    _conjCodes.clear();
+    _subCodes.clear();
+    _targetLayers = [];
+    _clasSub.clear();
+    _cnaeCodes.clear();
+    _bairroNames.clear();
+
+    _salvando = false;
+    _projetoSalvo = false;
+    _aplicandoFiltros = false;
+    _totalFinal = null;
   }
 
   /// Combina as áreas de monitoramento desenhadas (0, 1 ou várias) num
@@ -693,25 +714,14 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const SizedBox(height: AppSpacing.lg),
         Row(
           children: [
-            Image.asset('assets/images/logo.png', height: 26),
-            const Spacer(),
-            const Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text('TECSYS B2B',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary, letterSpacing: 0.3)),
-                SizedBox(height: 2),
-                Text('New Project', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-              ],
-            ),
+            const Text('Novo Projeto', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
             const SizedBox(width: 12),
-            const CircleAvatar(radius: 18, backgroundColor: AppColors.primary, child: Icon(Icons.person, size: 18, color: Colors.white)),
+            const CircleAvatar(radius: 18, backgroundColor: AppColors.primary, child: Icon(Icons.insert_drive_file_outlined, size: 18, color: Colors.white)),
           ],
         ),
-        const SizedBox(height: AppSpacing.lg),
-        const Text('New Project', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
         const SizedBox(height: 6),
         const Text('Busque a área de estudo, depois refine e salve o projeto.',
             style: TextStyle(fontSize: 15, color: AppColors.textSecondary)),
