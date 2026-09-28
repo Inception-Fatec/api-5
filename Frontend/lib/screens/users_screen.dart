@@ -1,27 +1,8 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import 'add_user_dialog.dart';
-
-class _TeamMember {
-  final String name;
-  final String email;
-  final String role;
-  final String addedDate;
-
-  const _TeamMember({
-    required this.name,
-    required this.email,
-    required this.role,
-    required this.addedDate,
-  });
-
-  String get initials {
-    final parts = name.trim().split(' ');
-    final first = parts.isNotEmpty ? parts.first[0] : '';
-    final last = parts.length > 1 ? parts.last[0] : '';
-    return (first + last).toUpperCase();
-  }
-}
+import '../services/user_model.dart';
+import '../services/user_api_service.dart';
 
 class UsersScreen extends StatefulWidget {
   const UsersScreen({super.key});
@@ -34,31 +15,99 @@ class _UsersScreenState extends State<UsersScreen> {
   String _searchQuery = '';
   String _selectedRole = 'All';
 
-  final List<_TeamMember> _members = const [
-    _TeamMember(name: 'John Doe', email: 'john.doe@tecsys.com', role: 'ADMIN', addedDate: 'Sep 2024'),
-    _TeamMember(name: 'Ana Silva', email: 'ana.silva@tecsys.com', role: 'USER', addedDate: 'Oct 2024'),
-    _TeamMember(name: 'Carlos Santos', email: 'carlos.s@tecsys.com', role: 'USER', addedDate: 'Nov 2024'),
-    _TeamMember(name: 'Mariana Lima', email: 'mariana.l@tecsys.com', role: 'ADMIN', addedDate: 'Jan 2025'),
-  ];
+  bool _isLoading = true;
+  String? _error;
+  List<AppUser> _members = [];
 
-  List<_TeamMember> get _filteredMembers {
+  @override
+  void initState() {
+    super.initState();
+    _loadUsers();
+  }
+
+  /// CA01 — carrega a lista real de usuários do backend.
+  Future<void> _loadUsers() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final users = await UserApiService.instance.listUsers();
+      if (!mounted) return;
+      setState(() {
+        _members = users;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  List<AppUser> get _filteredMembers {
     return _members.where((member) {
       final matchesSearch = member.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
           member.email.toLowerCase().contains(_searchQuery.toLowerCase());
-      final matchesRole = _selectedRole == 'All' || member.role == _selectedRole;
+      final matchesRole = _selectedRole == 'All' || member.role.label == _selectedRole;
       return matchesSearch && matchesRole;
     }).toList();
   }
 
-  int get _adminCount => _members.where((m) => m.role == 'ADMIN').length;
-  int get _userCount => _members.where((m) => m.role == 'USER').length;
+  int get _adminCount => _members.where((m) => m.role == UserRoleType.adm).length;
+  int get _userCount => _members.where((m) => m.role == UserRoleType.user).length;
 
+  /// CA02 — cadastra o usuário no backend e recarrega a lista.
   Future<void> _openAddUser() async {
     final result = await showAddUserDialog(context);
     if (result == null || !mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${result.fullName} added as ${result.role}')),
+    try {
+      await UserApiService.instance.createUser(
+        name: result.fullName,
+        email: result.email,
+        password: result.password,
+        role: result.role == 'ADMIN' ? UserRoleType.adm : UserRoleType.user,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${result.fullName} added as ${result.role}')),
+      );
+      await _loadUsers();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao criar usuário: $e')),
+      );
+    }
+  }
+
+  /// CA05/CA06/RN03 — exclui via backend; 403 (excluir outro ADM) chega
+  /// como ApiException e é mostrado na snackbar.
+  Future<void> _handleDelete(AppUser member) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remover usuário'),
+        content: Text('Tem certeza que deseja remover ${member.name}?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remover')),
+        ],
+      ),
     );
+    if (confirmed != true) return;
+    try {
+      await UserApiService.instance.deleteUser(member.id);
+      if (!mounted) return;
+      setState(() => _members.removeWhere((m) => m.id == member.id));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao remover usuário: $e')),
+      );
+    }
   }
 
   @override
@@ -67,6 +116,34 @@ class _UsersScreenState extends State<UsersScreen> {
       builder: (context, constraints) {
         // Ponto de corte para separar Web/Desktop de Mobile (768 pixéis)
         bool isDesktop = constraints.maxWidth >= 768;
+
+        if (_isLoading) {
+          return const Scaffold(
+            backgroundColor: Color(0xFFF8FAFC),
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (_error != null) {
+          return Scaffold(
+            backgroundColor: const Color(0xFFF8FAFC),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline_rounded, size: 40, color: Color(0xFFEF4444)),
+                    const SizedBox(height: 12),
+                    Text('Erro ao carregar usuários: $_error', textAlign: TextAlign.center),
+                    const SizedBox(height: 16),
+                    ElevatedButton(onPressed: _loadUsers, child: const Text('Tentar novamente')),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
 
         if (isDesktop) {
           return _UsersWebView(
@@ -79,6 +156,8 @@ class _UsersScreenState extends State<UsersScreen> {
             onSearchChanged: (val) => setState(() => _searchQuery = val),
             onRoleChanged: (val) => setState(() => _selectedRole = val ?? 'All'),
             onAddUser: _openAddUser,
+            onRefresh: _loadUsers,
+            onDelete: _handleDelete,
           );
         } else {
           return _UsersMobileView(
@@ -91,6 +170,8 @@ class _UsersScreenState extends State<UsersScreen> {
             onSearchChanged: (val) => setState(() => _searchQuery = val),
             onRoleChanged: (val) => setState(() => _selectedRole = val ?? 'All'),
             onAddUser: _openAddUser,
+            onRefresh: _loadUsers,
+            onDelete: _handleDelete,
           );
         }
       },
@@ -102,8 +183,8 @@ class _UsersScreenState extends State<UsersScreen> {
 /// VISTA WEB / DESKTOP (Ecrãs Largos)
 /// ==========================================
 class _UsersWebView extends StatelessWidget {
-  final List<_TeamMember> members;
-  final List<_TeamMember> filteredMembers;
+  final List<AppUser> members;
+  final List<AppUser> filteredMembers;
   final String searchQuery;
   final String selectedRole;
   final int adminCount;
@@ -111,6 +192,8 @@ class _UsersWebView extends StatelessWidget {
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<String?> onRoleChanged;
   final VoidCallback onAddUser;
+  final Future<void> Function() onRefresh;
+  final ValueChanged<AppUser> onDelete;
 
   const _UsersWebView({
     required this.members,
@@ -122,6 +205,8 @@ class _UsersWebView extends StatelessWidget {
     required this.onSearchChanged,
     required this.onRoleChanged,
     required this.onAddUser,
+    required this.onRefresh,
+    required this.onDelete,
   });
 
   @override
@@ -132,7 +217,9 @@ class _UsersWebView extends StatelessWidget {
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 900),
-            child: ListView(
+            child: RefreshIndicator(
+              onRefresh: onRefresh,
+              child: ListView(
               padding: const EdgeInsets.fromLTRB(24, 28, 24, 100),
               children: [
                 Row(
@@ -248,10 +335,11 @@ class _UsersWebView extends StatelessWidget {
                   const _EmptyState()
                 else
                   for (final member in filteredMembers) ...[
-                    _MemberCard(member: member),
+                    _MemberCard(member: member, onDelete: () => onDelete(member)),
                     const SizedBox(height: 12),
                   ],
               ],
+              ),
             ),
           ),
         ),
@@ -264,8 +352,8 @@ class _UsersWebView extends StatelessWidget {
 /// VISTA MOBILE (Ecrãs Estreitos)
 /// ==========================================
 class _UsersMobileView extends StatelessWidget {
-  final List<_TeamMember> members;
-  final List<_TeamMember> filteredMembers;
+  final List<AppUser> members;
+  final List<AppUser> filteredMembers;
   final String searchQuery;
   final String selectedRole;
   final int adminCount;
@@ -273,6 +361,8 @@ class _UsersMobileView extends StatelessWidget {
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<String?> onRoleChanged;
   final VoidCallback onAddUser;
+  final Future<void> Function() onRefresh;
+  final ValueChanged<AppUser> onDelete;
 
   const _UsersMobileView({
     required this.members,
@@ -284,6 +374,8 @@ class _UsersMobileView extends StatelessWidget {
     required this.onSearchChanged,
     required this.onRoleChanged,
     required this.onAddUser,
+    required this.onRefresh,
+    required this.onDelete,
   });
 
   @override
@@ -298,7 +390,9 @@ class _UsersMobileView extends StatelessWidget {
         label: const Text('Add User', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
       ),
       body: SafeArea(
-        child: ListView(
+        child: RefreshIndicator(
+          onRefresh: onRefresh,
+          child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
           children: [
             Row(
@@ -391,10 +485,11 @@ class _UsersMobileView extends StatelessWidget {
               const _EmptyState()
             else
               for (final member in filteredMembers) ...[
-                _MemberCard(member: member),
+                _MemberCard(member: member, onDelete: () => onDelete(member)),
                 const SizedBox(height: 10),
               ],
           ],
+          ),
         ),
       ),
     );
@@ -458,14 +553,25 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-class _MemberCard extends StatelessWidget {
-  final _TeamMember member;
+/// Formata como "Sep 2024" (mesmo estilo do protótipo original),
+/// sem depender do pacote intl.
+String _formatAddedDate(DateTime date) {
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  return '${months[date.month - 1]} ${date.year}';
+}
 
-  const _MemberCard({required this.member});
+class _MemberCard extends StatelessWidget {
+  final AppUser member;
+  final VoidCallback onDelete;
+
+  const _MemberCard({required this.member, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
-    final isAdmin = member.role == 'ADMIN';
+    final isAdmin = member.role == UserRoleType.adm;
     final accent = isAdmin ? AppColors.primary : const Color(0xFF94A3B8);
 
     return Container(
@@ -520,7 +626,7 @@ class _MemberCard extends StatelessWidget {
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Text(
-                              member.role,
+                              member.role.label,
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w800,
@@ -535,20 +641,20 @@ class _MemberCard extends StatelessWidget {
                       const Divider(height: 1, color: Color(0xFFF1F5F9)),
                       const SizedBox(height: 8),
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        mainAxisAlignment: MainAxisAlignment.end,
                         children: [
+                          // Row(
+                          //   children: [
+                          //     const Icon(Icons.calendar_today_outlined, size: 12, color: Color(0xFF94A3B8)),
+                          //     const SizedBox(width: 4),
+                          //     Text('Added ${_formatAddedDate(member.createdAt)}', style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontWeight: FontWeight.w500)),
+                          //   ],
+                          // ),
                           Row(
                             children: [
-                              const Icon(Icons.calendar_today_outlined, size: 12, color: Color(0xFF94A3B8)),
-                              const SizedBox(width: 4),
-                              Text('Added ${member.addedDate}', style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontWeight: FontWeight.w500)),
-                            ],
-                          ),
-                          Row(
-                            children: [
-                              _ActionButton(icon: Icons.edit_outlined, color: const Color(0xFF64748B), onTap: () {}),
+                              //_ActionButton(icon: Icons.edit_outlined, color: const Color(0xFF64748B), onTap: () {}),
                               const SizedBox(width: 6),
-                              _ActionButton(icon: Icons.delete_outline_rounded, color: const Color(0xFFEF4444), onTap: () {}),
+                              _ActionButton(icon: Icons.delete_outline_rounded, color: const Color(0xFFEF4444), onTap: onDelete),
                             ],
                           ),
                         ],

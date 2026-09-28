@@ -141,7 +141,7 @@ class _AddUserDialogState extends State<AddUserDialog> {
         fullName: _nameController.text,
         email: _emailController.text,
         role: _role,
-        password: _role == 'ADMIN' ? _passwordController.text : '',
+        password: _passwordController.text,
       ),
     );
   }
@@ -209,7 +209,6 @@ class _AddUserDialogState extends State<AddUserDialog> {
                 _roleOption('ADMIN'),
               ],
             ),
-            if (_role == 'ADMIN') ...[
               const SizedBox(height: AppSpacing.md),
               _label('PASSWORD'),
               TextField(
@@ -227,7 +226,6 @@ class _AddUserDialogState extends State<AddUserDialog> {
                   ),
                 ),
               ),
-            ],
             const SizedBox(height: AppSpacing.lg),
             SizedBox(
               height: 50,
