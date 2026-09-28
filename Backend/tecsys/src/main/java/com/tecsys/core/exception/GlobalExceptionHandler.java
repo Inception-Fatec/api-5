@@ -3,12 +3,13 @@ package com.tecsys.core.exception;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import org.springframework.security.access.AccessDeniedException;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 @RestControllerAdvice
@@ -29,9 +30,13 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<StandardError> handleValidationExceptions(MethodArgumentNotValidException ex, HttpServletRequest request) {
-        List<StandardError.FieldError> fieldErrors = ex.getBindingResult().getFieldErrors().stream()
+        List<StandardError.FieldError> fieldErrors = new ArrayList<>(ex.getBindingResult().getFieldErrors().stream()
                 .map(f -> new StandardError.FieldError(f.getField(), f.getDefaultMessage()))
-                .toList();
+                .toList());
+
+        ex.getBindingResult().getGlobalErrors().forEach(g ->
+                fieldErrors.add(new StandardError.FieldError("Formulário", g.getDefaultMessage()))
+        );
 
         StandardError error = new StandardError(
                 Instant.now(),
@@ -68,5 +73,21 @@ public class GlobalExceptionHandler {
                 null
         );
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error);
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<StandardError> handleGenericException(Exception ex, HttpServletRequest request) {
+        StandardError error = new StandardError(
+                Instant.now(),
+                HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                "Internal Server Error",
+                "Ocorreu um erro interno no servidor.",
+                request.getRequestURI(),
+                null
+        );
+
+        ex.printStackTrace();
+
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
     }
 }

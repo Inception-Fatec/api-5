@@ -13,17 +13,15 @@ import 'package:flutter/material.dart';
 class NavItems {
   NavItems._();
 
-  static const _projects = (icon: Icons.folder_outlined, label: 'Projects');
-  static const _newProject = (icon: Icons.add_circle_outline, label: 'New Project');
-  static const _mapView = (icon: Icons.location_on_outlined, label: 'Map View');
-  static const _users = (icon: Icons.people_outline, label: 'Users');
-  static const _login = (icon: Icons.lock_outline, label: 'Login');
+  static const _projects = (icon: Icons.folder_outlined, label: 'Projetos');
+  static const _newProject = (icon: Icons.add_circle_outline, label: 'Novo Projeto');
+  static const _users = (icon: Icons.people_outline, label: 'Usuários');
+  static const _login = (icon: Icons.lock_outline, label: 'Entrar');
 
   static List<({IconData icon, String label})> forRole(String? role) {
     return [
       _projects,
       _newProject,
-      _mapView,
       if (role == 'ADM') _users,
       _login,
     ];

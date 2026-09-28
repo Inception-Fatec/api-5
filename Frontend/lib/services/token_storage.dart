@@ -13,11 +13,13 @@ class TokenStorage {
   static const _tokenKey = 'auth_token';
   static const _roleKey = 'auth_role';
   static const _emailKey = 'auth_email';
+  static const _nameKey = 'auth_name';
 
-  Future<void> save({required String token, required String role, required String email}) async {
+  Future<void> save({required String token, required String role, required String email, String? name}) async {
     await _storage.write(key: _tokenKey, value: token);
     await _storage.write(key: _roleKey, value: role);
     await _storage.write(key: _emailKey, value: email);
+    if (name != null) await _storage.write(key: _nameKey, value: name);
   }
 
   Future<String?> readToken() => _storage.read(key: _tokenKey);
@@ -26,9 +28,12 @@ class TokenStorage {
 
   Future<String?> readEmail() => _storage.read(key: _emailKey);
 
+  Future<String?> readName() => _storage.read(key: _nameKey);
+
   Future<void> clear() async {
     await _storage.delete(key: _tokenKey);
     await _storage.delete(key: _roleKey);
     await _storage.delete(key: _emailKey);
+    await _storage.delete(key: _nameKey);
   }
 }

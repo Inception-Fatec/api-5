@@ -225,19 +225,15 @@ class _UsersWebView extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.primary.withOpacity(0.25),
-                                blurRadius: 8,
-                                offset: const Offset(0, 4),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Text(
+                                'Usuários',
+                                style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
                               ),
                             ],
                           ),
@@ -348,73 +344,23 @@ class _UsersWebView extends StatelessWidget {
   }
 }
 
-/// ==========================================
-/// VISTA MOBILE (Ecrãs Estreitos)
-/// ==========================================
-class _UsersMobileView extends StatelessWidget {
-  final List<AppUser> members;
-  final List<AppUser> filteredMembers;
-  final String searchQuery;
-  final String selectedRole;
-  final int adminCount;
-  final int userCount;
-  final ValueChanged<String> onSearchChanged;
-  final ValueChanged<String?> onRoleChanged;
-  final VoidCallback onAddUser;
-  final Future<void> Function() onRefresh;
-  final ValueChanged<AppUser> onDelete;
+  // ---------------------------------------------------------------------
+  // MOBILE LAYOUT
+  // ---------------------------------------------------------------------
 
-  const _UsersMobileView({
-    required this.members,
-    required this.filteredMembers,
-    required this.searchQuery,
-    required this.selectedRole,
-    required this.adminCount,
-    required this.userCount,
-    required this.onSearchChanged,
-    required this.onRoleChanged,
-    required this.onAddUser,
-    required this.onRefresh,
-    required this.onDelete,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: onAddUser,
-        backgroundColor: AppColors.primary,
-        elevation: 3,
-        icon: const Icon(Icons.person_add_alt_1_rounded, color: Colors.white, size: 20),
-        label: const Text('Add User', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-      ),
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: onRefresh,
-          child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  alignment: Alignment.center,
-                  child: const Text('T', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18)),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Users Management', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: -0.5)),
-                      Text('Tecsys B2B Admin', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                    ],
+  Widget _buildMobileBody(BuildContext context) {
+    return CustomScrollView(
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          sliver: SliverList(
+            delegate: SliverChildListDelegate([
+              Row(
+                children: [
+                  const Spacer(),
+                  const Text(
+                    'Usuários',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
                   ),
                 ),
               ],
@@ -450,14 +396,14 @@ class _UsersMobileView extends StatelessWidget {
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Row(
+                children: [
+                  const Text(
+                    'Usuários',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(

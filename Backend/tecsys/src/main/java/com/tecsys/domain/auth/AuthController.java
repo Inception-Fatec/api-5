@@ -32,7 +32,8 @@ public class AuthController {
         var response = new AuthResponseDto(
                 token,
                 user.getRole().name(),
-                user.isMustChangePassword()
+                user.isMustChangePassword(),
+                user.getName()
         );
 
         return ResponseEntity.ok(response);
