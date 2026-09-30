@@ -1,0 +1,57 @@
+# Alternativa "sobe tudo de uma vez" — os scripts em scripts/ continuam
+# sendo o jeito principal (cada serviço sobe/para sozinho).
+#
+#   docker compose up --build        # db + backend + frontend
+#   docker compose up --build db     # só um serviço
+#   docker compose down              # para tudo (volume tecsys-pgdata preservado)
+#
+# Banco local (PostGIS 17). Para usar o Supabase no backend, suba o
+# backend pelo script (./scripts/run-backend.sh --db supabase) em vez
+# de pelo compose.
+name: tecsys
+
+services:
+  db:
+    image: postgis/postgis:17-3.6-alpine
+    container_name: tecsys-postgis
+    environment:
+      POSTGRES_USER: tecsys
+      POSTGRES_PASSWORD: tecsys
+      POSTGRES_DB: tecsys
+    ports:
+      - "5433:5432"
+    volumes:
+      - tecsys-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tecsys"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: ./Backend/tecsys
+    container_name: tecsys-backend
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/tecsys
+      DB_USER: tecsys
+      DB_PASSWORD: tecsys
+    ports:
+      - "8081:8081"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./Frontend
+      args:
+        API_HOST: localhost
+        API_PORT: "8081"
+    container_name: tecsys-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+volumes:
+  tecsys-pgdata:

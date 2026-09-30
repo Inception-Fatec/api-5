@@ -160,7 +160,7 @@ class _UsersScreenState extends State<UsersScreen> {
             onDelete: _handleDelete,
           );
         } else {
-          return _UsersMobileView(
+          return _UsersWebView(
             members: _members,
             filteredMembers: _filteredMembers,
             searchQuery: _searchQuery,
@@ -225,30 +225,17 @@ class _UsersWebView extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Expanded(
+                    const Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            children: [
-                              const Text(
-                                'Usuários',
-                                style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-                              ),
-                            ],
+                          Text(
+                            'Usuários',
+                            style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
                           ),
-                          alignment: Alignment.center,
-                          child: const Text('T', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22)),
-                        ),
-                        const SizedBox(width: 14),
-                        const Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Users Management', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: -0.5)),
-                            Text('Tecsys B2B Admin Console', style: TextStyle(fontSize: 13, color: Color(0xFF64748B))),
-                          ],
-                        ),
-                      ],
+                          Text('Tecsys B2B Admin Console', style: TextStyle(fontSize: 13, color: Color(0xFF64748B))),
+                        ],
+                      ),
                     ),
                     ElevatedButton.icon(
                       onPressed: onAddUser,
@@ -337,104 +324,6 @@ class _UsersWebView extends StatelessWidget {
               ],
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-  // ---------------------------------------------------------------------
-  // MOBILE LAYOUT
-  // ---------------------------------------------------------------------
-
-  Widget _buildMobileBody(BuildContext context) {
-    return CustomScrollView(
-      slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          sliver: SliverList(
-            delegate: SliverChildListDelegate([
-              Row(
-                children: [
-                  const Spacer(),
-                  const Text(
-                    'Usuários',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            Row(
-              children: [
-                Expanded(child: _StatPill(label: 'Total', value: '${members.length}', color: const Color(0xFF0F172A))),
-                const SizedBox(width: 8),
-                Expanded(child: _StatPill(label: 'Admins', value: '$adminCount', color: AppColors.primary)),
-                const SizedBox(width: 8),
-                Expanded(child: _StatPill(label: 'Users', value: '$userCount', color: const Color(0xFF64748B))),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                    ),
-                    child: TextField(
-                      onChanged: onSearchChanged,
-                      decoration: const InputDecoration(
-                        hintText: 'Search...',
-                        hintStyle: TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
-                        prefixIcon: Icon(Icons.search_rounded, size: 18, color: Color(0xFF94A3B8)),
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(vertical: 10),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              Row(
-                children: [
-                  const Text(
-                    'Usuários',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: selectedRole,
-                      icon: const Icon(Icons.filter_list_rounded, size: 16, color: Color(0xFF64748B)),
-                      items: ['All', 'ADMIN', 'USER'].map((role) {
-                        return DropdownMenuItem(
-                          value: role,
-                          child: Text(role, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155))),
-                        );
-                      }).toList(),
-                      onChanged: onRoleChanged,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            Text(
-              'TEAM MEMBERS (${filteredMembers.length})',
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF64748B), letterSpacing: 0.8),
-            ),
-            const SizedBox(height: 10),
-            if (filteredMembers.isEmpty)
-              const _EmptyState()
-            else
-              for (final member in filteredMembers) ...[
-                _MemberCard(member: member, onDelete: () => onDelete(member)),
-                const SizedBox(height: 10),
-              ],
-          ],
           ),
         ),
       ),

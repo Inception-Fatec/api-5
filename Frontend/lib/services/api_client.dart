@@ -15,11 +15,13 @@ import 'api_exception.dart';
 ///   [_devHost] pelo IP da máquina na rede local (ex.: 192.168.x.x)
 ///   ou pela URL de um ambiente publicado.
 class ApiConfig {
-  static const _devHost = 'localhost';
-  // Porta do backend (server.port no application.yml) — mudou de
-  // 8080 pra 8081 na branch TG-11-filtro-pontos-cobertura. Se mudar
-  // de novo, é só ajustar aqui.
-  static const _devPort = 8081;
+  // Host/porta do backend — por padrão, backend local na máquina do
+  // dev (porta do server.port no application.yml). No Docker, são
+  // embutidos no build via --dart-define (ver Frontend/Dockerfile e
+  // scripts/run-frontend.sh). Fora do Docker, `flutter run` usa estes
+  // defaults sem precisar de nada.
+  static const _devHost = String.fromEnvironment('API_HOST', defaultValue: 'localhost');
+  static const _devPort = int.fromEnvironment('API_PORT', defaultValue: 8081);
 
   static String get baseUrl {
     if (kIsWeb) return 'http://$_devHost:$_devPort/api/v1';
