@@ -24,7 +24,7 @@ done
 
 if [[ "$DB_MODE" == "local" ]]; then
   # host.docker.internal resolve para o host dentro do container (Linux: via host-gateway).
-  DB_URL="jdbc:postgresql://host.docker.internal:5433/tecsys"
+  DB_URL="jdbc:postgresql://tecsys-postgis:5432/tecsys"
   DB_USER="tecsys"
   DB_PASSWORD="tecsys"
 elif [[ "$DB_MODE" == "supabase" ]]; then
@@ -62,8 +62,10 @@ if [[ "$DB_MODE" == "supabase" ]]; then
     "$IMAGE" >/dev/null
 else
   docker run -d --name "$CONTAINER" \
-    --add-host=host.docker.internal:host-gateway \
-    -e DB_URL="$DB_URL" -e DB_USER="$DB_USER" -e DB_PASSWORD="$DB_PASSWORD" \
+    --network tecsys-net \
+    -e DB_URL="$DB_URL" \
+    -e DB_USER="$DB_USER" \
+    -e DB_PASSWORD="$DB_PASSWORD" \
     -p "$PORT:8081" "$IMAGE" >/dev/null
 fi
 
