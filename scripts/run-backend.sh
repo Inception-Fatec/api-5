@@ -31,8 +31,16 @@ elif [[ "$DB_MODE" == "supabase" ]]; then
   [[ -f "$ENV_FILE" ]] || { echo "ERRO: crie $ENV_FILE a partir do .env.supabase.example e preencha SUPABASE_DB_URL."; exit 1; }
   # shellcheck disable=SC1090
   source "$ENV_FILE"
-  [[ "${SUPABASE_DB_URL:-}" == postgres://* ]] || { echo "ERRO: SUPABASE_DB_URL precisa começar com postgres://"; exit 1; }
-  REST="${SUPABASE_DB_URL#postgres://}"
+  # Supabase mostra a string como postgresql:// — libpq aceita tanto
+  # postgres:// quanto postgresql://, então aceitamos os dois.
+  if [[ "${SUPABASE_DB_URL:-}" == postgres://* ]]; then
+    REST="${SUPABASE_DB_URL#postgres://}"
+  elif [[ "${SUPABASE_DB_URL:-}" == postgresql://* ]]; then
+    REST="${SUPABASE_DB_URL#postgresql://}"
+  else
+    echo "ERRO: SUPABASE_DB_URL precisa começar com postgres:// ou postgresql://"
+    exit 1
+  fi
   CREDS="${REST%%@*}"; HOSTDB="${REST#*@}"
   DB_USER="${CREDS%%:*}"; DB_PASSWORD="${CREDS#*:}"
   DB_URL="jdbc:postgresql://${HOSTDB}"
@@ -44,10 +52,20 @@ echo "Build da imagem $IMAGE (pode demorar na 1ª vez)..."
 docker build -q -t "$IMAGE" "$ROOT/Backend/tecsys" >/dev/null
 
 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
-docker run -d --name "$CONTAINER" \
-  --add-host=host.docker.internal:host-gateway \
-  -e DB_URL="$DB_URL" -e DB_USER="$DB_USER" -e DB_PASSWORD="$DB_PASSWORD" \
-  -p "$PORT:8081" "$IMAGE" >/dev/null
+# Modo supabase: o host direto do Supabase só tem IPv6, que não existe
+# na rede bridge padrão do Docker — por isso aqui o container usa a
+# rede do host (mesma do `java -jar` fora do Docker). No modo local,
+# bridge + host-gateway basta (PostGIS local é IPv4).
+if [[ "$DB_MODE" == "supabase" ]]; then
+  docker run -d --name "$CONTAINER" --network host \
+    -e DB_URL="$DB_URL" -e DB_USER="$DB_USER" -e DB_PASSWORD="$DB_PASSWORD" \
+    "$IMAGE" >/dev/null
+else
+  docker run -d --name "$CONTAINER" \
+    --add-host=host.docker.internal:host-gateway \
+    -e DB_URL="$DB_URL" -e DB_USER="$DB_USER" -e DB_PASSWORD="$DB_PASSWORD" \
+    -p "$PORT:8081" "$IMAGE" >/dev/null
+fi
 
 echo "Aguardando backend responder em :$PORT..."
 for _ in $(seq 1 60); do

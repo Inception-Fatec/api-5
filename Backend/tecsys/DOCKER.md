@@ -17,8 +17,12 @@ Imagem multi-stage: compila o jar com Maven+JDK 17 e roda só com JRE 17.
   (precisa do `run-db.sh` rodando).
 - `--db supabase`: lê `Backend/tecsys/.env.supabase` (crie a partir do
   `.env.supabase.example`, **nunca commitar**). Formato aceito:
-  `SUPABASE_DB_URL=postgres://usuario:senha@host:5432/banco`
+  `SUPABASE_DB_URL=postgres://...` ou `postgresql://...` (como o
+  dashboard mostra)
   — o script converte sozinho para o JDBC que o Spring exige.
+  Detalhe: o host direto do Supabase é IPv6-only, que não existe na rede
+  bridge padrão do Docker — por isso nesse modo o container usa
+  `--network host`. Alternativa futura: usar a URL do pooler (IPv4).
 
 A tabela `projects` (que não vem no dump) é criada sozinha pelo
 Hibernate no primeiro boot, nos dois bancos.
