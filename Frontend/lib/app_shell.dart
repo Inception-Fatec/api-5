@@ -6,7 +6,6 @@ import 'navigation/bottom_nav_bar.dart';
 import 'navigation/top_nav_bar.dart';
 import 'navigation/nav_items.dart';
 import 'screens/projects_screen.dart';
-import 'screens/new_project_screen.dart';
 import 'screens/users_screen.dart';
 
 /// Ponto único de navegação do app. Decide web vs. mobile UMA vez,
@@ -44,10 +43,13 @@ class AppShell extends StatefulWidget {
   /// restaurar uma sessão existente no boot do app (SplashGate), pra
   /// nunca divergir da lista de NavItems.forRole (RN04 — Users só
   /// entra pra ADM nos dois casos).
+  ///
+  /// "Novo Projeto" deixou de ser uma aba própria — virou um botão
+  /// dentro de "Projetos" (que abre o popup direto), então não entra
+  /// mais nessa lista.
   static List<Widget> tabsFor(bool isAdmin) {
     return [
       const ProjectsScreen(),
-      const NewProjectScreen(),
       if (isAdmin) const UsersScreen(),
     ];
   }
@@ -60,8 +62,6 @@ class _AppShellState extends State<AppShell> {
   int _currentIndex = 0;
 
   void _handleNavTap(List<({IconData icon, String label})> navItems, int index) {
-    // O último item (Login/Account) nunca vira uma aba do IndexedStack —
-    // ele sempre dispara a ação especial, em qualquer plataforma.
     if (index == navItems.length - 1) {
       widget.onLoginTap(context);
       return;
@@ -114,12 +114,6 @@ class _AppShellState extends State<AppShell> {
   }
 }
 
-/// Deixa o AppShell "encontrável" por qualquer tela filha, via
-/// `AppShell.of(context)?.goToTab(index)`. Assim um botão dentro de
-/// uma aba (ex: "+ New Project" na ProjectsScreen) troca de aba pelo
-/// IndexedStack do próprio Shell, em vez de empilhar uma nova rota —
-/// o que também evita telas ficarem sem Material ancestral quando
-/// empilhadas fora da árvore do Shell.
 class _AppShellScope extends InheritedWidget {
   final ValueChanged<int> goToTab;
 

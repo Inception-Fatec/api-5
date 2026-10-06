@@ -16,12 +16,6 @@ class PointsFilterException implements Exception {
   String toString() => message;
 }
 
-/// Fala com o endpoint `POST /api/v1/points/filter`, já implementado
-/// no backend (Controller → Service → Repository com JdbcTemplate +
-/// PostGIS). `polygon_geojson` vai como STRING (JSON serializado), e
-/// a resposta traz `features` como o FeatureCollection inteiro — os
-/// dois pontos em que o contrato real difere do que documentamos
-/// antes, já ajustados aqui.
 class PointsFilterService {
   Future<PointsFilterResult> buscarPontos({
     List<String>? distCodes,
@@ -33,15 +27,8 @@ class PointsFilterService {
     List<String>? clasSub,
     List<String>? cnaeCodes,
     List<String>? bairroNames,
-    // Quando true, pede pro backend pular a montagem do GeoJSON de
-    // cada ponto — só quer saber "tem ponto ou não" (ex: validação de
-    // cidade no seletor). Monta a mesma query, mas sem o custo pesado
-    // de serializar geometria de dezenas de milhares de pontos que
-    // ninguém vai usar nesse momento.
     bool countOnly = false,
   }) async {
-    // RN01 / CA02, espelhado no cliente: pelo menos um delimitador do
-    // Grupo A precisa estar preenchido antes de mandar a requisição.
     final temDelimitador = (distCodes?.isNotEmpty ?? false) ||
         (munCodes?.isNotEmpty ?? false) ||
         (conjCodes?.isNotEmpty ?? false) ||
@@ -53,9 +40,6 @@ class PointsFilterService {
         'Informe ao menos uma Empresa, Município, Conjunto, Subestação ou desenhe uma área no mapa.',
       );
     }
-
-    // target_layers agora é OPCIONAL (Etapa 2 do fluxo em 2 passos —
-    // a Etapa 1 nem manda esse campo, só dist+mun).
 
     final payload = <String, dynamic>{
       if (distCodes != null && distCodes.isNotEmpty) 'dist_codes': distCodes,
@@ -87,12 +71,6 @@ class PointsFilterService {
       );
     }
 
-    // O backend devolve "features" como o FeatureCollection INTEIRO
-    // ({"type": "FeatureCollection", "features": [...]}), não como
-    // array direto — por isso o acesso ['features']['features'].
-    // Blindado contra o formato vindo como lista solta também (podia
-    // acontecer em respostas de count_only antes da correção no
-    // backend) — trata como "sem pontos" em vez de quebrar.
     final featuresRaw = corpo['features'];
     final featureCollection = featuresRaw is Map<String, dynamic> ? featuresRaw : null;
     final listaFeatures = featureCollection?['features'] as List? ?? const [];
@@ -100,5 +78,23 @@ class PointsFilterService {
       totalPoints: (corpo['total_points'] as num?)?.toInt() ?? 0,
       features: List<Map<String, dynamic>>.from(listaFeatures),
     );
+  }
+
+  /// Autocompletar de Bairro — `GET /api/v1/bairros`, nomes reais do
+  /// banco que batem com o texto digitado, dentro das cidades dadas.
+  Future<List<String>> buscarSugestoesBairro({
+    required List<String> munCodes,
+    required String texto,
+  }) async {
+    if (munCodes.isEmpty) return const [];
+    final query = munCodes.map((m) => 'mun_codes=${Uri.encodeQueryComponent(m)}').join('&');
+    final path = '/bairros?$query&q=${Uri.encodeQueryComponent(texto)}';
+    try {
+      final corpo = await ApiClient.instance.getJson(path) as Map<String, dynamic>?;
+      final lista = corpo?['bairros'] as List? ?? const [];
+      return lista.map((e) => e.toString()).toList();
+    } catch (_) {
+      return const [];
+    }
   }
 }

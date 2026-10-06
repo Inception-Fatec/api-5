@@ -9,9 +9,6 @@ import '../widgets/auth_scaffold.dart';
 import '../widgets/auth_text_field.dart';
 import '../widgets/first_access_modal.dart';
 import '../navigation/account_actions.dart' show openResetPassword;
-import 'new_project_screen.dart';
-import 'projects_screen.dart';
-import 'users_screen.dart';
 import '../navigation/bottom_nav_bar.dart' show showAccountMenu;
 
 /// Login screen — tela de pré-autenticação: sem navbar em nenhuma
@@ -98,16 +95,15 @@ class _LoginScreenState extends State<LoginScreen> {
     // AppShell.tabsFor(isAdmin) é a mesma função que o SplashGate usa
     // ao restaurar uma sessão persistida (F5 na web) — garante que
     // login normal e sessão restaurada nunca montem tabs diferentes
-    // (RN04: Users só entra pra ADM nos dois casos).
+    // (RN04: Users só entra pra ADM nos dois casos). Antes essa lista
+    // era duplicada aqui na mão — unificado pra nunca mais divergir
+    // (foi exatamente essa duplicação que deixou uma referência à
+    // NewProjectScreen sobrando aqui depois dela ter sido removida).
     final isAdmin = AuthService.instance.role == 'ADM';
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => AppShell(
-          tabs: [
-            const ProjectsScreen(),
-            const NewProjectScreen(),
-            if (isAdmin) const UsersScreen(),
-          ],
+          tabs: AppShell.tabsFor(isAdmin),
           onLoginTap: (ctx) => showAccountMenu(ctx),
         ),
       ),

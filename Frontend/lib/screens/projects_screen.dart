@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../app_shell.dart';
 import '../services/project_model.dart';
 import '../services/project_store.dart';
 import '../services/user_store.dart';
@@ -9,7 +8,8 @@ import '../utils/distribuidoras.dart';
 import '../widgets/common/app_footer.dart';
 import '../widgets/common/page_body.dart';
 import '../utils/normalizar_texto.dart';
-import 'new_project_screen.dart';
+import 'new_project_dialog.dart';
+import 'points_map_screen.dart';
 import 'reports_screen.dart';
 
 /// "My Projects" screen. Mesmo padrão da MapScreen/NewProjectScreen:
@@ -27,9 +27,6 @@ class ProjectsScreen extends StatefulWidget {
 
 class _ProjectsScreenState extends State<ProjectsScreen> {
   static const _webBreakpoint = 900.0;
-
-  // Índice da aba "New Project" no AppShell (Projects=0, New Project=1, Map=2).
-  static const _newProjectTabIndex = 1;
 
   // Store compartilhado com a NewProjectScreen — é ele quem guarda a
   // lista de verdade, pra um projeto recém-criado aparecer aqui na
@@ -85,17 +82,18 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   // mostram "calculando"/indisponível com base nisso.
   int get _totalCalculados => _store.projects.length;
 
-  void _goToNewProject(BuildContext context) {
-    final shell = AppShell.of(context);
-    if (shell != null) {
-      shell.goToTab(_newProjectTabIndex);
-    } else {
-      // Fallback defensivo, só usado se esta tela for aberta fora do
-      // AppShell (ex: em testes).
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const NewProjectScreen()),
-      );
-    }
+  Future<void> _goToNewProject(BuildContext context) async {
+    final resultado = await NewProjectDialog.mostrar(context);
+    if (resultado == null || !context.mounted) return;
+
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => PointsMapScreen(
+        nomeProjeto: resultado.nome,
+        distCode: resultado.distCode,
+        distribuidoraLabel: resultado.distribuidoraLabel,
+        municipios: resultado.municipios,
+      ),
+    ));
   }
 
   @override
@@ -147,7 +145,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
       style: ElevatedButton.styleFrom(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        padding: EdgeInsets.symmetric(horizontal: full ? 0 : 18, vertical: 14),
+        padding: EdgeInsets.symmetric(horizontal: full ? 0 : 22, vertical: 16),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         elevation: 0,
       ),
@@ -156,15 +154,15 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
             full ? MainAxisAlignment.center : MainAxisAlignment.start,
         mainAxisSize: full ? MainAxisSize.max : MainAxisSize.min,
         children: const [
-          Icon(Icons.add, size: 18),
-          SizedBox(width: 6),
+          Icon(Icons.add, size: 20),
+          SizedBox(width: 8),
           Text('Novo Projeto',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
         ],
       ),
     );
     return full
-        ? SizedBox(width: double.infinity, height: 48, child: botao)
+        ? SizedBox(width: double.infinity, height: 52, child: botao)
         : botao;
   }
 
@@ -254,15 +252,29 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
     }
     final projetos = _projetosFiltrados;
     if (projetos.isEmpty) {
+      if (_store.projects.isEmpty) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 48),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.map_outlined, size: 48, color: AppColors.textSecondary),
+                const SizedBox(height: AppSpacing.md),
+                const Text('Nenhum projeto em andamento', style: TextStyle(fontSize: 16, color: AppColors.textSecondary)),
+                const SizedBox(height: AppSpacing.md),
+                _buildNovoProjetoButton(context, full: false),
+              ],
+            ),
+          ),
+        );
+      }
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 32),
         child: Center(
           child: Text(
-            _store.projects.isEmpty
-                ? 'Nenhum projeto criado ainda.'
-                : 'Nenhum projeto encontrado para essa busca.',
-            style:
-                const TextStyle(fontSize: 14, color: AppColors.textSecondary),
+            'Nenhum projeto encontrado para essa busca.',
+            style: const TextStyle(fontSize: 14, color: AppColors.textSecondary),
           ),
         ),
       );
@@ -419,12 +431,16 @@ class _MetricCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(label,
-                  style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textSecondary,
-                      letterSpacing: 0.3)),
+              Expanded(
+                child: Text(label,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textSecondary,
+                        letterSpacing: 0.3)),
+              ),
+              const SizedBox(width: 4),
               Icon(icon, size: 17, color: AppColors.primary),
             ],
           ),
