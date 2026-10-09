@@ -3,13 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:tecsys_app/features/map/data/constants/map_filter_options.dart';
 import 'package:tecsys_app/features/map/state/points_map_controller.dart';
 import 'package:tecsys_app/features/map/ui/styles/filters_styles.dart';
+import 'package:tecsys_app/features/map/ui/widgets/filters/areas_filter_panel.dart';
 import 'package:tecsys_app/features/map/ui/widgets/filters/bairro_autocomplete_field.dart';
 import 'package:tecsys_app/features/map/ui/widgets/filters/checkbox_filter_panel.dart';
 import 'package:tecsys_app/features/map/ui/widgets/filters/chip_filter_panel.dart';
 import 'package:tecsys_app/features/map/ui/widgets/filters/dropdown_filter_button.dart';
 
-/// Linha rolável com os botões de filtro: bairro, nível de tensão,
-/// conjunto, subestação, classe e CNAE.
 class FilterButtonsRow extends StatelessWidget {
   final PointsMapController controller;
 
@@ -18,8 +17,36 @@ class FilterButtonsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final targetLayers = controller.targetLayers;
+    final areas = controller.areas;
 
     final botoes = <Widget>[
+      // As áreas têm um notifier próprio (o mapa também mexe nelas).
+      ListenableBuilder(
+        listenable: areas,
+        builder: (context, _) => DropdownFilterButton(
+          label: areas.isEmpty ? 'Áreas' : 'Áreas (${areas.areas.length})',
+          icon: Icons.highlight_alt,
+          ativo: !areas.isEmpty,
+          // Escuta as áreas e o controller (onde chegam os totais por área).
+          panelBuilder: (context, fechar) => ListenableBuilder(
+            listenable: Listenable.merge([areas, controller]),
+            builder: (context, _) => AreasFilterPanel(
+              areas: areas.areas,
+              selecionada: areas.selecionada,
+              totalDe: controller.totalNaArea,
+              onFocar: (i) {
+                fechar();
+                areas.focar(i);
+              },
+              onRemover: areas.remover,
+              onLimpar: () {
+                areas.limpar();
+                fechar();
+              },
+            ),
+          ),
+        ),
+      ),
       DropdownFilterButton(
         label: 'Bairro',
         icon: Icons.signpost_outlined,

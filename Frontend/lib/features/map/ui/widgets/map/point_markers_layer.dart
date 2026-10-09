@@ -1,19 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 import 'package:tecsys_app/features/map/data/models/map_point.dart';
 import 'package:tecsys_app/features/map/ui/styles/map_styles.dart';
 
-/// Marcadores dos pontos no mapa, coloridos pela camada de cada um.
 class PointMarkersLayer extends StatelessWidget {
   final List<MapPoint> pontos;
   final ValueChanged<MapPoint> onTap;
+  final bool Function(LatLng posicao)? destacado;
 
   const PointMarkersLayer({
     super.key,
     required this.pontos,
     required this.onTap,
+    this.destacado,
   });
+
+  Color _cor(MapPoint ponto) {
+    final cor = MapStyles.layerColor(ponto.layer);
+    final dentro = destacado?.call(ponto.position) ?? true;
+    return dentro ? cor : cor.withOpacity(MapStyles.markerOutsideAreaOpacity);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -29,7 +37,7 @@ class PointMarkersLayer extends StatelessWidget {
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: MapStyles.layerColor(ponto.layer),
+                  color: _cor(ponto),
                 ),
               ),
             ),

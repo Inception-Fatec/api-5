@@ -79,4 +79,35 @@ class FiltersStyles {
   );
   static const suggestionText = TextStyle(fontSize: 13);
   static const searchSpinnerSize = 14.0;
+
+  // Painel "Áreas"
+  static const areasPanelPadding = EdgeInsets.fromLTRB(14, 12, 10, 12);
+  static const areasHeaderTitle =
+      TextStyle(fontSize: 14, fontWeight: FontWeight.w700);
+  static const areasCountPadding =
+      EdgeInsets.symmetric(horizontal: 7, vertical: 2);
+  static const areasCountBgOpacity = 0.10;
+  static const areasCountText = TextStyle(
+      fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.primary);
+  static const areasClearText =
+      TextStyle(fontSize: 12, fontWeight: FontWeight.w600);
+  static const areasEmptyBg = Color(0xFFF4F6F9);
+  static const areasEmptyPadding = EdgeInsets.all(14);
+  static const areasEmptyIconSize = 22.0;
+  static const areasEmptyText =
+      TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4);
+  static const areaCardGap = 6.0;
+  static const areaCardPadding = EdgeInsets.fromLTRB(10, 9, 4, 9);
+  static const areaBadgeSize = 26.0;
+  static const areaBadgeText = TextStyle(
+      fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.primary);
+  static const areaTitle =
+      TextStyle(fontSize: 13, fontWeight: FontWeight.w600);
+  static const areaCoords = TextStyle(
+    fontSize: 11,
+    color: AppColors.textSecondary,
+    fontFeatures: [FontFeature.tabularFigures()],
+  );
+  static const areaRemoveIconSize = 18.0;
+  static const areaCardSelectedBgOpacity = 0.08;
 }

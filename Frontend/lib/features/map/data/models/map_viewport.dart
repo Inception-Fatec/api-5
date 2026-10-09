@@ -1,4 +1,8 @@
-/// Área visível do mapa no momento da busca: zoom e limites geográficos.
+import 'dart:math' as math;
+import 'dart:ui' show Offset, Size;
+
+import 'package:latlong2/latlong.dart';
+
 class MapViewport {
   final double zoom;
   final double west;
@@ -13,9 +17,6 @@ class MapViewport {
     required this.east,
     required this.north,
   });
-
-  /// Retângulo visível como polígono GeoJSON (formato aceito pelo
-  /// backend em `polygon_geojson`).
   Map<String, dynamic> toPolygonGeoJson() {
     return {
       'type': 'Polygon',
@@ -29,5 +30,20 @@ class MapViewport {
         ]
       ],
     };
+  }
+  LatLng screenToLatLng(Offset ponto, Size size) {
+    final lon = west + (east - west) * (ponto.dx / size.width);
+
+    double mercY(double lat) {
+      final r = lat * math.pi / 180;
+      return math.log(math.tan(math.pi / 4 + r / 2));
+    }
+
+    final yNorte = mercY(north);
+    final ySul = mercY(south);
+    final y = yNorte + (ySul - yNorte) * (ponto.dy / size.height);
+    final lat = (2 * math.atan(math.exp(y)) - math.pi / 2) * 180 / math.pi;
+
+    return LatLng(lat, lon);
   }
 }

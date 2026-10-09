@@ -8,14 +8,13 @@ import 'package:tecsys_app/features/map/data/constants/map_filter_options.dart';
 import 'package:tecsys_app/features/map/data/constants/map_regions.dart';
 import 'package:tecsys_app/features/map/data/models/filtros_pontos.dart';
 import 'package:tecsys_app/features/map/data/models/map_point.dart';
+import 'package:tecsys_app/features/map/data/models/selected_area.dart';
 import 'package:tecsys_app/features/map/data/services/points_filter_service.dart';
+import 'package:tecsys_app/features/map/state/map_areas_controller.dart';
 import 'package:tecsys_app/features/projects/data/services/ibge_service.dart';
 import 'package:tecsys_app/features/projects/data/services/project_service.dart';
 import 'package:tecsys_app/features/projects/state/project_store.dart';
 
-/// Estado da tela do mapa de pontos: cidades, filtros, contadores e o
-/// salvamento do projeto. A busca dos pontos visíveis fica no
-/// [PointsLayerController]; aqui só entra o que a tela inteira usa.
 class PointsMapController extends ChangeNotifier {
   PointsMapController({
     required this.nomeProjeto,
@@ -33,7 +32,9 @@ class PointsMapController extends ChangeNotifier {
         _points = pointsService ?? PointsFilterService(),
         _ibge = ibgeService ?? IbgeService(),
         _projects = projectsService ?? ProjectsService(),
-        _store = store ?? ProjectsStore.instance;
+        _store = store ?? ProjectsStore.instance {
+    areas.addListener(_agendarContagemAreas);
+  }
 
   final String nomeProjeto;
   final String distCode;
@@ -43,6 +44,8 @@ class PointsMapController extends ChangeNotifier {
   /// até lá.
   final void Function(LatLng ponto)? onFocusPoint;
   final Duration focusDebounce;
+
+  final MapAreasController areas = MapAreasController();
 
   final List<Municipio> _municipiosIniciais;
   final PointsFilterService _points;
@@ -70,6 +73,12 @@ class PointsMapController extends ChangeNotifier {
   Timer? _focusTimer;
   bool _disposed = false;
 
+  final Map<String, int> _totalPorArea = {};
+  final Set<String> _contando = {};
+  Timer? _contagemTimer;
+  static const _contagemDebounce = Duration(milliseconds: 600);
+  static const _contagemCacheMax = 60;
+
   // --- Leitura --------------------------------------------------------
 
   List<Municipio> get municipiosSelecionados => _municipiosSelecionados;
@@ -87,6 +96,9 @@ class PointsMapController extends ChangeNotifier {
   bool get salvando => _salvando;
   bool get projetoSalvo => _projetoSalvo;
   int? get totalFinal => _totalFinal;
+
+
+  Map<String, dynamic>? get areaGeoJson => areas.geoJson;
 
   /// Código IBGE das cidades marcadas, como o backend espera (texto).
   List<String> get munCodes =>
@@ -148,8 +160,19 @@ class PointsMapController extends ChangeNotifier {
   void setBairros(List<String> valores) =>
       _alterarFiltro(() => _bairroNames = List.of(valores));
 
-  void setTargetLayers(List<String> valores) =>
-      _alterarFiltro(() => _targetLayers = List.of(valores));
+  void setTargetLayers(List<String> valores) => _alterarFiltro(
+      () => _targetLayers = _ajustarNiveis(_targetLayers, valores));
+
+  static List<String> _ajustarNiveis(List<String> antes, List<String> depois) {
+    const todos = 'all';
+    final acabouDeMarcarTodos =
+        depois.contains(todos) && !antes.contains(todos);
+    if (acabouDeMarcarTodos) return const [todos];
+    if (depois.contains(todos) && depois.length > 1) {
+      return depois.where((v) => v != todos).toList();
+    }
+    return List.of(depois);
+  }
 
   void setConjCodes(List<String> valores) =>
       _alterarFiltro(() => _conjCodes = List.of(valores));
@@ -166,8 +189,55 @@ class PointsMapController extends ChangeNotifier {
   void _alterarFiltro(VoidCallback alterar) {
     alterar();
     notifyListeners();
+    _pedidoCentralizar++; // invalida uma centralização já em andamento
     _focusTimer?.cancel();
     _focusTimer = Timer(focusDebounce, _centralizarEmFiltroAtual);
+    _agendarContagemAreas(); // filtro novo muda o total de cada área
+  }
+
+
+  String _chaveArea(SelectedArea a, FiltrosPontos f) =>
+      '${a.north},${a.south},${a.west},${a.east}|${f.hashCode}';
+
+  int? totalNaArea(SelectedArea a) => _totalPorArea[_chaveArea(a, filtros)];
+
+  void _agendarContagemAreas() {
+    _contagemTimer?.cancel();
+    if (areas.isEmpty) return;
+    _contagemTimer = Timer(_contagemDebounce, _contarAreas);
+  }
+
+  Future<void> _contarAreas() async {
+    final f = filtros;
+    if (_totalPorArea.length > _contagemCacheMax) _totalPorArea.clear();
+
+    for (final area in areas.areas) {
+      final chave = _chaveArea(area, f);
+      if (_totalPorArea.containsKey(chave) || _contando.contains(chave)) {
+        continue;
+      }
+      _contando.add(chave);
+      try {
+        final r = await _points.buscarPontos(
+          distCodes: [distCode],
+          polygonGeoJson: SelectedArea.toGeoJson([area]),
+          targetLayers: f.targetLayers,
+          conjCodes: f.conjCodes,
+          subCodes: f.subCodes,
+          clasSub: f.clasSub,
+          cnaeCodes: f.cnaeCodes,
+          bairroNames: f.bairroNames,
+          countOnly: true,
+        );
+        if (_disposed) return;
+        _totalPorArea[chave] = r.totalPoints;
+        notifyListeners();
+      } catch (_) {
+      } finally {
+        _contando.remove(chave);
+      }
+      if (filtros != f) return;
+    }
   }
 
   // --- Informações vindas do mapa --------------------------------------
@@ -186,23 +256,26 @@ class PointsMapController extends ChangeNotifier {
 
   // --- Busca pelos filtros e salvamento --------------------------------
 
-  Future<PointsFilterResult> _buscarPontosDosFiltros() {
+  /// Busca pelos filtros atuais. Com áreas selecionadas, elas delimitam a
+  /// busca (as mesmas regras do contador do topo, para o total salvo bater
+  /// com o que o usuário viu); sem áreas, delimita pelas cidades marcadas.
+  Future<PointsFilterResult> _buscarPontosDosFiltros({bool countOnly = false}) {
     final f = filtros;
+    final geo = areas.geoJson;
     return _points.buscarPontos(
       distCodes: [distCode],
-      munCodes: munCodes,
+      munCodes: geo == null ? munCodes : null,
+      polygonGeoJson: geo,
       targetLayers: f.targetLayers,
       conjCodes: f.conjCodes,
       subCodes: f.subCodes,
       clasSub: f.clasSub,
       cnaeCodes: f.cnaeCodes,
       bairroNames: f.bairroNames,
+      countOnly: countOnly,
     );
   }
 
-  /// Posição do primeiro ponto que atende aos filtros atuais (prefere um
-  /// ponto simples a uma geometria), ou null se não há filtro, nenhum
-  /// ponto ou a busca falhou.
   Future<LatLng?> localizarFiltroAtual() async {
     if (!filtros.temFiltroAtivo) return null;
     try {
@@ -219,9 +292,14 @@ class PointsMapController extends ChangeNotifier {
     }
   }
 
+  int _pedidoCentralizar = 0;
+
   Future<void> _centralizarEmFiltroAtual() async {
+    final meuPedido = ++_pedidoCentralizar;
+    final filtrosPedidos = filtros;
     final ponto = await localizarFiltroAtual();
     if (_disposed || ponto == null) return;
+    if (meuPedido != _pedidoCentralizar || filtros != filtrosPedidos) return;
     onFocusPoint?.call(ponto);
   }
 
@@ -233,7 +311,7 @@ class PointsMapController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final resultadoPontos = await _buscarPontosDosFiltros();
+      final resultadoPontos = await _buscarPontosDosFiltros(countOnly: true);
       final projetoCriado = await _projects.criar(
         name: nomeProjeto,
         distCode: distCode,
@@ -258,6 +336,9 @@ class PointsMapController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _focusTimer?.cancel();
+    _contagemTimer?.cancel();
+    areas.removeListener(_agendarContagemAreas);
+    areas.dispose();
     super.dispose();
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
@@ -8,14 +9,12 @@ import 'package:tecsys_app/features/map/data/models/map_point.dart';
 import 'package:tecsys_app/features/map/data/models/map_viewport.dart';
 import 'package:tecsys_app/features/map/data/services/points_filter_service.dart';
 
-/// Busca e revela os pontos da área visível do mapa. Cada busca lê a
-/// câmera e os filtros no momento em que dispara ([lerViewport] e
-/// [filtros]), e respostas atrasadas (de uma busca já substituída por
-/// outra mais nova) são descartadas.
+
 class PointsLayerController extends ChangeNotifier {
   PointsLayerController({
     required this.lerViewport,
     required this.filtros,
+    this.lerAreas,
     this.onTotalChanged,
     this.onZoomMuitoBaixo,
     this.debounce = MapConfig.searchDebounce,
@@ -24,6 +23,10 @@ class PointsLayerController extends ChangeNotifier {
   }) : _service = service ?? PointsFilterService();
 
   final MapViewport Function() lerViewport;
+
+  /// GeoJSON das áreas selecionadas (null = nenhuma).
+  final Map<String, dynamic>? Function()? lerAreas;
+
   final ValueChanged<int>? onTotalChanged;
   final ValueChanged<bool>? onZoomMuitoBaixo;
   final Duration debounce;
@@ -37,6 +40,9 @@ class PointsLayerController extends ChangeNotifier {
   int _pedidoId = 0;
   bool _disposed = false;
 
+  String? _chaveContagemAreas;
+  int? _totalAreas;
+
   List<MapPoint> _pontos = [];
   bool _carregando = false;
 
@@ -47,6 +53,24 @@ class PointsLayerController extends ChangeNotifier {
   void agendarBusca() {
     _debounce?.cancel();
     _debounce = Timer(debounce, buscarAgora);
+  }
+
+  Future<PointsFilterResult> _buscar(
+    FiltrosPontos f,
+    Map<String, dynamic> poligono, {
+    bool countOnly = false,
+  }) {
+    return _service.buscarPontos(
+      distCodes: [f.distCode],
+      polygonGeoJson: poligono,
+      targetLayers: f.targetLayers,
+      conjCodes: f.conjCodes,
+      subCodes: f.subCodes,
+      clasSub: f.clasSub,
+      cnaeCodes: f.cnaeCodes,
+      bairroNames: f.bairroNames,
+      countOnly: countOnly,
+    );
   }
 
   Future<void> buscarAgora() async {
@@ -68,17 +92,21 @@ class PointsLayerController extends ChangeNotifier {
 
     try {
       final f = filtros;
-      final resultado = await _service.buscarPontos(
-        distCodes: [f.distCode],
-        polygonGeoJson: viewport.toPolygonGeoJson(),
-        targetLayers: f.targetLayers,
-        conjCodes: f.conjCodes,
-        subCodes: f.subCodes,
-        clasSub: f.clasSub,
-        cnaeCodes: f.cnaeCodes,
-        bairroNames: f.bairroNames,
-      );
+      final areas = lerAreas?.call();
+      final chave = areas == null ? null : '${jsonEncode(areas)}|${f.hashCode}';
+      final precisaContar = chave != null && chave != _chaveContagemAreas;
+
+      final respostas = await Future.wait([
+        _buscar(f, viewport.toPolygonGeoJson()),
+        if (precisaContar) _buscar(f, areas!, countOnly: true),
+      ]);
       if (_disposed || meuPedido != _pedidoId) return;
+
+      final resultado = respostas[0];
+      if (precisaContar) {
+        _chaveContagemAreas = chave;
+        _totalAreas = respostas[1].totalPoints;
+      }
 
       final novos = <MapPoint>[
         for (final feature
@@ -87,7 +115,9 @@ class PointsLayerController extends ChangeNotifier {
       ];
       _carregando = false;
       _notificar();
-      onTotalChanged?.call(resultado.totalPoints);
+      onTotalChanged?.call(
+        areas != null ? (_totalAreas ?? 0) : resultado.totalPoints,
+      );
       await _revelarEmLotes(novos, meuPedido);
     } catch (_) {
       if (_disposed || meuPedido != _pedidoId) return;

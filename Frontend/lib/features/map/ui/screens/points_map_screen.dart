@@ -88,6 +88,7 @@ class _PointsMapScreenState extends State<PointsMapScreen> {
             PointsMapView(
               key: _mapKey,
               filtros: _controller.filtros,
+              areas: _controller.areas,
               initialCenter: _controller.centroInicial,
               initialZoom: _controller.zoomInicial,
               onTotalChanged: _controller.setTotalPontos,

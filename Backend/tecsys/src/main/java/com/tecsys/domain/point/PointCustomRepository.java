@@ -121,8 +121,17 @@ public class PointCustomRepository {
             }
 
             if (request.polygonGeojson() != null && !request.polygonGeojson().isBlank()) {
-                subQuery.append(" AND ST_Intersects(geom, ST_Transform(ST_GeomFromGeoJSON(:polygon").append(suf).append("), 4674)) ");
+                subQuery.append(" AND ST_Intersects(geom, ST_Transform(")
+                        .append("(SELECT ST_Union(d.geom) FROM ST_Dump(ST_GeomFromGeoJSON(:polygon")
+                        .append(suf).append(")) d), 4674)) ");
                 params.addValue("polygon" + suf, request.polygonGeojson());
+            }
+
+            // Tela visível: só limita o que vai pro mapa.
+            if (request.viewportGeojson() != null && !request.viewportGeojson().isBlank()) {
+                subQuery.append(" AND ST_Intersects(geom, ST_Transform(ST_GeomFromGeoJSON(:viewport")
+                        .append(suf).append("), 4674)) ");
+                params.addValue("viewport" + suf, request.viewportGeojson());
             }
 
             unionQueries.add(subQuery.toString());
@@ -194,7 +203,6 @@ public class PointCustomRepository {
         if (munCodes == null || munCodes.isEmpty()) return List.of();
 
         MapSqlParameterSource params = new MapSqlParameterSource();
-        // Nome de parâmetro único por tabela
         params.addValue("munCodesUcbt", munCodes);
         params.addValue("munCodesUcmt", munCodes);
         params.addValue("munCodesUcat", munCodes);
