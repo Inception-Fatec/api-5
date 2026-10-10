@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'screens/splash_gate.dart';
-import 'theme/app_theme.dart';
+import 'package:tecsys_app/features/auth/ui/screens/splash_gate.dart';
+import 'package:tecsys_app/core/theme/app_theme.dart';
 
 void main() {
   runApp(const TecsysApp());
