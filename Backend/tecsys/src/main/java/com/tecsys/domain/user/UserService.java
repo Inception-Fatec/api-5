@@ -52,6 +52,7 @@ public class UserService {
             throw new AccessDeniedException("Ação não permitida: Não pode eliminar a conta de outro administrador.");
         }
 
-        userRepository.delete(user);
+        user.setActive(false);
+        userRepository.save(user);
     }
 }
