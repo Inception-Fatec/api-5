@@ -100,9 +100,6 @@ public class DecisionEngine {
             BitSet newlyCovered =
                     best.newlyCovered();
 
-           
-            for (
-                    int pointIndex =
                     
             for (
                     int pointIndex =
