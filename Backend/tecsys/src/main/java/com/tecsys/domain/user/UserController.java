@@ -27,7 +27,7 @@ public class UserController {
     public ResponseEntity<UserResponseDto> create(@RequestBody @Valid UserCreateDto dto) {
         return ResponseEntity.status(HttpStatus.CREATED).body(userService.createUser(dto));
     }
-
+    
     @GetMapping
     @PreAuthorize("hasRole('ADM')")
     public ResponseEntity<Page<UserResponseDto>> listAll(@PageableDefault(size = 10) Pageable pageable) {
@@ -43,7 +43,7 @@ public class UserController {
     @PostMapping("/batch")
     @PreAuthorize("hasRole('ADM')")
     public ResponseEntity<List<UserResponseDto>> getByIds(@RequestBody List<Long> ids) {
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(userService.getUsersByIds(ids));
     }
 
     @DeleteMapping("/{id}")

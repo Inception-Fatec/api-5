@@ -5,6 +5,8 @@ import com.tecsys.core.exception.EmailAlreadyExistsException;
 import com.tecsys.domain.user.dto.UserCreateDto;
 import com.tecsys.domain.user.dto.UserResponseDto;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -52,7 +54,7 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public List<UserResponseDto> getUsersByIds(List<Long> ids) {
-        return userRepository.findAll().stream()
+        return userRepository.findAllById(ids).stream()
                 .map(UserResponseDto::fromEntity)
                 .toList();
     }
