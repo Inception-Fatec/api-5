@@ -37,7 +37,21 @@ public class UserService {
         return UserResponseDto.fromEntity(userRepository.save(user));
     }
 
-    public List<UserResponseDto> listAllUsers() {
+    @Transactional(readOnly = true)
+    public Page<UserResponseDto> listAllUsers(Pageable pageable) {
+        return userRepository.findAll(pageable)
+                .map(UserResponseDto::fromEntity);
+    }
+
+    @Transactional(readOnly = true)
+    public UserResponseDto getUserById(Long id) {
+        return userRepository.findById(id)
+                .map(UserResponseDto::fromEntity)
+                .orElseThrow(() -> new BusinessRuleException("Utilizador não encontrado."));
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserResponseDto> getUsersByIds(List<Long> ids) {
         return userRepository.findAll().stream()
                 .map(UserResponseDto::fromEntity)
                 .toList();

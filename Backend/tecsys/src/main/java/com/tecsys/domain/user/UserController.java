@@ -28,8 +28,19 @@ public class UserController {
 
     @GetMapping
     @PreAuthorize("hasRole('ADM')")
-    public ResponseEntity<List<UserResponseDto>> listAll() {
-        List<UserResponseDto> response = userService.listAllUsers();
+    public ResponseEntity<List<UserResponseDto>> listAll(@PageableDefault(size = 10) Pageable pageable) {
+        return ResponseEntity.ok(userService.listAllUsers(pageable));
+    }
+
+    @GetMapping("/{id}")
+    @PreAuthorize("hasRole('ADM')")
+    public ResponseEntity<UserResponseDto> getById(@PathVariable Long id) {
+        return ResponseEntity.ok(userService.getUserById(id));
+    }
+
+    @PostMapping("/batch")
+    @PreAuthorize("hasRole('ADM')")
+    public ResponseEntity<List<UserResponseDto>> getByIds(@RequestBody List<Long> ids) {
         return ResponseEntity.ok(response);
     }
 
