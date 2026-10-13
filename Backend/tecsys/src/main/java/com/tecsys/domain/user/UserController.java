@@ -4,6 +4,9 @@ import com.tecsys.domain.user.dto.UserCreateDto;
 import com.tecsys.domain.user.dto.UserResponseDto;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -22,15 +25,25 @@ public class UserController {
     @PostMapping
     @PreAuthorize("hasRole('ADM')")
     public ResponseEntity<UserResponseDto> create(@RequestBody @Valid UserCreateDto dto) {
-        UserResponseDto response = userService.createUser(dto);
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        return ResponseEntity.status(HttpStatus.CREATED).body(userService.createUser(dto));
     }
-
+    
     @GetMapping
     @PreAuthorize("hasRole('ADM')")
-    public ResponseEntity<List<UserResponseDto>> listAll() {
-        List<UserResponseDto> response = userService.listAllUsers();
-        return ResponseEntity.ok(response);
+    public ResponseEntity<Page<UserResponseDto>> listAll(@PageableDefault(size = 10) Pageable pageable) {
+        return ResponseEntity.ok(userService.listAllUsers(pageable));
+    }
+
+    @GetMapping("/{id}")
+    @PreAuthorize("hasRole('ADM')")
+    public ResponseEntity<UserResponseDto> getById(@PathVariable Long id) {
+        return ResponseEntity.ok(userService.getUserById(id));
+    }
+
+    @PostMapping("/batch")
+    @PreAuthorize("hasRole('ADM')")
+    public ResponseEntity<List<UserResponseDto>> getByIds(@RequestBody List<Long> ids) {
+        return ResponseEntity.ok(userService.getUsersByIds(ids));
     }
 
     @DeleteMapping("/{id}")

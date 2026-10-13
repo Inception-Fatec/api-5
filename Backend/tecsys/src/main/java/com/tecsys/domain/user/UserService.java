@@ -5,6 +5,8 @@ import com.tecsys.core.exception.EmailAlreadyExistsException;
 import com.tecsys.domain.user.dto.UserCreateDto;
 import com.tecsys.domain.user.dto.UserResponseDto;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -37,8 +39,22 @@ public class UserService {
         return UserResponseDto.fromEntity(userRepository.save(user));
     }
 
-    public List<UserResponseDto> listAllUsers() {
-        return userRepository.findAll().stream()
+    @Transactional(readOnly = true)
+    public Page<UserResponseDto> listAllUsers(Pageable pageable) {
+        return userRepository.findAll(pageable)
+                .map(UserResponseDto::fromEntity);
+    }
+
+    @Transactional(readOnly = true)
+    public UserResponseDto getUserById(Long id) {
+        return userRepository.findById(id)
+                .map(UserResponseDto::fromEntity)
+                .orElseThrow(() -> new BusinessRuleException("Utilizador não encontrado."));
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserResponseDto> getUsersByIds(List<Long> ids) {
+        return userRepository.findAllById(ids).stream()
                 .map(UserResponseDto::fromEntity)
                 .toList();
     }
@@ -52,6 +68,7 @@ public class UserService {
             throw new AccessDeniedException("Ação não permitida: Não pode eliminar a conta de outro administrador.");
         }
 
-        userRepository.delete(user);
+        user.setActive(false);
+        userRepository.save(user);
     }
 }
