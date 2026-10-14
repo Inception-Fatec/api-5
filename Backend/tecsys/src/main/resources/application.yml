@@ -15,5 +15,13 @@ spring:
   flyway:
     enabled: true
     baseline-on-migrate: true
-    springdoc:
-      show-hateoas=false:
+  devtools:
+    restart:
+      exclude: "relevo_sjc_cacapava/**,relevo_data/**"
+
+springdoc:
+  show-hateoas: false
+
+app:
+  elevation:
+    root-folder: $HOME/Desktop/relevo_sjc_cacapava

@@ -114,53 +114,44 @@ public class DecisionRepository {
         );
     }
 
-    public List<CoverageRelation> findCoverageRelations(
-            DecisionCriteria criteria,
-            int gatewayRangeMeters
-    ) {
+public List<CoverageRelation> findCoverageRelations(
+        DecisionCriteria criteria,
+        int gatewayRangeMeters
+) {
+    var candidates = findGatewayCandidates(criteria);
+    var points = findCoveragePoints(criteria);
 
-        if (gatewayRangeMeters <= 0) {
-            throw new IllegalArgumentException(
-                    "O alcance do gateway deve ser maior que zero."
-            );
+    List<String> candidateIds = candidates.stream().map(GatewayCandidate::id).toList();
+    List<String> pointIds = points.stream().map(CoveragePoint::id).toList();
+
+    return findCoverageRelations(criteria, gatewayRangeMeters, candidateIds, pointIds);
+}
+
+public List<CoverageRelation> findCoverageRelations(
+            DecisionCriteria criteria,
+            int gatewayRangeMeters,
+            List<String> candidateIds,
+            List<String> pointIds
+    ) {
+        if (candidateIds == null || candidateIds.isEmpty() || pointIds == null || pointIds.isEmpty()) {
+            return List.of();
         }
 
-        List<TargetTable> targetTables =
-                resolveTargetTables(criteria.targetLevels());
-
+        List<TargetTable> targetTables = resolveTargetTables(criteria.targetLevels());
         if (targetTables.isEmpty()) {
             return List.of();
         }
 
-        MapSqlParameterSource params =
-                createParameters(criteria);
-
-        params.addValue(
-                "gatewayRangeMeters",
-                gatewayRangeMeters
-        );
-
-        List<String> pointQueries =
-                new ArrayList<>();
-
+        // Reconstrói as sub-queries dinâmicas com os filtros do DecisionCriteria
+        List<String> pointQueries = new ArrayList<>();
         for (TargetTable target : targetTables) {
-
-            pointQueries.add(
-                    buildCoverageSourceQuery(
-                            target,
-                            criteria
-                    )
-            );
+            pointQueries.add(buildCoverageSourceQuery(target, criteria));
         }
 
-        String pointsSql = String.join(
-                "\nUNION ALL\n",
-                pointQueries
-        );
+        String pointsSql = String.join("\nUNION ALL\n", pointQueries);
+        String candidatesSql = buildCandidateCoverageSource(criteria);
 
-        String candidatesSql =
-                buildCandidateCoverageSource(criteria);
-
+        // Monta a query filtrando por geometria e pelos IDs já validados
         String sql = """
                 WITH coverage_points AS (
                     %s
@@ -180,35 +171,23 @@ public class DecisionRepository {
                         p.geom::geography,
                         :gatewayRangeMeters
                   )
-                """.formatted(
-                pointsSql,
-                candidatesSql
-        );
+                WHERE c.id IN (:candidateIds)
+                  AND p.id IN (:pointIds)
+                """.formatted(pointsSql, candidatesSql);
+
+        MapSqlParameterSource params = createParameters(criteria);
+        params.addValue("gatewayRangeMeters", gatewayRangeMeters);
+        params.addValue("candidateIds", candidateIds);
+        params.addValue("pointIds", pointIds);
 
         return jdbcTemplate.query(
                 sql,
                 params,
                 (rs, rowNum) -> new CoverageRelation(
-
-                        CandidateType.valueOf(
-                                rs.getString(
-                                        "candidate_type"
-                                )
-                        ),
-
-                        rs.getString(
-                                "candidate_id"
-                        ),
-
-                        VoltageLevel.valueOf(
-                                rs.getString(
-                                        "point_level"
-                                )
-                        ),
-
-                        rs.getString(
-                                "point_id"
-                        )
+                        CandidateType.valueOf(rs.getString("candidate_type")),
+                        rs.getString("candidate_id"),
+                        VoltageLevel.valueOf(rs.getString("point_level")),
+                        rs.getString("point_id")
                 )
         );
     }
