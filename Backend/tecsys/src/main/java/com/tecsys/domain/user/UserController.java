@@ -27,11 +27,11 @@ public class UserController {
     public ResponseEntity<UserResponseDto> create(@RequestBody @Valid UserCreateDto dto) {
         return ResponseEntity.status(HttpStatus.CREATED).body(userService.createUser(dto));
     }
-    
+
     @GetMapping
     @PreAuthorize("hasRole('ADM')")
-    public ResponseEntity<Page<UserResponseDto>> listAll(@PageableDefault(size = 10) Pageable pageable) {
-        return ResponseEntity.ok(userService.listAllUsers(pageable));
+    public ResponseEntity<List<UserResponseDto>> listAll() {
+        return ResponseEntity.ok(userService.listAllUsers());
     }
 
     @GetMapping("/{id}")
