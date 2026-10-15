@@ -1,1 +1,4 @@
 .dart_tool/
+# Dump da BDGD (7 MB, obtido com a equipe — ver db/DOCKER.md). Cada dev
+# coloca o seu em db/ sem risco de commitar.
+db/*.dump
