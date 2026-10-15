@@ -28,10 +28,31 @@ Para rebuildar/reiniciar só uma parte, sem mexer no resto:
 
 ```bash
 ./scripts/run-db.sh [--dump CAMINHO] [--stop]
-# PostGIS 17 (tecsys-postgis). Restaura o bdgd.dump automaticamente
-# só se o banco estiver vazio. Conexão: postgres://tecsys:tecsys@localhost:5433/tecsys
+```
 
-### Onde colocar o dump (só necessário na 1ª subida)
+PostGIS 17 (`tecsys-postgis`). Restaura o `bdgd.dump` automaticamente só se
+o banco estiver vazio. Conexão: `postgres://tecsys:tecsys@localhost:5433/tecsys`.
+
+```bash
+./scripts/run-backend.sh [--db local|supabase] [--stop]
+```
+
+Spring Boot (`tecsys-backend`, porta 8081). Rebuilda a imagem do código atual.
+`--db supabase` lê `Backend/tecsys/.env.supabase` (criar a partir do
+`.env.supabase.example`; nunca commitar). Formatos aceitos: `postgres://` ou
+`postgresql://` — o script converte para JDBC sozinho.
+
+```bash
+./scripts/run-frontend.sh [--api-host HOST] [--api-port PORT] [--stop]
+```
+
+Flutter web no nginx (`tecsys-frontend`, porta 8080). A URL da API é embutida
+no build: trocou de backend, o script rebuilda sozinho.
+
+Alternativa "sobe tudo": `docker compose up --build` (usa os mesmos
+Dockerfiles; o backend do compose fala com o banco local).
+
+## Onde colocar o dump (só necessário na 1ª subida)
 
 O banco local **não** vem populado: na primeira vez, o `run-db.sh` precisa
 do arquivo `bdgd.dump`. Resolução nesta ordem: `--dump CAMINHO` →
@@ -48,23 +69,10 @@ Após o primeiro restore os dados ficam no volume Docker (`tecsys-pgdata`)
 e o arquivo não é mais necessário. Para recomeçar do zero:
 `docker volume rm tecsys-pgdata` (container parado) e suba de novo.
 
-./scripts/run-backend.sh [--db local|supabase] [--stop]
-# Spring Boot (tecsys-backend, porta 8081). Rebuilda a imagem do código atual.
-# --db supabase lê Backend/tecsys/.env.supabase (criar a partir do
-# .env.supabase.example; nunca commitar). Formatos aceitos: postgres:// ou
-# postgresql:// — o script converte para JDBC sozinho.
-
-./scripts/run-frontend.sh [--api-host HOST] [--api-port PORT] [--stop]
-# Flutter web no nginx (tecsys-frontend, porta 8080). A URL da API é
-# embutida no build: trocou de backend, o script rebuilda sozinho.
-```
-
-Alternativa "sobe tudo": `docker compose up --build` (usa os mesmos
-Dockerfiles; o backend do compose fala com o banco local).
-
 ## Pré-requisitos
 
-- Docker (único requisito com sudo/sem sudo: o usuário precisa estar no grupo `docker`)
+- Docker instalado, com o usuário no grupo `docker`
+- `bdgd.dump` (só para a primeira subida do banco local — ver seção acima)
 - `.env.supabase` preenchido (só para o modo nuvem)
 - Portas livres: 5433 (banco) · 8081 (backend) · 8080 (frontend)
 - Login do app: `admin@tecsys.com.br` / `admin123`
