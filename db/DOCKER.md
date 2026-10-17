@@ -15,6 +15,14 @@ O restore só acontece com o banco vazio (tabela `sub` ausente ou zerada).
 Para forçar um restore do zero: `docker volume rm tecsys-pgdata` com o
 container parado e rode o script de novo.
 
+## Onde colocar o dump (só necessário na 1ª subida)
+
+O banco local **não** vem populado. Na primeira vez, coloque o `bdgd.dump`
+(obtido com a equipe) em `api-5/db/bdgd.dump` (gitignored) ou aponte com
+`./scripts/run-db.sh --dump CAMINHO`. Ordem procurada: `--dump` →
+`db/bdgd.dump` → `~/Documents/bdgd.dump`. Após o primeiro restore, os dados
+ficam no volume Docker e o arquivo não é mais necessário.
+
 ## Dados de conexão (local)
 
 - Host: `localhost:5433` · banco `tecsys` · user/senha `tecsys`

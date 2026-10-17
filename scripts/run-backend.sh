@@ -55,12 +55,13 @@ docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 # Modo supabase: o host direto do Supabase só tem IPv6, que não existe
 # na rede bridge padrão do Docker — por isso aqui o container usa a
 # rede do host (mesma do `java -jar` fora do Docker). No modo local,
-# bridge + host-gateway basta (PostGIS local é IPv4).
+# backend e banco conversam pela rede tecsys-net (nome do container).
 if [[ "$DB_MODE" == "supabase" ]]; then
   docker run -d --name "$CONTAINER" --network host \
     -e DB_URL="$DB_URL" -e DB_USER="$DB_USER" -e DB_PASSWORD="$DB_PASSWORD" \
     "$IMAGE" >/dev/null
 else
+  docker network create tecsys-net >/dev/null 2>&1 || true
   docker run -d --name "$CONTAINER" \
     --network tecsys-net \
     -e DB_URL="$DB_URL" \
