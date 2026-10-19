@@ -1,6 +1,6 @@
 
 server:
-  port: ${BACKEND_PORT:8080}
+  port: ${BACKEND_PORT:8081}
 
 springdoc:
   show-hateoas: false
@@ -27,4 +27,4 @@ spring:
     baseline-on-migrate: true
 
 motor:
-  base-url: ${MOTOR_BASE_URL:http://127.0.0.1:8081}
+  base-url: ${MOTOR_BASE_URL:http://127.0.0.1:8082}

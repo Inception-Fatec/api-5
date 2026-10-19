@@ -21,7 +21,7 @@ public class MotorClient {
 
     public MotorClient(
             RestClient.Builder builder,
-            @Value("${motor.base-url:http://127.0.0.1:8081}")
+            @Value("${motor.base-url:http://127.0.0.1:8082}")
             String motorBaseUrl
     ) {
 
