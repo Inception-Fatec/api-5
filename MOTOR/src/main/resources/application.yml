@@ -1,0 +1,15 @@
+spring:
+  application:
+    name: tecsys-motor
+
+  config:
+    import: optional:file:.env.properties
+
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+
+server:
+  port: ${MOTOR_PORT:8081}
+  address: ${MOTOR_BIND_ADDRESS:127.0.0.1}
