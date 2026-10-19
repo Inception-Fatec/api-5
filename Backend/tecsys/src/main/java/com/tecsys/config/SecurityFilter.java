@@ -29,6 +29,13 @@ public class SecurityFilter extends OncePerRequestFilter {
             var user = userRepository.findByEmail(login).orElse(null);
 
             if (user != null) {
+                if (user.isMustChangePassword() && !request.getRequestURI().equals("/api/v1/auth/change-password")) {
+                    response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                    response.setContentType("application/json;charset=UTF-8");
+                    response.getWriter().write("{\"error\": \"Acesso negado. É obrigatório redefinir a palavra-passe no primeiro acesso.\"}");
+                    return;
+                }
+
                 var authentication = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }

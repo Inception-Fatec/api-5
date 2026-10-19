@@ -1,31 +1,3 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
-.DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
-
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
-.idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
-
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
 .dart_tool/
 .flutter-plugins-dependencies
 .pub-cache/
@@ -81,3 +53,6 @@ venv/
 # Dados locais pesados da BDGD
 Backend/tecsys/bdgd/dados-bdgd/EDP_SP_391_2025-12-31_V11_20260830-0340.gdb/
 Backend/tecsys/bdgd/dados-bdgd/UCBT_PJ.zip
+# Dump da BDGD (7 MB, obtido com a equipe — ver db/DOCKER.md). Cada dev
+# coloca o seu em db/ sem risco de commitar.
+db/*.dump
