@@ -1,5 +1,7 @@
+
 package com.tecsys.domain.decision.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 public record SelectedGatewayResponseDto(
@@ -8,10 +10,13 @@ public record SelectedGatewayResponseDto(
 
         String id,
 
+        @JsonIgnore
         String type,
 
+        @JsonIgnore
         String posto,
 
+        @JsonIgnore
         String sub,
 
         double latitude,

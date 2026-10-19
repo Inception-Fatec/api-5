@@ -17,3 +17,5 @@ spring:
     baseline-on-migrate: true
     springdoc:
       show-hateoas=false:
+motor:
+  base-url: ${MOTOR_BASE_URL:http://127.0.0.1:8081}
