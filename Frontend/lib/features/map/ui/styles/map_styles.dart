@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import 'package:tecsys_app/core/theme/app_theme.dart';
@@ -20,7 +22,75 @@ class MapStyles {
         _ => AppColors.primary,
       };
 
+  /// Com área selecionada, os pontos de fora dela ficam mais claros.
+  /// Aplicado na cor (não com widget Opacity, que cria uma camada por
+  /// marcador e trava com centenas de pontos).
   static const markerOutsideAreaOpacity = 0.65;
+
+  // Bolhas do zoom afastado (círculo com o número de pontos)
+
+  /// Faixas de cor pela quantidade de pontos na bolha: (a partir de,
+  /// cor, rótulo da legenda). A legenda usa a mesma lista.
+  static const clusterFaixas = [
+    (1, Color(0xFF22C55E), 'até 9'), // verde
+    (10, Color(0xFFEAB308), '10 a 99'), // amarelo
+    (100, Color(0xFFF97316), '100 a 999'), // laranja
+    (1000, Color(0xFFDC2626), '1 mil ou mais'), // vermelho
+  ];
+  static const clusterFillAlpha = 0.9;
+
+  static Color clusterColor(int count) {
+    var cor = clusterFaixas.first.$2;
+    for (final (minimo, c, _) in clusterFaixas) {
+      if (count >= minimo) cor = c;
+    }
+    return cor.withOpacity(clusterFillAlpha);
+  }
+
+  static const clusterBorderColor = Colors.white;
+  static const clusterBorderWidth = 2.0;
+  static const clusterMinSize = 30.0;
+  static const clusterMaxSize = 62.0;
+  static const clusterText = TextStyle(
+    color: Colors.white,
+    fontSize: 12,
+    fontWeight: FontWeight.w700,
+    shadows: [Shadow(color: Color(0x66000000), blurRadius: 2)],
+  );
+
+  /// Diâmetro da bolha: cresce com o log da contagem (1 ponto = mínimo,
+  /// ~100 mil = máximo), para as grandes não cobrirem o mapa.
+  static double clusterSize(int count) {
+    final n = count < 1 ? 1 : count;
+    final t = (math.log(n) / math.ln10 / 5).clamp(0.0, 1.0);
+    return clusterMinSize + (clusterMaxSize - clusterMinSize) * t;
+  }
+
+  /// Troca bolhas <-> pontos individuais (esmaece um, aparece o outro).
+  static const modeFadeDuration = Duration(milliseconds: 380);
+
+  /// Reagrupar as bolhas ao mudar o zoom: ao aproximar, as bolhas novas
+  /// saem de dentro da antiga (divide); ao afastar, as antigas deslizam
+  /// para a nova (junta).
+  static const clusterRegroupDuration = Duration(milliseconds: 380);
+
+  /// Acima deste tanto de bolhas na tela, troca sem animar (cada quadro
+  /// da animação redesenha todas).
+  static const clusterMaxAnimated = 400;
+
+  /// Deslizar a câmera ao tocar numa bolha ou nos botões + / −.
+  static const cameraAnimDuration = Duration(milliseconds: 420);
+
+  // Tela de carregamento da visão geral (ao abrir / mudar filtros)
+  static const overviewScrim = Color(0xB3FFFFFF);
+  static const overviewSpinnerSize = 40.0;
+  static const overviewSpinnerStroke = 3.5;
+  static const overviewGap = 14.0;
+  static const overviewText = TextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.w600,
+    color: AppColors.textPrimary,
+  );
 
   // Indicador de carregamento (topo do mapa)
   static const loadingTop = 12.0;
@@ -66,12 +136,14 @@ class MapStyles {
       TextStyle(fontSize: 13, fontWeight: FontWeight.w600);
   static const detailRowPadding = EdgeInsets.only(bottom: 10);
 
+  // --- Sombras e bordas dos elementos flutuantes novos ----------------
 
   static const softShadow = [
     BoxShadow(color: Color(0x1A101828), blurRadius: 16, offset: Offset(0, 4)),
     BoxShadow(color: Color(0x0D101828), blurRadius: 4, offset: Offset(0, 1)),
   ];
 
+  // Barra de ferramentas do mapa (seleção, apagar áreas, relevo)
   static const toolbarRight = 12.0;
   static const toolbarBottom = 100.0;
   static const toolbarPadding = EdgeInsets.all(4);
@@ -97,7 +169,6 @@ class MapStyles {
   static const areaBlinkInterval = Duration(milliseconds: 200);
   static const areaBlinkToggles = 6;
 
-  // Seleção (retângulo arrastado) e bolinhas ✕ / ✓
   static const selectionMinSize = 12.0;
   static const selectionFillOpacity = 0.08;
   static const selectionStrokeWidth = 1.5;
@@ -111,7 +182,6 @@ class MapStyles {
   static const selectionDiscardColor = Color(0xFFE5484D);
   static const selectionConfirmColor = Color(0xFF16A34A);
 
-  // Dica do modo seleção
   static const selectionHintBottom = 136.0;
   static const selectionHintPadding =
       EdgeInsets.symmetric(horizontal: 14, vertical: 9);
@@ -122,7 +192,6 @@ class MapStyles {
   static const selectionHintText = TextStyle(
       color: AppColors.onPrimary, fontSize: 13, fontWeight: FontWeight.w500);
 
-  // Painel de coordenadas (canto inferior esquerdo)
   static const coordsLeft = 12.0;
   static const coordsBottom = 84.0;
   static const coordsPadding = EdgeInsets.fromLTRB(10, 7, 12, 8);
@@ -144,7 +213,6 @@ class MapStyles {
     fontFeatures: [FontFeature.tabularFigures()],
   );
 
-  // Legenda de cores (acima do painel de coordenadas)
   static const legendGap = 8.0;
   static const legendRowGap = 3.0;
   static const legendDotSize = 9.0;
