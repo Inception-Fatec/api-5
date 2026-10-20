@@ -1,4 +1,58 @@
 .dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Widget Preview related
+.widget_preview/
+### Java/Maven ###
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+### Variáveis de Ambiente ###
+.env
+.env.properties
+
+**/.env
+**/.env.properties
+
+# Python virtual environment
+venv/
+.venv/
+**/venv/
+**/.venv/
+
+# Dados locais pesados da BDGD
+Backend/tecsys/bdgd/dados-bdgd/EDP_SP_391_2025-12-31_V11_20260830-0340.gdb/
+Backend/tecsys/bdgd/dados-bdgd/UCBT_PJ.zip
 # Dump da BDGD (7 MB, obtido com a equipe — ver db/DOCKER.md). Cada dev
 # coloca o seu em db/ sem risco de commitar.
 db/*.dump

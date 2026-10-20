@@ -1,5 +1,6 @@
+
 server:
-  port: 8081
+  port: ${BACKEND_PORT:8081}
 
 springdoc:
   show-hateoas: false
@@ -7,10 +8,12 @@ springdoc:
 spring:
   config:
     import: optional:file:.env.properties
+
   datasource:
     url: ${DB_URL}
     username: ${DB_USER}
     password: ${DB_PASSWORD}
+
   jpa:
     hibernate:
       ddl-auto: update
@@ -18,6 +21,10 @@ spring:
     properties:
       hibernate:
         format_sql: true
+
   flyway:
     enabled: false
     baseline-on-migrate: true
+
+motor:
+  base-url: ${MOTOR_BASE_URL:http://127.0.0.1:8082}
