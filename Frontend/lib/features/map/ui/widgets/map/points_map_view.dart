@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -26,6 +27,8 @@ import 'package:tecsys_app/features/map/ui/widgets/map/selected_areas_layer.dart
 
 class PointsMapView extends StatefulWidget {
   final FiltrosPontos filtros;
+
+  final List<String> municipios;
   final MapAreasController areas;
   final LatLng initialCenter;
   final double initialZoom;
@@ -35,6 +38,7 @@ class PointsMapView extends StatefulWidget {
   const PointsMapView({
     super.key,
     required this.filtros,
+    this.municipios = const [],
     required this.areas,
     required this.initialCenter,
     this.initialZoom = MapConfig.defaultZoom,
@@ -59,7 +63,6 @@ class PointsMapViewState extends State<PointsMapView>
 
   late final _centro = ValueNotifier<LatLng>(widget.initialCenter);
 
-  /// Área piscando no momento (índice), ou null.
   final _destaque = ValueNotifier<int?>(null);
   Timer? _timerPiscar;
   late int _ultimoPedidoFoco;
@@ -110,12 +113,13 @@ class PointsMapViewState extends State<PointsMapView>
       lerAreas: () => widget.areas.geoJson,
       onTotalChanged: (total) => widget.onTotalChanged?.call(total),
       onZoomMuitoBaixo: (baixo) => widget.onZoomMuitoBaixo?.call(baixo),
-    );
+    )..munCodes = List.of(widget.municipios);
     _ultimoPedidoFoco = widget.areas.pedidoFoco;
     _ultimaVersaoAreas = widget.areas.versao;
     widget.areas.addListener(_aoMudarAreas);
     _mapEventsSub = mapController.mapEventStream.listen((evento) {
       _centro.value = evento.camera.center;
+      // Usuário mexeu no mapa durante a animação da câmera: ele manda.
       if (evento.source != MapEventSource.mapController &&
           _camAnim.isAnimating) {
         _camAnim.stop();
@@ -139,10 +143,18 @@ class PointsMapViewState extends State<PointsMapView>
       _ultimoPedidoFoco = widget.areas.pedidoFoco;
       _ultimaVersaoAreas = widget.areas.versao;
     }
+    var mudou = false;
     if (widget.filtros != oldWidget.filtros) {
       _layer.filtros = widget.filtros;
-      _layer.agendarBusca();
+      mudou = true;
     }
+    if (!listEquals(widget.municipios, oldWidget.municipios)) {
+      _layer.munCodes = List.of(widget.municipios);
+      // Cidade nova: carrega as bolhas dela e enquadra a cidade inteira.
+      _enquadrarCidades().catchError((_) {});
+      return;
+    }
+    if (mudou) _layer.agendarBusca();
   }
 
   @override
@@ -195,12 +207,30 @@ class PointsMapViewState extends State<PointsMapView>
 
   Future<void> _abrir() async {
     try {
-      await _layer.carregarVisaoGeral();
-      if (!mounted) return;
-      mapController.move(widget.initialCenter, MapConfig.openZoom);
+      await _enquadrarCidades();
     } catch (_) {
     }
     if (mounted) _layer.agendarBusca();
+  }
+
+  Future<void> _enquadrarCidades() async {
+    final celulas = await _layer.carregarVisaoGeral();
+    if (!mounted) return;
+    if (celulas.isEmpty) {
+      mapController.move(widget.initialCenter, MapConfig.openZoom);
+    } else {
+      mapController.fitCamera(
+        CameraFit.bounds(
+          bounds: LatLngBounds.fromPoints(
+            [for (final c in celulas) c.position],
+          ),
+          padding: const EdgeInsets.all(MapConfig.overviewFitPadding),
+          // Fica nas bolhas mesmo numa cidade pequena.
+          maxZoom: MapConfig.minZoomToSearch - 0.5,
+        ),
+      );
+    }
+    _layer.agendarBusca(); // fitCamera não dispara o fim de movimento
   }
 
   void _aoMudarAreas() {
@@ -213,13 +243,13 @@ class PointsMapViewState extends State<PointsMapView>
       final i = areas.areaEmFoco;
       if (i != null) {
         _focarArea(i);
-        _layer.agendarBusca(); 
+        _layer.agendarBusca(); // fitCamera não dispara MoveEnd
       }
     } else if (listaMudou) {
-      _pararPiscar(); 
+      _pararPiscar(); // índices podem ter mudado
     }
-    if (listaMudou) _layer.agendarBusca(); 
-    if (mounted) setState(() {}); 
+    if (listaMudou) _layer.agendarBusca(); // recalcula o total das áreas
+    if (mounted) setState(() {}); // redesenha áreas e cor dos pontos
   }
 
   void _focarArea(int i) {
@@ -276,6 +306,7 @@ class PointsMapViewState extends State<PointsMapView>
     _selecao.value = null;
     widget.areas.adicionar(area);
   }
+
   Widget _esmaecer({required bool visivel, required Widget child}) {
     return AnimatedOpacity(
       opacity: visivel ? 1.0 : 0.0,
@@ -304,10 +335,14 @@ class PointsMapViewState extends State<PointsMapView>
                   maxZoom: MapConfig.maxZoom,
                   onMapReady: _abrir,
                   onTap: _aoTocarMapa,
+                  // Rotação desligada: a conversão tela -> coordenada
+                  // assume o norte para cima. Selecionando, o mapa congela.
                   interactionOptions: InteractionOptions(
                     flags: _selecionando
                         ? InteractiveFlag.none
                         : InteractiveFlag.all & ~InteractiveFlag.rotate,
+                    // Touchpad no navegador: a pinça chega como rolagem, e
+                    // o padrão (0.005) responde devagar demais.
                     scrollWheelVelocity: MapConfig.scrollWheelVelocity,
                   ),
                 ),
@@ -330,6 +365,8 @@ class PointsMapViewState extends State<PointsMapView>
                     selecionada: areas.selecionada,
                     destaque: _destaque,
                   ),
+                  // Bolhas <-> pontos: cada camada esmaece no lugar da outra
+                  // (opacidade da camada inteira, não por marcador).
                   _esmaecer(
                     visivel: _layer.agrupado,
                     child: ClusterBubblesLayer(
@@ -423,6 +460,34 @@ class PointsMapViewState extends State<PointsMapView>
                   ],
                 ),
               ),
+              if (_layer.erro case final erro? when !_layer.carregandoVisaoGeral)
+                Positioned(
+                  left: MapStyles.zoomHintSideMargin,
+                  right: MapStyles.zoomHintSideMargin,
+                  bottom: MapStyles.zoomHintBottom,
+                  child: Center(
+                    child: Container(
+                      padding: MapStyles.zoomHintPadding,
+                      decoration: MapStyles.zoomHintDecoration,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(erro, style: MapStyles.zoomHintText),
+                          ),
+                          const SizedBox(width: 8),
+                          TextButton(
+                            onPressed: () {
+                              _layer.limparErro();
+                              _layer.agendarBusca();
+                            },
+                            child: const Text('Tentar de novo'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               if (_layer.carregandoVisaoGeral)
                 const Positioned.fill(child: MapOverviewLoading()),
             ],
@@ -432,8 +497,6 @@ class PointsMapViewState extends State<PointsMapView>
     );
   }
 
-  /// Coordenadas da seleção enquanto arrasta/confirma; fora disso, o
-  /// centro do mapa (atualiza enquanto o mapa se move).
   Widget _painelCoordenadas() {
     String f(double v) => v.toStringAsFixed(5);
 

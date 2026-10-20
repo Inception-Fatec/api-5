@@ -1,7 +1,7 @@
-/// Parâmetros fixos do mapa de pontos (tiles, limites de zoom e de busca).
 class MapConfig {
   MapConfig._();
 
+  
   static const osmTileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
   static const reliefTileUrl =
       'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/ASTER_GDEM_Greyscale_Shaded_Relief/default/GoogleMapsCompatible_Level12/{z}/{y}/{x}.jpg';
@@ -9,7 +9,7 @@ class MapConfig {
   static const reliefOpacity = 0.6;
   static const userAgentPackage = 'com.tecsys.frontend_tecsys';
 
-  // Câmera
+  
   static const defaultZoom = 12.0;
   static const minZoom = 3.0;
   static const maxZoom = 19.0;
@@ -22,8 +22,11 @@ class MapConfig {
 
   static const minZoomToSearch = 13.0;
 
-  
   static const overviewCellDegrees = 0.01;
+
+  static const overviewTimeout = Duration(seconds: 60);
+
+  static const overviewFitPadding = 56.0;
 
   static const clusterPixelSize = 72.0;
 
@@ -46,7 +49,6 @@ class MapConfig {
 
   static const savedConfirmationDelay = Duration(seconds: 2);
 
-  // Autocompletar de bairro
   static const suggestionDebounce = Duration(milliseconds: 350);
   static const suggestionMinChars = 2;
 }

@@ -11,22 +11,6 @@ import 'package:tecsys_app/features/map/data/models/map_viewport.dart';
 import 'package:tecsys_app/features/map/data/models/point_cluster.dart';
 import 'package:tecsys_app/features/map/data/services/points_filter_service.dart';
 
-/// Busca o que o mapa mostra, em três faixas de zoom:
-///
-/// * **Visão geral** (abaixo de [MapConfig.minZoomToSearch]): bolhas com
-///   o número de pontos, vindas de todos os pontos da distribuidora
-///   agrupados no banco numa grade de ~1 km. Carregada UMA vez por
-///   conjunto de filtros; arrastar e dar zoom só reagrupa no app.
-/// * **Bolhas menores** (até [MapConfig.minZoomIndividual]): a mesma ideia
-///   numa grade fina, mas só de uma área um pouco maior que a tela. Arrastar
-///   dentro dessa área não busca de novo.
-/// * **Pontos individuais** (a partir de [MapConfig.minZoomIndividual]):
-///   os pontos da tela, no máximo [MapConfig.maxRenderedPoints], revelados
-///   em lotes.
-///
-/// Respostas atrasadas (de uma busca já substituída) são descartadas.
-/// Com áreas selecionadas ([lerAreas]), o total informado é o de dentro
-/// delas; essa contagem só é refeita quando as áreas ou os filtros mudam.
 class PointsLayerController extends ChangeNotifier {
   PointsLayerController({
     required this.lerViewport,
@@ -41,7 +25,6 @@ class PointsLayerController extends ChangeNotifier {
 
   final MapViewport Function() lerViewport;
 
-  /// GeoJSON das áreas selecionadas (null = nenhuma).
   final Map<String, dynamic>? Function()? lerAreas;
 
   final ValueChanged<int>? onTotalChanged;
@@ -53,22 +36,26 @@ class PointsLayerController extends ChangeNotifier {
   /// Filtros usados na próxima busca (o widget atualiza ao mudarem).
   FiltrosPontos filtros;
 
+  List<String> munCodes = const [];
+
   Timer? _debounce;
   int _pedidoId = 0;
   bool _disposed = false;
 
-  // Cache da contagem dentro das áreas (não depende da tela).
   String? _chaveContagemAreas;
   int? _totalAreas;
 
-  // Visão geral: células de toda a distribuidora para os filtros atuais.
   String? _chaveVisaoGeral;
   List<MapPoint> _celulas = const [];
   String? _chaveCarregando;
   Future<List<MapPoint>>? _visaoGeralEmAndamento;
   bool _carregandoVisaoGeral = false;
+  int _totalVisaoGeral = 0;
+  String? _erro;
 
-  // Bolhas menores: células da grade fina de uma área em volta da tela.
+  String? _chaveTotal;
+  int _totalCidades = 0;
+
   String? _chaveDetalhe;
   MapViewport? _areaDetalhe;
   List<MapPoint> _celulasDetalhe = const [];
@@ -79,34 +66,28 @@ class PointsLayerController extends ChangeNotifier {
   bool _agrupado = false;
   bool _carregando = false;
 
-  /// Pontos individuais já revelados (zoom próximo).
   List<MapPoint> get pontos => _pontos;
 
-  /// Bolhas atuais. Um objeto novo a cada reagrupamento: o mapa anima a
-  /// passagem do anterior para este.
   Agrupamento get agrupamento => _agrupamento;
 
-  /// True mostrando bolhas; false mostrando pontos individuais. A lista
-  /// do outro modo é mantida para o mapa esmaecê-la suavemente.
   bool get agrupado => _agrupado;
 
-  /// Busca rápida em andamento (indicador pequeno no topo).
   bool get carregando => _carregando;
 
-  /// Carregando a visão geral (tela de carregamento por cima do mapa).
   bool get carregandoVisaoGeral => _carregandoVisaoGeral;
 
-  /// Agenda a próxima busca. Com [aguardar], espera esse tempo sem
-  /// novos pedidos antes de rodar (rolagem / pinça do touchpad, que manda
-  /// um evento por "tique" e não tem evento de fim).
+  String? get erro => _erro;
+
+  void limparErro() {
+    _erro = null;
+    _notificar();
+  }
   void agendarBusca({Duration? aguardar}) {
     _debounce?.cancel();
     if (aguardar != null) {
       _debounce = Timer(aguardar, () => agendarBusca());
       return;
     }
-    // Bolhas que já estão em memória: reagrupar é local e instantâneo,
-    // não precisa esperar o debounce.
     if (_temCelulasProntas(lerViewport())) {
       buscarAgora();
       return;
@@ -125,9 +106,8 @@ class PointsLayerController extends ChangeNotifier {
     return false;
   }
 
-  /// Identifica os filtros que mudam o resultado (FiltrosPontos é
-  /// recriado a cada build, então não dá para comparar a instância).
   String _chaveFiltros(FiltrosPontos f) => jsonEncode([
+        munCodes,
         f.distCode,
         f.targetLayers,
         f.conjCodes,
@@ -137,8 +117,6 @@ class PointsLayerController extends ChangeNotifier {
         f.bairroNames,
       ]);
 
-  /// As bolhas menores dependem do nível inteiro de zoom (a grade fica
-  /// mais fina a cada nível).
   String _chaveDetalheDe(FiltrosPontos f, MapViewport v) =>
       '${_chaveFiltros(f)}|${v.zoom.floor()}';
 
@@ -155,9 +133,11 @@ class PointsLayerController extends ChangeNotifier {
     bool countOnly = false,
     double? clusterCell,
     int? limit,
+    bool comMunicipios = true,
   }) {
     return _service.buscarPontos(
       distCodes: [f.distCode],
+      munCodes: comMunicipios && munCodes.isNotEmpty ? munCodes : null,
       polygonGeoJson: poligono,
       targetLayers: f.targetLayers,
       conjCodes: f.conjCodes,
@@ -176,9 +156,6 @@ class PointsLayerController extends ChangeNotifier {
           if (MapPoint.fromFeature(feature) case final c?) c,
       ];
 
-  /// Carrega (ou devolve do cache) a visão geral dos filtros atuais.
-  /// Pedidos repetidos enquanto carrega reaproveitam a mesma busca, para
-  /// não pedir a distribuidora inteira duas vezes.
   Future<List<MapPoint>> carregarVisaoGeral() {
     final f = filtros;
     final chave = _chaveFiltros(f);
@@ -189,6 +166,7 @@ class PointsLayerController extends ChangeNotifier {
 
     _chaveCarregando = chave;
     _carregandoVisaoGeral = true;
+    _erro = null;
     _notificar();
 
     void terminou() {
@@ -201,17 +179,30 @@ class PointsLayerController extends ChangeNotifier {
 
     final futuro = _buscar(
       f,
-      null, // sem polígono: a distribuidora inteira
+      null, 
       clusterCell: MapConfig.overviewCellDegrees,
-    ).then((r) {
+    ).timeout(MapConfig.overviewTimeout).then((r) {
       final celulas = _celulasDe(r);
+      if (celulas.isNotEmpty && !celulas.first.isCluster) {
+        throw StateError('backend sem agrupamento');
+      }
       if (_chaveCarregando == chave) {
         _chaveVisaoGeral = chave;
         _celulas = celulas;
+        _totalVisaoGeral = r.totalPoints;
       }
       terminou();
       return celulas;
-    }, onError: (Object e, StackTrace st) {
+    }).catchError((Object e, StackTrace st) {
+      if (_chaveCarregando == chave) {
+        _erro = e is StateError
+            ? 'O backend não agrupou os pontos: ele está desatualizado. '
+                'Reconstrua com ./scripts/up-local.sh.'
+            : e is TimeoutException
+                ? 'Os pontos demoraram demais para carregar. Tente filtrar '
+                    'menos cidades ou tente de novo.'
+                : 'Não foi possível carregar os pontos do mapa.';
+      }
       terminou();
       Error.throwWithStackTrace(e, st);
     });
@@ -220,9 +211,6 @@ class PointsLayerController extends ChangeNotifier {
     return futuro;
   }
 
-  /// Células das bolhas menores para a tela [v]: do cache se a tela ainda
-  /// está dentro da área já buscada; senão busca a tela com uma margem em
-  /// volta (assim pequenos arrastes não buscam de novo).
   Future<List<MapPoint>> _carregarDetalhe(
     FiltrosPontos f,
     MapViewport v,
@@ -266,7 +254,6 @@ class PointsLayerController extends ChangeNotifier {
 
   Future<void> buscarAgora() async {
     final viewport = lerViewport();
-    // Com as bolhas não há mais "zoom baixo demais": sempre aparece algo.
     onZoomMuitoBaixo?.call(false);
 
     final meuPedido = ++_pedidoId;
@@ -279,7 +266,9 @@ class PointsLayerController extends ChangeNotifier {
 
     try {
       final contagem =
-          precisaContar ? _buscar(f, areas!, countOnly: true) : null;
+          precisaContar
+              ? _buscar(f, areas!, countOnly: true, comMunicipios: false)
+              : null;
 
       if (viewport.zoom < MapConfig.minZoomToSearch) {
         final celulas = await carregarVisaoGeral();
@@ -300,7 +289,13 @@ class PointsLayerController extends ChangeNotifier {
         _totalAreas = total;
       }
       if (_disposed || meuPedido != _pedidoId) return;
-      if (areas != null) onTotalChanged?.call(_totalAreas ?? 0);
+      if (areas != null) {
+        onTotalChanged?.call(_totalAreas ?? 0);
+      } else {
+        final total = await _totalDasCidades(f);
+        if (_disposed || meuPedido != _pedidoId) return;
+        onTotalChanged?.call(total);
+      }
     } catch (_) {
       if (_disposed || meuPedido != _pedidoId) return;
       _carregando = false;
@@ -308,46 +303,34 @@ class PointsLayerController extends ChangeNotifier {
     }
   }
 
-  /// Agrupa [celulas] em bolhas no zoom atual. O total é o dos pontos da
-  /// tela (sem áreas selecionadas).
+  Future<int> _totalDasCidades(FiltrosPontos f) async {
+    final chave = _chaveFiltros(f);
+    if (chave == _chaveVisaoGeral) return _totalVisaoGeral;
+    if (chave == _chaveTotal) return _totalCidades;
+    final r = await _buscar(f, null, countOnly: true);
+    _chaveTotal = chave;
+    _totalCidades = r.totalPoints;
+    return _totalCidades;
+  }
+
   void _mostrarBolhas(
     List<MapPoint> celulas,
     MapViewport viewport,
     double pixels,
     Map<String, dynamic>? areas,
   ) {
-    // Mesmo zoom e mesmas células = mesmas bolhas (a grade é fixa no
-    // mundo); só reagrupa, e anima, quando algo mudou de fato.
     final assinatura = '${viewport.zoom.toStringAsFixed(2)}|$pixels|'
         '${identityHashCode(celulas)}';
     if (assinatura != _assinaturaBolhas) {
       _assinaturaBolhas = assinatura;
       _agrupamento = Agrupamento.de(celulas, viewport.zoom, pixels);
     }
-    // Os pontos individuais ficam na lista: o mapa os esmaece.
     _agrupado = true;
     _carregando = false;
     _notificar();
 
-    if (areas == null) {
-      var naTela = 0;
-      for (final c in celulas) {
-        final p = c.position;
-        if (p.latitude >= viewport.south &&
-            p.latitude <= viewport.north &&
-            p.longitude >= viewport.west &&
-            p.longitude <= viewport.east) {
-          naTela += c.clusterCount;
-        }
-      }
-      onTotalChanged?.call(naTela);
-    }
   }
 
-  /// Zoom próximo: busca os pontos individuais da tela e revela em lotes.
-  /// O backend já corta em [MapConfig.maxRenderedPoints]: antes vinham
-  /// TODOS os pontos da tela (milhares, em área densa) e o app jogava o
-  /// resto fora depois de baixar e ler tudo.
   Future<void> _mostrarPontos(
     FiltrosPontos f,
     MapViewport viewport,
@@ -369,9 +352,7 @@ class PointsLayerController extends ChangeNotifier {
         if (MapPoint.fromFeature(feature) case final ponto?) ponto,
     ];
     _carregando = false;
-    if (!temAreas) onTotalChanged?.call(resultado.totalPoints);
 
-    // As bolhas ficam na lista: o mapa as esmaece enquanto os pontos entram.
     _agrupado = false;
     _assinaturaBolhas = null; // ao voltar para as bolhas, reagrupa
     _notificar();
