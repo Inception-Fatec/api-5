@@ -21,3 +21,11 @@ spring:
   flyway:
     enabled: false
     baseline-on-migrate: true
+  servlet:
+    multipart:
+      max-file-size: 4GB
+      max-request-size: 4GB
+  etl:
+    python-executable: python
+    script-path: ../api-5/modules/etl_cli.py
+    timeout-minutes: 120
