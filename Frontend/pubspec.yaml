@@ -8,6 +8,7 @@ environment:
 
 dependencies:
   http: ^1.2.2
+  file_picker: ^8.1.2
   flutter_secure_storage: ^9.2.2
   flutter:
     sdk: flutter
