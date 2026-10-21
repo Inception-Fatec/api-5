@@ -35,10 +35,11 @@ public class SimulationService {
                 .build();
         project = projectRepository.save(project);
 
-        // salva o historico com o poligono
+        // salva o historico com o poligono e filtros da página de novo projeto
         ProjectHistory history = ProjectHistory.builder()
                 .project(project)
                 .polygonGeojson(request.polygonGeojson())
+                .filterParams(request.filterParams())
                 .build();
         projectHistoryRepository.save(history);
 
@@ -46,7 +47,7 @@ public class SimulationService {
         project.setStatus(ProjectStatus.ENVIADO);
         projectRepository.save(project);
 
-        // aciona o motor em background
+        // aciona o motor
         decisionEngineClient.sendToEngineAsync(project.getId());
 
         return toDto(project);
