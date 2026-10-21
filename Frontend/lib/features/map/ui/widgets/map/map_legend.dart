@@ -4,7 +4,9 @@ import 'package:tecsys_app/core/theme/app_theme.dart';
 import 'package:tecsys_app/features/map/ui/styles/map_styles.dart';
 
 class MapLegend extends StatelessWidget {
-  const MapLegend({super.key});
+  final bool agrupado;
+
+  const MapLegend({super.key, this.agrupado = false});
 
   static const _itens = [
     ('ALTO', 'Alta tensão'),
@@ -27,9 +29,12 @@ class MapLegend extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('TENSÃO', style: MapStyles.coordsTitle),
+          Text(agrupado ? 'PONTOS NA BOLHA' : 'TENSÃO',
+              style: MapStyles.coordsTitle),
           const SizedBox(height: 3),
-          for (final (layer, rotulo) in _itens)
+          for (final (cor, rotulo) in agrupado
+              ? [for (final (_, c, r) in MapStyles.clusterFaixas) (c, r)]
+              : [for (final (l, r) in _itens) (MapStyles.layerColor(l), r)])
             Padding(
               padding: const EdgeInsets.only(top: MapStyles.legendRowGap),
               child: Row(
@@ -40,7 +45,7 @@ class MapLegend extends StatelessWidget {
                     height: MapStyles.legendDotSize,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: MapStyles.layerColor(layer),
+                      color: cor,
                     ),
                   ),
                   const SizedBox(width: MapStyles.legendDotGap),

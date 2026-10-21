@@ -1,3 +1,4 @@
+
 import 'dart:convert';
 
 import 'package:tecsys_app/core/network/api_client.dart';
@@ -28,6 +29,8 @@ class PointsFilterService {
     List<String>? cnaeCodes,
     List<String>? bairroNames,
     bool countOnly = false,
+    double? clusterCell,
+    int? limit,
   }) async {
     final temDelimitador = (distCodes?.isNotEmpty ?? false) ||
         (munCodes?.isNotEmpty ?? false) ||
@@ -53,6 +56,8 @@ class PointsFilterService {
       if (bairroNames != null && bairroNames.isNotEmpty)
         'bairro_names': bairroNames,
       if (countOnly) 'count_only': true,
+      if (clusterCell != null) 'cluster_cell': clusterCell,
+      if (limit != null) 'limit': limit,
     };
 
     late final Map<String, dynamic> corpo;
@@ -85,8 +90,6 @@ class PointsFilterService {
     );
   }
 
-  /// Autocompletar de Bairro — `GET /api/v1/bairros`, nomes reais do
-  /// banco que batem com o texto digitado, dentro das cidades dadas.
   Future<List<String>> buscarSugestoesBairro({
     required List<String> munCodes,
     required String texto,

@@ -1,7 +1,8 @@
 import 'package:latlong2/latlong.dart';
 
 /// Um ponto devolvido pelo backend (feature GeoJSON) já com a posição
-/// que o mapa usa para desenhá-lo.
+/// que o mapa usa para desenhá-lo. Também representa uma célula da visão
+/// geral ([isCluster]): um ponto que resume [clusterCount] pontos.
 class MapPoint {
   final Map<String, dynamic> feature;
   final LatLng position;
@@ -23,8 +24,14 @@ class MapPoint {
 
   String? get id => properties['id']?.toString();
 
-  /// Camada do ponto (ALTO, MEDIO, BAIXO, SUB...).
-  String? get layer => properties['layer'] as String?;
+  /// Camada do ponto (ALTO, MEDIO, BAIXO, SUB).
+  String? get layer => properties['layer']?.toString();
+
+  /// True quando é uma célula da visão geral (zoom afastado), não um ponto real.
+  bool get isCluster => properties['cluster'] == true;
+
+  /// Quantos pontos a célula representa (1 para um ponto real).
+  int get clusterCount => (properties['count'] as num?)?.toInt() ?? 1;
 
   /// Ponto único que representa uma geometria GeoJSON: o próprio ponto,
   /// ou a média dos vértices (do primeiro anel/linha, nas demais).
