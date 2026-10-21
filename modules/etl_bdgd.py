@@ -1,167 +1,211 @@
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
-from shapely.geometry import Point
-from sqlalchemy import create_engine
+import pyarrow as pa
+import pyarrow.compute as pc
+import pyarrow.csv as pacsv
+import requests
+from dotenv import load_dotenv
+from sqlalchemy import create_engine, text
 
-DB_URL = os.getenv("DB_URL")
+from etl_common import (
+    CRS_ALVO,
+    CRS_ORIGEM_BDGD,
+    Metricas,
+    anular_fk_orfas,
+    carregar_idempotente,
+    prefixar,
+    validar_municipios,
+)
+
+load_dotenv()
 
 CSV_UCAT_PJ_URL = "https://dadosabertos.aneel.gov.br/dataset/4459e483-451f-4444-8022-bd8b5eac05c5/resource/4318d38a-0bcd-421d-afb1-fb88b0c92a87/download/ucat_pj.csv"
 CSV_UCMT_PJ_URL = "https://dadosabertos.aneel.gov.br/dataset/4459e483-451f-4444-8022-bd8b5eac05c5/resource/f6671cba-f269-42ef-8eb3-62cb3bfa0b98/download/ucmt_pj.csv"
-CSV_UCBT_PJ_URL = "https://dadosabertos.aneel.gov.br/dataset/4459e483-451f-4444-8022-bd8b5eac05c5/resource/3ae4d382-7072-4b08-90a4-dcd187a2eae2/download/ucbt_pj.zip"
-CRS_ALVO = "EPSG:4674"
 
-CHUNK_SIZE = 200_000
+CACHE_DIR = Path(os.getenv("CACHE_DIR", "cache_aneel"))
+BLOCK_SIZE = 64 << 20
+MAX_WORKERS = 2
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+COLUNAS_UCAT = ["COD_ID_ENCR", "MUN", "BRR", "SUB", "CONJ", "CTAT", "CLAS_SUB",
+                "CNAE", "CAR_INST", "DEM_CONT", "TIP_SIST", "ARE_LOC",
+                "POINT_X", "POINT_Y"]
+
+COLUNAS_UCMT = ["COD_ID_ENCR", "MUN", "BRR", "SUB", "UNI_TR_AT", "CONJ", "CTMT",
+                "CLAS_SUB", "CNAE", "CAR_INST", "DEM_CONT", "TIP_SIST", "ARE_LOC",
+                "POINT_X", "POINT_Y"]
+
+COLUNAS_NUMERICAS = {"CAR_INST", "DEM_CONT", "POINT_X", "POINT_Y"}
+
 logger = logging.getLogger("etl_bdgd")
 
+
 def verificar_cobertura(engine, municipios: list[str] | None, distribuidoras: list[str] | None) -> bool:
-
-    if distribuidoras:
-        lista = ", ".join(f"'{d}'" for d in distribuidoras)
-        count = pd.read_sql(f"SELECT COUNT(*) AS n FROM sub WHERE dist IN ({lista})", engine)["n"][0]
-        if count == 0:
-            return False
-
-    if municipios:
-        lista = ", ".join(f"'{m}'" for m in municipios)
-        query = f"""SELECT COUNT(*) AS n FROM (
-                        SELECT mun FROM untrat WHERE mun IN ({lista}) 
-                        UNION 
-                        SELECT mun FROM untrmt WHERE mun IN ({lista})
-                    ) t"""
-        count = pd.read_sql(query, engine)["n"][0]
-        if count == 0:
-            return False
+    with engine.connect() as conn:
+        if distribuidoras:
+            n = conn.execute(text("SELECT COUNT(*) FROM sub WHERE dist = ANY(:d)"), {"d": distribuidoras}).scalar()
+            if n == 0:
+                return False
+        if municipios:
+            existe = conn.execute(
+                text("SELECT EXISTS (SELECT 1 FROM untrat WHERE mun = ANY(:m)) "
+                     "OR EXISTS (SELECT 1 FROM untrmt WHERE mun = ANY(:m))"),
+                {"m": municipios},
+            ).scalar()
+            if not existe:
+                return False
     return True
 
-def municipios_pendentes(engine, tabela: str, municipios: list[str]) -> list[str]:
 
-    if not municipios:
-        return []
-    
-    lista = ", ".join(f"'{m}'" for m in municipios)
-    query = f"SELECT DISTINCT mun FROM {tabela} WHERE mun IN ({lista})"
-    ja_carregados = set(pd.read_sql(query, engine)["mun"].astype(str))
-    pendentes = [m for m in municipios if m not in ja_carregados]
+def obter_csv_local(origem: str) -> Path:
+    if origem.startswith(("http://", "https://")):
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        destino = CACHE_DIR / origem.rsplit("/", 1)[-1]
+        if not destino.exists():
+            logger.info(f"Baixando {origem}")
+            temporario = destino.with_name(destino.name + ".part")
+            with requests.get(origem, stream=True, timeout=60) as resposta:
+                resposta.raise_for_status()
+                with open(temporario, "wb") as arquivo:
+                    for bloco in resposta.iter_content(1024 * 1024):
+                        arquivo.write(bloco)
+            temporario.rename(destino)
+    else:
+        destino = Path(origem)
+        if not destino.exists():
+            raise FileNotFoundError(f"Arquivo não encontrado: {destino}")
 
-    if ja_carregados:
-        logger.info(f"'{tabela}': Municipios já carregados, serão pulados: {sorted(ja_carregados)}")
+    return destino
 
-    return pendentes
 
-def extrair_csv(fonte, municipios: list[str] | None, distribuidoras: list[str] | None, chunksize: int = CHUNK_SIZE) -> pd.DataFrame:
+def extrair_csv(origem: str, municipios: list[str] | None, distribuidoras: list[str] | None,
+                colunas: list[str], tabela: str, metricas: Metricas) -> pd.DataFrame:
+    caminho = obter_csv_local(origem)
+    cols = sorted(set(colunas) | {"MUN", "DIST", "SIT_ATIV"})
+    tipos = {c: (pa.float64() if c in COLUNAS_NUMERICAS else pa.string()) for c in cols}
+
+    leitor = pacsv.open_csv(
+        caminho,
+        read_options=pacsv.ReadOptions(encoding="latin-1", block_size=BLOCK_SIZE),
+        parse_options=pacsv.ParseOptions(delimiter=";"),
+        convert_options=pacsv.ConvertOptions(
+            include_columns=cols,
+            include_missing_columns=True,
+            column_types=tipos,
+            strings_can_be_null=True,
+        ),
+    )
 
     partes = []
-    leitor = pd.read_csv(fonte, sep=";", encoding="latin-1", chunksize=chunksize)
-    for i, pedaco in enumerate(leitor, start=1):
-        mascara = pd.Series(True, index = pedaco.index)
+    for i, bloco in enumerate(leitor, start=1):
+        ativo = pc.fill_null(pc.equal(bloco.column("SIT_ATIV"), "AT"), False)
+        n_ativos = pc.sum(pc.cast(ativo, pa.int64())).as_py() or 0
+
+        mascara = ativo
         if municipios:
-            mascara &= pedaco["MUN"].astype(str).isin(municipios)
+            mascara = pc.and_(mascara, pc.is_in(bloco.column("MUN"), value_set=pa.array(municipios, type=pa.string())))
         if distribuidoras:
-            mascara &= pedaco["DIST"].astype(str).isin(distribuidoras)
+            mascara = pc.and_(mascara, pc.is_in(bloco.column("DIST"), value_set=pa.array(distribuidoras, type=pa.string())))
 
-        pedaco = pedaco[mascara]
-        pedaco = pedaco[pedaco["SIT_ATIV"] == "AT"]
+        filtrado = bloco.filter(mascara)
+        metricas.add(tabela, lidos=bloco.num_rows, inativos=bloco.num_rows - n_ativos,
+                     fora_da_selecao=n_ativos - filtrado.num_rows, retidos=filtrado.num_rows)
+        if filtrado.num_rows:
+            partes.append(filtrado)
+        logger.info(f"  {caminho.name} bloco {i}: {filtrado.num_rows} registros retidos")
 
-        if not pedaco.empty:
-            partes.append(pedaco)
-        logger.info(f"  chunk {i}: {len(pedaco)} registros retidos")
+    if not partes:
+        return pd.DataFrame()
+    return pa.Table.from_batches(partes).to_pandas()
 
-    return pd.concat(partes, ignore_index=True) if partes else pd.DataFrame()
 
-def para_geodataframe(df: pd.DataFrame) -> gpd.GeoDataFrame:
-    geometry = [Point(xy) for xy in zip(df["point_x"], df["point_y"])]
-    gdf = gpd.GeoDataFrame(df, geometry=geometry, crs=CRS_ALVO)
-    gdf = gdf.drop(columns=["point_x", "point_y"])
+def _podar(df: pd.DataFrame, colunas: list[str]) -> pd.DataFrame:
+    df = df[[c for c in colunas if c in df.columns]].copy()
+    df.columns = df.columns.str.lower()
+    return df
+
+
+def _pontos(x, y, index=None) -> gpd.GeoSeries:
+    pontos = gpd.GeoSeries(gpd.points_from_xy(x, y), index=index, crs=CRS_ORIGEM_BDGD)
+    return pontos if CRS_ORIGEM_BDGD == CRS_ALVO else pontos.to_crs(CRS_ALVO)
+
+
+def _limpar_pontual(df: pd.DataFrame, colunas: list[str], tabela: str, metricas: Metricas) -> gpd.GeoDataFrame:
+    df = _podar(df, colunas)
+    tem_coord = df["point_x"].notna() & df["point_y"].notna()
+    metricas.add(tabela, descartados_sem_coordenada=int((~tem_coord).sum()))
+    df = df[tem_coord]
+    geometria = _pontos(df["point_x"], df["point_y"], index=df.index)
+    gdf = gpd.GeoDataFrame(df.drop(columns=["point_x", "point_y"]), geometry=geometria, crs=CRS_ALVO)
     return gdf.rename_geometry("geom")
 
 
-def limpar_ucat(df: pd.DataFrame, engine = None) -> gpd.GeoDataFrame:
-    colunas = ["COD_ID_ENCR", "MUN", "BRR", "SUB", "CONJ", "CTAT", "CLAS_SUB",
-               "CNAE", "CAR_INST", "DEM_CONT", "TIP_SIST", "ARE_LOC",
-               "POINT_X", "POINT_Y"]
-    df = df[[c for c in colunas if c in df.columns]].copy()
-    df.columns = df.columns.str.lower()
-    return para_geodataframe(df)
+def limpar_ucat(df, engine, tabela, metricas):
+    return _limpar_pontual(df, COLUNAS_UCAT, tabela, metricas)
 
 
-def limpar_ucmt(df: pd.DataFrame, engine = None) -> gpd.GeoDataFrame:
-    colunas = ["COD_ID_ENCR", "MUN", "BRR", "SUB", "UNI_TR_AT", "CONJ", "CTMT",
-               "CLAS_SUB", "CNAE", "CAR_INST", "DEM_CONT", "TIP_SIST", "ARE_LOC",
-               "POINT_X", "POINT_Y"]
-    df = df[[c for c in colunas if c in df.columns]].copy()
-    df.columns = df.columns.str.lower()
-    return para_geodataframe(df)
+def limpar_ucmt(df, engine, tabela, metricas):
+    return _limpar_pontual(df, COLUNAS_UCMT, tabela, metricas)
 
 
-def limpar_ucbt(df: pd.DataFrame, engine) -> gpd.GeoDataFrame:
-
-    colunas = ["COD_ID_ENCR", "MUN", "BRR", "SUB", "UNI_TR_AT", "UNI_TR_MT",
-               "CONJ", "CTMT", "CLAS_SUB", "CNAE", "CAR_INST", "TIP_SIST",
-               "ARE_LOC", "POINT_X", "POINT_Y"]
-    df = df[[c for c in colunas if c in df.columns]].copy()
-    df.columns = df.columns.str.lower()
- 
-    tem_coord = df["point_x"].notna() & df["point_y"].notna()
-    df["geom"] = None
-    df.loc[tem_coord, "geom"] = [
-        Point(xy) for xy in zip(df.loc[tem_coord, "point_x"], df.loc[tem_coord, "point_y"])
-    ]
- 
-    sem_coord = ~tem_coord
-    if sem_coord.any():
-        codigos = df.loc[sem_coord, "uni_tr_mt"].dropna().astype(str).unique().tolist()
-        lista = ", ".join(f"'{c}'" for c in codigos) or "''"
-        transf = gpd.read_postgis(
-            f"SELECT cod_id, geom FROM untrmt WHERE cod_id IN ({lista})", engine, geom_col="geom", crs=CRS_ALVO
-        ).set_index("cod_id")["geom"]
-        df.loc[sem_coord, "geom"] = df.loc[sem_coord, "uni_tr_mt"].astype(str).map(transf)
- 
-    sem_geom = df["geom"].isna()
-    if sem_geom.any():
-        logger.warning(f"UCBT: {sem_geom.sum()} registro(s) sem coordenada e sem transformador MT localizado — descartados")
-        df = df[~sem_geom]
- 
-    return gpd.GeoDataFrame(df.drop(columns=["point_x", "point_y"]), geometry="geom", crs=CRS_ALVO)
-
-def carregar(gdf: gpd.GeoDataFrame, tabela: str, engine) -> None:
-    gdf.to_postgis(tabela, engine, if_exists="append", index=False)
-    logger.info(f"  -> {len(gdf)} registros carregados em '{tabela}'")
+TABELAS = [
+    {"tabela": "ucat_pj", "url": CSV_UCAT_PJ_URL, "colunas": COLUNAS_UCAT, "limpar": limpar_ucat,
+     "fks": {"sub": ("sub", "cod_id")}},
+    {"tabela": "ucmt_pj", "url": CSV_UCMT_PJ_URL, "colunas": COLUNAS_UCMT, "limpar": limpar_ucmt,
+     "fks": {"sub": ("sub", "cod_id"), "uni_tr_at": ("untrat", "cod_id")}},
+]
 
 
-def main(municipios: list[str] | None = None, distribuidoras: list[str] | None = None) -> dict:
+def processar_tabela(engine, cfg: dict, urls: dict, municipios, distribuidoras, metricas: Metricas,
+                     prefixos: dict | None = None) -> str:
+    tabela = cfg["tabela"]
+    logger.info(f"Processando '{tabela}'...")
 
+    df = extrair_csv(urls.get(tabela, cfg["url"]), municipios, distribuidoras, cfg["colunas"], tabela, metricas)
+    if df.empty:
+        logger.warning(f"'{tabela}': nenhum registro encontrado para a seleção — nada a carregar.")
+        return tabela
+
+    if prefixos:
+        prefixo_linha = df["DIST"].map(prefixos).fillna("")
+        df = prefixar(df, prefixo_linha, colunas=("COD_ID_ENCR", "SUB", "UNI_TR_AT", "UNI_TR_MT", "CTMT", "CTAT"))
+
+    gdf = cfg["limpar"](df, engine, tabela, metricas)
+    gdf = anular_fk_orfas(gdf, engine, tabela, cfg["fks"], metricas)
+
+    with engine.begin() as conn:
+        carregar_idempotente(conn, gdf, tabela, "cod_id_encr", metricas, truncar=("brr",))
+    metricas.log(tabela)
+    return tabela
+
+
+def main(municipios: list[str] | None = None, distribuidoras: list[str] | None = None,
+         urls: dict | None = None, engine=None, prefixos: dict | None = None) -> dict:
     if not municipios and not distribuidoras:
-        raise ValueError("Informe ao menos um critério de busca: municipios ou ditribuidoras.")
+        raise ValueError("Informe ao menos um critério de busca: municipios ou distribuidoras.")
+    municipios = validar_municipios(municipios) if municipios else None
+    distribuidoras = [str(d) for d in distribuidoras] if distribuidoras else None
 
-    engine = create_engine(DB_URL)
+    engine = engine or create_engine(os.getenv("ETL_DB_URL"), pool_size=MAX_WORKERS + 2)
+    metricas = Metricas()
 
     logger.info("0) Verificando cobertura no banco...")
     if not verificar_cobertura(engine, municipios, distribuidoras):
-        logger.warning("Região ainda não disponivel - malha elétrica não carregada para essa seleção.")
+        logger.warning("Região ainda não disponível - malha elétrica não carregada para essa seleção.")
         return {"status": "indisponivel"}
 
-    tabelas = [
-        (CSV_UCAT_PJ_URL, "ucat_pj", limpar_ucat),
-        (CSV_UCMT_PJ_URL, "ucmt_pj", limpar_ucmt),
-        (CSV_UCBT_PJ_URL, "ucbt", limpar_ucbt),
-    ]
- 
-    for i, (url, tabela, limpar_fn) in enumerate(tabelas, start=1):
-        logger.info(f"{i}) Processando '{tabela}'...")
-        pendentes = municipios_pendentes(engine, tabela, municipios)
-        if not pendentes:
-            logger.info(f"'{tabela}': nenhum município pendente — pulando.")
-            continue
- 
-        df = extrair_csv(url, pendentes, distribuidoras)
-        gdf = limpar_fn(df, engine)
-        carregar(gdf, tabela, engine)
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futuros = {
+            executor.submit(processar_tabela, engine, cfg, urls or {}, municipios, distribuidoras, metricas, prefixos): cfg["tabela"]
+            for cfg in TABELAS
+        }
+        for futuro in as_completed(futuros):
+            futuro.result() 
+            logger.info(f"'{futuros[futuro]}' finalizada.")
 
     logger.info("ETL concluído.")
-    return {"status": "concluido"}
+    return {"status": "concluido", **metricas.resumo()}
