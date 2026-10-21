@@ -118,6 +118,24 @@ public class DecisionRepository {
             DecisionCriteria criteria,
             int gatewayRangeMeters
     ) {
+        var candidates = findGatewayCandidates(criteria);
+        var points = findCoveragePoints(criteria);
+
+        List<String> candidateIds = candidates.stream().map(GatewayCandidate::id).toList();
+        List<String> pointIds = points.stream().map(CoveragePoint::id).toList();
+
+        return findCoverageRelations(criteria, gatewayRangeMeters, candidateIds, pointIds);
+    }
+
+    public List<CoverageRelation> findCoverageRelations(
+            DecisionCriteria criteria,
+            int gatewayRangeMeters,
+            List<String> candidateIds,
+            List<String> pointIds
+    ) {
+        if (candidateIds == null || candidateIds.isEmpty() || pointIds == null || pointIds.isEmpty()) {
+            return List.of();
+        }
 
         if (gatewayRangeMeters <= 0) {
             throw new IllegalArgumentException(
@@ -131,14 +149,6 @@ public class DecisionRepository {
         if (targetTables.isEmpty()) {
             return List.of();
         }
-
-        MapSqlParameterSource params =
-                createParameters(criteria);
-
-        params.addValue(
-                "gatewayRangeMeters",
-                gatewayRangeMeters
-        );
 
         List<String> pointQueries =
                 new ArrayList<>();
@@ -180,9 +190,29 @@ public class DecisionRepository {
                         p.geom::geography,
                         :gatewayRangeMeters
                   )
+                WHERE c.id IN (:candidateIds)
+                  AND p.id IN (:pointIds)
                 """.formatted(
                 pointsSql,
                 candidatesSql
+        );
+
+        MapSqlParameterSource params =
+                createParameters(criteria);
+
+        params.addValue(
+                "gatewayRangeMeters",
+                gatewayRangeMeters
+        );
+
+        params.addValue(
+                "candidateIds",
+                candidateIds
+        );
+
+        params.addValue(
+                "pointIds",
+                pointIds
         );
 
         return jdbcTemplate.query(

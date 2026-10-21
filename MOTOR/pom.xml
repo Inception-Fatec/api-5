@@ -46,6 +46,12 @@
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-imaging</artifactId>
+            <version>1.0.0-alpha5</version>
+        </dependency>
     </dependencies>
 
     <build>
