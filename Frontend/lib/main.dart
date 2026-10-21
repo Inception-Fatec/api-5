@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:tecsys_app/features/auth/ui/screens/login_screen.dart'; // Garanta que esse arquivo existe nesse caminho
 import 'package:tecsys_app/features/etl_geodados/etl_geodados_screen.dart';
 import 'package:tecsys_app/core/theme/app_theme.dart';
 
@@ -16,8 +15,7 @@ class TecsysApp extends StatelessWidget {
       title: 'Tecsys',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
-      // Define a LoginScreen como a tela inicial
-      home: const LoginScreen(),
+      home: const EtlGeodadosScreen(),
       routes: {
         '/etl': (context) => const EtlGeodadosScreen(),
       },
