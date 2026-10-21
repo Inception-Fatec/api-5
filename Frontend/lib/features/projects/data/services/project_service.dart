@@ -22,10 +22,11 @@ class ProjectsService {
   /// (só `name` e `dist_code`; status/created_by/created_at são
   /// preenchidos lá). Devolve o Project já criado, com id.
   Future<Project> criar(
-      {required String name, required String distCode}) async {
-    final data = await _client.postJson('/projects', {
+      {required String name, required String distCode, required Map<String, dynamic> filterParams}) async {
+    final data = await _client.postJson('/simulation/run', {
       'name': name,
       'dist_code': distCode,
+      'filter_params': filterParams,
     });
     return Project.fromJson(data);
   }

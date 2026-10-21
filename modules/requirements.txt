@@ -5,3 +5,6 @@ geoalchemy2
 pandas
 requests
 shapely
+pyarrow
+pyogrio
+python-dotenv

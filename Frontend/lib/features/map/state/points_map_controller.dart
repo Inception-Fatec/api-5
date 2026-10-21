@@ -312,9 +312,22 @@ class PointsMapController extends ChangeNotifier {
 
     try {
       final resultadoPontos = await _buscarPontosDosFiltros(countOnly: true);
+      final f = filtros;
+
       final projetoCriado = await _projects.criar(
         name: nomeProjeto,
         distCode: distCode,
+        filterParams: {
+          'dist_codes': [distCode],
+          'mun_codes': munCodes,
+          'polygon_geojson': areas.geoJson,
+          'target_layers': f.targetLayers,
+          'conj_codes': f.conjCodes,
+          'sub_codes': f.subCodes,
+          'clas_sub': f.clasSub,
+          'cnae_codes': f.cnaeCodes,
+          'bairro_names': f.bairroNames,
+        },
       );
       _store.adicionar(projetoCriado);
 

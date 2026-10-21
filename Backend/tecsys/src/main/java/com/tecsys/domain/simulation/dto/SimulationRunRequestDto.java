@@ -1,6 +1,8 @@
+// no arquivo SimulationRunRequestDto.java
 package com.tecsys.domain.simulation.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -13,7 +15,6 @@ public record SimulationRunRequestDto(
         @JsonProperty("dist_code")
         String distCode,
 
-        @NotBlank(message = "O polígono (GeoJSON) é obrigatório.")
-        @JsonProperty("polygon_geojson")
-        String polygonGeojson
+        @JsonProperty("filter_params")
+        JsonNode filterParams
 ) {}
