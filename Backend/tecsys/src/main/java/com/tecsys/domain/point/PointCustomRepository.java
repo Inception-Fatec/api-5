@@ -23,7 +23,7 @@ public class PointCustomRepository {
     private static final List<String> COLUNAS_EXTRAS = List.of(
             "mun", "brr", "sub", "conj", "clas_sub", "cnae",
             "car_inst", "dem_cont", "tip_sist", "are_loc", "uni_tr_mt",
-            "nome", "dist"
+            "uni_tr_at", "nome", "dist"
     );
 
     public PointFilterResponseDto executeSpatialFilter(PointFilterRequestDto request) {
@@ -127,7 +127,6 @@ public class PointCustomRepository {
                 params.addValue("polygon" + suf, request.polygonGeojson());
             }
 
-            // Tela visível: só limita o que vai pro mapa.
             if (request.viewportGeojson() != null && !request.viewportGeojson().isBlank()) {
                 subQuery.append(" AND ST_Intersects(geom, ST_Transform(ST_GeomFromGeoJSON(:viewport")
                         .append(suf).append("), 4674)) ");
@@ -144,6 +143,42 @@ public class PointCustomRepository {
         boolean countOnly = Boolean.TRUE.equals(request.countOnly());
         String unionSql = String.join(" UNION ALL ", unionQueries);
 
+        Double cell = request.clusterCell();
+        if (!countOnly && cell != null && cell > 0) {
+            String clusterSql = """
+                WITH filtered_points AS (
+                    %s
+                ), celulas AS (
+                    SELECT count(*) AS n,
+                           ST_Transform(ST_Centroid(ST_Collect(ST_PointOnSurface(f.geom))), 4326) AS c
+                    FROM filtered_points f
+                    GROUP BY ST_SnapToGrid(ST_PointOnSurface(f.geom), :clusterCell)
+                )
+                SELECT COALESCE(SUM(n), 0) AS total_points,
+                       jsonb_build_object(
+                           'type', 'FeatureCollection',
+                           'features', COALESCE(jsonb_agg(
+                               jsonb_build_object(
+                                   'type', 'Feature',
+                                   'geometry', ST_AsGeoJSON(c, 6)::jsonb,
+                                   'properties', jsonb_build_object('count', n, 'cluster', true)
+                               )
+                           ), '[]'::jsonb)
+                       ) AS geojson_features
+                FROM celulas;
+            """.formatted(unionSql);
+            params.addValue("clusterCell", cell);
+
+            return jdbcTemplate.queryForObject(clusterSql, params, (rs, rowNum) -> {
+                try {
+                    Long total = rs.getLong("total_points");
+                    String geojsonStr = rs.getString("geojson_features");
+                    return new PointFilterResponseDto(total, objectMapper.readTree(geojsonStr));
+                } catch (Exception e) {
+                    throw new RuntimeException("Falha ao serializar o agrupamento do PostGIS", e);
+                }
+            });
+        }
 
         if (countOnly) {
             String countSql = """
@@ -162,6 +197,12 @@ public class PointCustomRepository {
         }
         propriedadesSql.append(")");
 
+        String limitSql = "";
+        if (request.limit() != null && request.limit() > 0) {
+            limitSql = " LIMIT :limit";
+            params.addValue("limit", request.limit());
+        }
+
         String finalSql = """
             WITH filtered_points AS (
                 %s
@@ -178,8 +219,8 @@ public class PointCustomRepository {
                         )
                     ), '[]'::jsonb)
                 ) AS geojson_features
-            FROM filtered_points f;
-        """.formatted(unionSql, propriedadesSql);
+            FROM (SELECT * FROM filtered_points%s) f;
+        """.formatted(unionSql, propriedadesSql, limitSql);
 
         return jdbcTemplate.queryForObject(finalSql, params, (rs, rowNum) -> {
             try {
@@ -230,15 +271,18 @@ public class PointCustomRepository {
                 new TableMetadata("sub", "cod_id", "SUB", false, false, false, Set.of("nome", "dist")),
                 new TableMetadata("ucat_pj", "cod_id_encr", "ALTO", true, true, true,
                         Set.of("mun", "brr", "sub", "conj", "clas_sub", "cnae", "car_inst", "dem_cont", "tip_sist", "are_loc")),
-                new TableMetadata("ssdat", "cod_id", "ALTO", false, true, false, Set.of()),
-                new TableMetadata("untrat", "cod_id", "ALTO", true, true, false, Set.of()),
+                // Redes e transformadores: só as colunas que as próprias consultas
+                // deste arquivo já usam (sub, conj, mun, uni_tr_*), então sabemos
+                // que existem. Antes era Set.of() e o detalhe vinha todo vazio.
+                new TableMetadata("ssdat", "cod_id", "ALTO", false, true, false, Set.of("sub", "conj")),
+                new TableMetadata("untrat", "cod_id", "ALTO", true, true, false, Set.of("mun", "sub", "conj")),
                 new TableMetadata("ucmt_pj", "cod_id_encr", "MEDIO", true, true, true,
                         Set.of("mun", "brr", "sub", "conj", "clas_sub", "cnae", "car_inst", "dem_cont", "tip_sist", "are_loc")),
-                new TableMetadata("ssdmt", "cod_id", "MEDIO", false, true, false, Set.of()),
-                new TableMetadata("untrmt", "cod_id", "MEDIO", true, true, false, Set.of()),
+                new TableMetadata("ssdmt", "cod_id", "MEDIO", false, true, false, Set.of("sub", "conj", "uni_tr_at")),
+                new TableMetadata("untrmt", "cod_id", "MEDIO", true, true, false, Set.of("mun", "sub", "conj")),
                 new TableMetadata("ucbt", "cod_id_encr", "BAIXO", true, true, true,
                         Set.of("mun", "brr", "sub", "conj", "clas_sub", "cnae", "car_inst", "tip_sist", "are_loc", "uni_tr_mt")),
-                new TableMetadata("ssdbt", "cod_id", "BAIXO", false, true, false, Set.of())
+                new TableMetadata("ssdbt", "cod_id", "BAIXO", false, true, false, Set.of("sub", "conj", "uni_tr_mt"))
         );
 
         if (targetLayers == null || targetLayers.isEmpty() || targetLayers.contains("all")) {
