@@ -15,10 +15,6 @@ public record SimulationRunRequestDto(
         @JsonProperty("dist_code")
         String distCode,
 
-        @NotBlank(message = "O polígono (GeoJSON) é obrigatório.")
-        @JsonProperty("polygon_geojson")
-        String polygonGeojson,
-
         @JsonProperty("filter_params")
         JsonNode filterParams
 ) {}

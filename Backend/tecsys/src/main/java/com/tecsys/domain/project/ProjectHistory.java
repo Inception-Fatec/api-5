@@ -28,13 +28,6 @@ public class ProjectHistory {
     @JoinColumn(name = "project_id", nullable = false)
     private Project project;
 
-    @Column(name = "polygon", columnDefinition = "geometry", nullable = false)
-    @ColumnTransformer(
-            read = "ST_AsGeoJSON(polygon)",
-            write = "ST_GeomFromGeoJSON(?)"
-    )
-    private String polygonGeojson;
-
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "filter_params", columnDefinition = "jsonb")
     private JsonNode filterParams;
