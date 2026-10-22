@@ -40,9 +40,11 @@ out/
 ### Variáveis de Ambiente ###
 .env
 .env.properties
+.env.supabase
 
 **/.env
 **/.env.properties
+**/.env.supabase
 
 # Python virtual environment
 venv/

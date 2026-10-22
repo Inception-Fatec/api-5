@@ -10,7 +10,7 @@ a stack inteira. Todos são idempotentes: pode rodar de novo sem medo.
 | `./scripts/up-local.sh` | PostGIS local (container, porta 5433) | dev com grandes volumes; queries espaciais rápidas |
 | `./scripts/up-supabase.sh` | Supabase (nuvem) | base compartilhada com a equipe; sem container de banco |
 
-Ambos sobem backend (8081) + frontend (8080) e terminam imprimindo as URLs.
+Ambos sobem backend (8081) + motor de decisão (8082) + frontend (8080) e terminam imprimindo as URLs.
 `--stop` em qualquer um deles para os containers que ele subiu (os dados do
 banco local ficam preservados no volume Docker).
 
@@ -41,6 +41,14 @@ Spring Boot (`tecsys-backend`, porta 8081). Rebuilda a imagem do código atual.
 `--db supabase` lê `Backend/tecsys/.env.supabase` (criar a partir do
 `.env.supabase.example`; nunca commitar). Formatos aceitos: `postgres://` ou
 `postgresql://` — o script converte para JDBC sozinho.
+
+```bash
+./scripts/run-motor.sh [--db local|supabase] [--stop]
+```
+
+Motor de decisão (`tecsys-motor`, porta 8082, só em 127.0.0.1 — não tem
+autenticação; quem chama é o backend). Mesmo esquema de banco do backend
+(`--db supabase` lê `Backend/tecsys/.env.supabase`). Utiliziza os mesmos campos no .env com a adição da cheve da chave do OpenTopography pela variável de ambiente `OPENTOPOGRAPHY_API_KEY`.
 
 ```bash
 ./scripts/run-frontend.sh [--api-host HOST] [--api-port PORT] [--stop]
