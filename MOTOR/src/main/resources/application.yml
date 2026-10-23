@@ -1,4 +1,3 @@
-
 spring:
   application:
     name: tecsys-motor
@@ -14,3 +13,15 @@ spring:
 server:
   port: ${MOTOR_PORT:8082}
   address: ${MOTOR_BIND_ADDRESS:127.0.0.1}
+
+app:
+  elevation:
+    obstruction-tolerance-meters: ${OBSTRUCTION_TOLERANCE_METERS:1.5}
+    los-samples: ${LOS_SAMPLES:5}
+    opentopography:
+      globaldem-url: ${OPENTOPOGRAPHY_GLOBALDEM_URL:https://portal.opentopography.org/API/globaldem}
+      point-url: ${OPENTOPOGRAPHY_URL:https://portal.opentopography.org/API/v1/elevation}
+      api-key: ${OPENTOPOGRAPHY_API_KEY:}
+      dataset: ${OPENTOPOGRAPHY_DATASET:COP30}
+    open-elevation:
+      url: ${OPEN_ELEVATION_URL:https://api.open-elevation.com/api/v1/lookup}
