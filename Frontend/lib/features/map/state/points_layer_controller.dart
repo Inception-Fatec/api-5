@@ -133,11 +133,10 @@ class PointsLayerController extends ChangeNotifier {
     bool countOnly = false,
     double? clusterCell,
     int? limit,
-    bool comMunicipios = true,
   }) {
     return _service.buscarPontos(
       distCodes: [f.distCode],
-      munCodes: comMunicipios && munCodes.isNotEmpty ? munCodes : null,
+      munCodes: munCodes.isNotEmpty ? munCodes : null,
       polygonGeoJson: poligono,
       targetLayers: f.targetLayers,
       conjCodes: f.conjCodes,
@@ -266,9 +265,7 @@ class PointsLayerController extends ChangeNotifier {
 
     try {
       final contagem =
-          precisaContar
-              ? _buscar(f, areas!, countOnly: true, comMunicipios: false)
-              : null;
+          precisaContar ? _buscar(f, areas!, countOnly: true) : null;
 
       if (viewport.zoom < MapConfig.minZoomToSearch) {
         final celulas = await carregarVisaoGeral();

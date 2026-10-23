@@ -56,7 +56,8 @@ class PointsMapController extends ChangeNotifier {
   List<Municipio> _municipiosSelecionados;
   List<Municipio> _cidadesDisponiveis = [];
 
-  List<String> _targetLayers = List.of(MapFilterOptions.defaultTargetLayers);
+  List<String> _targetLayers =
+      _ajustarNiveis(const [], MapFilterOptions.defaultTargetLayers);
   List<String> _conjCodes = [];
   List<String> _subCodes = [];
   List<String> _clasSub = [];
@@ -148,10 +149,12 @@ class PointsMapController extends ChangeNotifier {
       _municipiosSelecionados =
           _municipiosSelecionados.where((x) => x != m).toList();
       notifyListeners();
+      _agendarContagemAreas();
       return null;
     }
     _municipiosSelecionados = [..._municipiosSelecionados, m];
     notifyListeners();
+    _agendarContagemAreas();
     return MapRegions.centroFixoDe(m.codigoIbge);
   }
 
@@ -163,15 +166,17 @@ class PointsMapController extends ChangeNotifier {
   void setTargetLayers(List<String> valores) => _alterarFiltro(
       () => _targetLayers = _ajustarNiveis(_targetLayers, valores));
 
+  /// "Todos" e os níveis específicos se excluem, e nunca fica nada
+  /// marcado: marcar "Todos" desmarca os outros; marcar um nível desmarca
+  /// "Todos"; desmarcar o último volta para "Todos".
   static List<String> _ajustarNiveis(List<String> antes, List<String> depois) {
     const todos = 'all';
     final acabouDeMarcarTodos =
         depois.contains(todos) && !antes.contains(todos);
     if (acabouDeMarcarTodos) return const [todos];
-    if (depois.contains(todos) && depois.length > 1) {
-      return depois.where((v) => v != todos).toList();
-    }
-    return List.of(depois);
+    final especificos = depois.where((v) => v != todos).toList();
+    if (especificos.isEmpty) return const [todos];
+    return especificos;
   }
 
   void setConjCodes(List<String> valores) =>
@@ -197,7 +202,7 @@ class PointsMapController extends ChangeNotifier {
 
 
   String _chaveArea(SelectedArea a, FiltrosPontos f) =>
-      '${a.north},${a.south},${a.west},${a.east}|${f.hashCode}';
+      '${a.north},${a.south},${a.west},${a.east}|${f.hashCode}|${munCodes.join(",")}';
 
   int? totalNaArea(SelectedArea a) => _totalPorArea[_chaveArea(a, filtros)];
 
@@ -220,6 +225,7 @@ class PointsMapController extends ChangeNotifier {
       try {
         final r = await _points.buscarPontos(
           distCodes: [distCode],
+          munCodes: munCodes,
           polygonGeoJson: SelectedArea.toGeoJson([area]),
           targetLayers: f.targetLayers,
           conjCodes: f.conjCodes,
@@ -256,15 +262,15 @@ class PointsMapController extends ChangeNotifier {
 
   // --- Busca pelos filtros e salvamento --------------------------------
 
-  /// Busca pelos filtros atuais. Com áreas selecionadas, elas delimitam a
-  /// busca (as mesmas regras do contador do topo, para o total salvo bater
-  /// com o que o usuário viu); sem áreas, delimita pelas cidades marcadas.
+  /// Busca pelos filtros atuais, sempre nas cidades marcadas. Com áreas
+  /// selecionadas, conta só o que está dentro delas E nas cidades (as
+  /// mesmas regras do contador do topo e das bolhas).
   Future<PointsFilterResult> _buscarPontosDosFiltros({bool countOnly = false}) {
     final f = filtros;
     final geo = areas.geoJson;
     return _points.buscarPontos(
       distCodes: [distCode],
-      munCodes: geo == null ? munCodes : null,
+      munCodes: munCodes,
       polygonGeoJson: geo,
       targetLayers: f.targetLayers,
       conjCodes: f.conjCodes,
