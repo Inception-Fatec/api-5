@@ -28,20 +28,21 @@ class PointMarkersLayer extends StatelessWidget {
     return MarkerLayer(
       markers: [
         for (final ponto in pontos)
-          Marker(
-            point: ponto.position,
-            width: MapStyles.markerSize,
-            height: MapStyles.markerSize,
-            child: GestureDetector(
-              onTap: () => onTap(ponto),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _cor(ponto),
+          if (!ponto.isCluster)
+            Marker(
+              point: ponto.position,
+              width: MapStyles.markerSize,
+              height: MapStyles.markerSize,
+              child: GestureDetector(
+                onTap: () => onTap(ponto),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _cor(ponto),
+                  ),
                 ),
               ),
             ),
-          ),
       ],
     );
   }
