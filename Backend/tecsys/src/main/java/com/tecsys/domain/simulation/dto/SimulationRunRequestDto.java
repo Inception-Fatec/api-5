@@ -1,4 +1,3 @@
-// no arquivo SimulationRunRequestDto.java
 package com.tecsys.domain.simulation.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -14,6 +13,9 @@ public record SimulationRunRequestDto(
         @Size(max = 10, message = "O código da distribuidora deve ter no máximo 10 caracteres.")
         @JsonProperty("dist_code")
         String distCode,
+
+        @JsonProperty("geometry")
+        String geometry,
 
         @JsonProperty("filter_params")
         JsonNode filterParams
