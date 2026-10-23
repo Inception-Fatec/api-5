@@ -15,13 +15,14 @@ public class ProjectCoverageRepository {
 
     public void upsertCoverage(long projectId, String summaryJson, String gatewaysJson, String pointsJson) {
         String sql = """
-                INSERT INTO project_coverage (project_id, summary, gateways, points)
-                VALUES (:projectId, :summary::jsonb, :gateways::jsonb, :points::jsonb)
+                INSERT INTO project_coverage (project_id, summary, gateways, points, calculated_at)
+                VALUES (:projectId, :summary::jsonb, :gateways::jsonb, :points::jsonb, CURRENT_TIMESTAMP)
                 ON CONFLICT (project_id)
                 DO UPDATE SET
                     summary  = EXCLUDED.summary,
                     gateways = EXCLUDED.gateways,
-                    points   = EXCLUDED.points
+                    points   = EXCLUDED.points,
+                    calculated_at = CURRENT_TIMESTAMP
                 """;
 
         MapSqlParameterSource params = new MapSqlParameterSource()
