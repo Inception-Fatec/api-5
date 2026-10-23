@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'carga_detalhes_dialog.dart';
 import 'etl_theme.dart';
 import 'models/etl_carga.dart';
+import 'services/etl_service.dart';
 import 'upload_modal_dialog.dart';
 import 'widgets/etl_buttons.dart';
 
@@ -17,8 +18,33 @@ class EtlGeodadosScreen extends StatefulWidget {
 }
 
 class _EtlGeodadosScreenState extends State<EtlGeodadosScreen> {
-  // Lista SEMPRE tipada. Se vier do backend, usa EtlCarga.listFromJson(resposta).
-  List<EtlCarga> _cargas = EtlCarga.amostras();
+  List<EtlCarga> _cargas = [];
+  bool _carregando = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarCargasReais();
+  }
+
+  Future<void> _carregarCargasReais() async {
+    try {
+      // Se tiveres um endpoint de listagem no backend, podes chamá-lo aqui.
+      // Ex: final lista = await EtlService.listarCargas();
+      await Future.delayed(const Duration(milliseconds: 300));
+      if (!mounted) return;
+      setState(() {
+        _cargas = []; // Começa vazio, sem dados fictícios/mockados!
+        _carregando = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _cargas = [];
+        _carregando = false;
+      });
+    }
+  }
 
   Future<void> _abrirUpload() async {
     final EtlCarga? nova = await UploadModalDialog.show(context);
@@ -67,186 +93,33 @@ class _EtlGeodadosScreenState extends State<EtlGeodadosScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: EtlColors.slate50,
-      body: Column(
-        children: [
-          const _TopNavbar(),
-          Expanded(
-            child: SingleChildScrollView(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1280),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 32),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _Cabecalho(onNovoUpload: _abrirUpload),
-                        const SizedBox(height: 24),
-                        _ListaCargas(cargas: _cargas, onTap: _abrirDetalhes),
-                      ],
+      body: _carregando
+          ? const Center(child: CircularProgressIndicator(color: EtlColors.teal600))
+          : Column(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1280),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 32),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _Cabecalho(onNovoUpload: _abrirUpload),
+                              const SizedBox(height: 24),
+                              _ListaCargas(cargas: _cargas, onTap: _abrirDetalhes),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
-          ),
-          const _Rodape(),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────── Navbar ───────────────────────────────
-
-class _TopNavbar extends StatelessWidget {
-  const _TopNavbar();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 65,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: EtlColors.slate200)),
-      ),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1280),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Row(
-              children: [
-                const _Logo(),
-                const SizedBox(width: 32),
-                const _NavItem(label: 'Projetos'),
-                const SizedBox(width: 4),
-                const _NavItem(label: 'Mapa', icone: Icons.map_outlined),
-                const SizedBox(width: 4),
-                const _NavItem(label: 'Usuários'),
-                const SizedBox(width: 4),
-                const _NavItem(label: 'ETL & Geodados', icone: Icons.storage_outlined, ativo: true),
-                const SizedBox(width: 4),
-                const _NavItem(label: 'Configurações'),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: EtlColors.slate100,
-                    border: Border.all(color: EtlColors.slate200),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    'Ambiente: Produção',
-                    style: etlText(12, weight: FontWeight.w500, color: EtlColors.slate500, lineHeight: 16),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Container(
-                  width: 32,
-                  height: 32,
-                  alignment: Alignment.center,
-                  decoration: const BoxDecoration(color: EtlColors.slate200, shape: BoxShape.circle),
-                  child: Text(
-                    'AD',
-                    style: etlText(12, weight: FontWeight.w600, color: EtlColors.slate700, lineHeight: 16),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Admin Tecsys',
-                  style: etlText(12, weight: FontWeight.w500, color: EtlColors.slate700, lineHeight: 16),
-                ),
+                const _Rodape(),
               ],
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Logo extends StatelessWidget {
-  const _Logo();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 36,
-          height: 36,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: EtlColors.teal600,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: const [
-              BoxShadow(color: EtlColors.black5, blurRadius: 2, offset: Offset(0, 1)),
-            ],
-          ),
-          child: Text(
-            'T',
-            style: etlText(18, weight: FontWeight.w700, color: Colors.white, lineHeight: 28),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Text(
-          'Tecsys',
-          style: etlText(18,
-              weight: FontWeight.w700, color: EtlColors.slate900, lineHeight: 28, letterSpacing: -0.45),
-        ),
-      ],
-    );
-  }
-}
-
-class _NavItem extends StatefulWidget {
-  const _NavItem({required this.label, this.icone, this.ativo = false});
-
-  final String label;
-  final IconData? icone;
-  final bool ativo;
-
-  @override
-  State<_NavItem> createState() => _NavItemState();
-}
-
-class _NavItemState extends State<_NavItem> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final bool ativo = widget.ativo;
-    final Color corTexto = ativo
-        ? EtlColors.teal700
-        : (_hover ? EtlColors.slate900 : EtlColors.slate600);
-    final Color fundo = ativo
-        ? EtlColors.teal50
-        : (_hover ? EtlColors.slate100 : Colors.transparent);
-
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(color: fundo, borderRadius: BorderRadius.circular(8)),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (widget.icone != null) ...[
-              Icon(widget.icone, size: 16, color: corTexto),
-              const SizedBox(width: 6),
-            ],
-            Text(
-              widget.label,
-              style: etlText(14,
-                  weight: ativo ? FontWeight.w600 : FontWeight.w500, color: corTexto, lineHeight: 20),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -383,15 +256,26 @@ class _ListaCargas extends StatelessWidget {
               ],
             ),
           ),
-          for (int i = 0; i < cargas.length; i++)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: _CargaTile(
-                carga: cargas[i],
-                segunda: i > 0,
-                onTap: () => onTap(cargas[i]),
+          if (cargas.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(32),
+              alignment: Alignment.center,
+              child: Text(
+                'Nenhuma carga espacial executada recentemente.\nClique em "Novo Upload (.zip)" para processar um arquivo.',
+                textAlign: TextAlign.center,
+                style: etlText(13, color: EtlColors.slate400, lineHeight: 20),
               ),
-            ),
+            )
+          else
+            for (int i = 0; i < cargas.length; i++)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: _CargaTile(
+                  carga: cargas[i],
+                  segunda: i > 0,
+                  onTap: () => onTap(cargas[i]),
+                ),
+              ),
         ],
       ),
     );

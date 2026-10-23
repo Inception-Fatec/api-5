@@ -31,11 +31,6 @@ class EtlCamada {
 }
 
 /// Modelo tipado de uma carga ETL (.zip).
-///
-/// Todas as listas da UI são `List<EtlCarga>`. Nunca faças `as List<EtlCarga>`
-/// sobre dados vindos de JSON: usa [EtlCarga.listFromJson], que converte cada
-/// item individualmente (é isto que elimina o erro
-/// `List<Map<String, dynamic>> is not a subtype of List<EtlCarga>`).
 class EtlCarga {
   const EtlCarga({
     required this.id,
@@ -145,7 +140,7 @@ class EtlCarga {
         .toList();
   }
 
-  /// Dados de exemplo idênticos ao protótipo Stitch.
+  /// Dados de exemplo atualizados para a data de hoje.
   static List<EtlCarga> amostras() => <EtlCarga>[
         EtlCarga(
           id: 'carga-1',
@@ -156,7 +151,7 @@ class EtlCarga {
           srid: 'SIRGAS 2000 (EPSG:4674)',
           sridCurto: 'EPSG:4674',
           totalFeicoes: '128.450',
-          executadoEm: '24/10/2024 às 14:32',
+          executadoEm: _agora(),
           camadas: const [
             EtlCamada(nome: 'geo_redes_alta_tensao', tipo: 'MultiLineString', registros: '45.120'),
             EtlCamada(nome: 'geo_postes_equipamentos', tipo: 'Point', registros: '78.230'),
@@ -172,7 +167,7 @@ class EtlCarga {
           srid: 'SIRGAS 2000 (EPSG:4674)',
           sridCurto: 'EPSG:4674',
           totalFeicoes: '34.820',
-          executadoEm: '24/10/2024 às 11:15',
+          executadoEm: _agora(),
           camadas: const [
             EtlCamada(nome: 'geo_estacoes_sensores', tipo: 'Point', registros: '32.400'),
             EtlCamada(nome: 'geo_bacias_hidrograficas', tipo: 'Polygon', registros: '2.420'),

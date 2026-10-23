@@ -43,7 +43,7 @@ class EtlService {
   EtlService._();
 
   static const String baseUrl = 'http://localhost:8081';
-  static const String uploadPath = '/api/etl/upload';
+  static const String uploadPath = '/api/v1/etl/upload-gdb';
   static const Duration timeout = Duration(minutes: 10);
 
   /// Quantos bytes do fim do .zip (diretório central) são varridos à procura de ".gdb".
@@ -95,7 +95,7 @@ class EtlService {
     return false;
   }
 
-  /// POST multipart para http://localhost:8081/api/etl/upload (campo `file`).
+  /// POST multipart para o endpoint de upload-gdb do backend.
   static Future<EtlCarga> enviarZip({
     required String caminho,
     required String nomeArquivo,
@@ -103,7 +103,14 @@ class EtlService {
   }) async {
     final Uri uri = Uri.parse('$baseUrl$uploadPath');
     final request = _ProgressMultipartRequest('POST', uri, onProgress: onProgress);
+    
+    // Anexa o ficheiro com o nome do campo 'file' exigido pelo EtlController do backend
     request.files.add(await http.MultipartFile.fromPath('file', caminho, filename: nomeArquivo));
+    
+    // Parâmetros opcionais/exigidos pelo controlador Java (ex: municípios)
+    request.fields['municipios'] = 'São José dos Campos';
+    request.fields['incluirConsumidores'] = 'true';
+
     final int tamanho = await File(caminho).length();
 
     final http.Response resposta;

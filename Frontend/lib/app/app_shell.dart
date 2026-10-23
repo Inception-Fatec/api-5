@@ -7,6 +7,7 @@ import 'package:tecsys_app/app/navigation/top_nav_bar.dart';
 import 'package:tecsys_app/app/navigation/nav_items.dart';
 import 'package:tecsys_app/features/projects/ui/screens/projects_screen.dart';
 import 'package:tecsys_app/features/users/ui/screens/users_screen.dart';
+import 'package:tecsys_app/features/etl_geodados/etl_geodados_screen.dart';
 
 /// Ponto único de navegação do app. Decide web vs. mobile UMA vez,
 /// mantém o índice da aba atual e troca o conteúdo com [IndexedStack]
@@ -53,6 +54,7 @@ class AppShell extends StatefulWidget {
     return [
       const ProjectsScreen(),
       if (isAdmin) const UsersScreen(),
+      const EtlGeodadosScreen(),
     ];
   }
 
