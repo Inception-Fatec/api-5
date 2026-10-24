@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
@@ -40,8 +41,6 @@ class PointsMapController extends ChangeNotifier {
   final String distCode;
   final String distribuidoraLabel;
 
-  /// Chamado quando um filtro novo localiza pontos: a tela leva o mapa
-  /// até lá.
   final void Function(LatLng ponto)? onFocusPoint;
   final Duration focusDebounce;
 
@@ -80,7 +79,6 @@ class PointsMapController extends ChangeNotifier {
   static const _contagemDebounce = Duration(milliseconds: 600);
   static const _contagemCacheMax = 60;
 
-  // --- Leitura --------------------------------------------------------
 
   List<Municipio> get municipiosSelecionados => _municipiosSelecionados;
   List<Municipio> get cidadesDisponiveis => _cidadesDisponiveis;
@@ -101,7 +99,6 @@ class PointsMapController extends ChangeNotifier {
 
   Map<String, dynamic>? get areaGeoJson => areas.geoJson;
 
-  /// Código IBGE das cidades marcadas, como o backend espera (texto).
   List<String> get munCodes =>
       _municipiosSelecionados.map((m) => m.codigoIbge.toString()).toList();
 
@@ -113,8 +110,6 @@ class PointsMapController extends ChangeNotifier {
 
   bool get podeSalvar => nomeProjeto.trim().isNotEmpty;
 
-  /// Filtros no formato que o backend aceita: códigos de subestação e
-  /// bairros sem acento e em maiúsculas, classe só com o código.
   FiltrosPontos get filtros => FiltrosPontos(
         distCode: distCode,
         targetLayers: _targetLayers,
@@ -128,7 +123,6 @@ class PointsMapController extends ChangeNotifier {
             _bairroNames.map((v) => normalizarTexto(v).toUpperCase()).toList(),
       );
 
-  // --- Cidades --------------------------------------------------------
 
   Future<void> carregarCidadesDisponiveis() async {
     try {
@@ -137,12 +131,9 @@ class PointsMapController extends ChangeNotifier {
       _cidadesDisponiveis = cidades;
       notifyListeners();
     } catch (_) {
-      // Sem a lista o painel de cidades fica vazio; o mapa segue usável.
     }
   }
 
-  /// Marca ou desmarca uma cidade (sempre sobra ao menos uma). Ao marcar
-  /// uma cidade nova devolve o centro dela, para o mapa saltar até lá.
   LatLng? alternarCidade(Municipio m) {
     if (_municipiosSelecionados.contains(m)) {
       if (_municipiosSelecionados.length <= 1) return null;
@@ -158,7 +149,6 @@ class PointsMapController extends ChangeNotifier {
     return MapRegions.centroFixoDe(m.codigoIbge);
   }
 
-  // --- Filtros (cada mudança agenda a centralização do mapa) -----------
 
   void setBairros(List<String> valores) =>
       _alterarFiltro(() => _bairroNames = List.of(valores));
@@ -166,9 +156,6 @@ class PointsMapController extends ChangeNotifier {
   void setTargetLayers(List<String> valores) => _alterarFiltro(
       () => _targetLayers = _ajustarNiveis(_targetLayers, valores));
 
-  /// "Todos" e os níveis específicos se excluem, e nunca fica nada
-  /// marcado: marcar "Todos" desmarca os outros; marcar um nível desmarca
-  /// "Todos"; desmarcar o último volta para "Todos".
   static List<String> _ajustarNiveis(List<String> antes, List<String> depois) {
     const todos = 'all';
     final acabouDeMarcarTodos =
@@ -246,7 +233,6 @@ class PointsMapController extends ChangeNotifier {
     }
   }
 
-  // --- Informações vindas do mapa --------------------------------------
 
   void setTotalPontos(int total) {
     if (_totalPontos == total) return;
@@ -260,11 +246,7 @@ class PointsMapController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // --- Busca pelos filtros e salvamento --------------------------------
 
-  /// Busca pelos filtros atuais, sempre nas cidades marcadas. Com áreas
-  /// selecionadas, conta só o que está dentro delas E nas cidades (as
-  /// mesmas regras do contador do topo e das bolhas).
   Future<PointsFilterResult> _buscarPontosDosFiltros({bool countOnly = false}) {
     final f = filtros;
     final geo = areas.geoJson;
@@ -309,7 +291,6 @@ class PointsMapController extends ChangeNotifier {
     onFocusPoint?.call(ponto);
   }
 
-  /// Salva o projeto com os filtros atuais. Devolve true se salvou.
   Future<bool> salvarProjeto() async {
     if (!podeSalvar || _salvando) return false;
     _salvando = true;
@@ -320,13 +301,15 @@ class PointsMapController extends ChangeNotifier {
       final resultadoPontos = await _buscarPontosDosFiltros(countOnly: true);
       final f = filtros;
 
+      final geo = areas.geoJson;
       final projetoCriado = await _projects.criar(
         name: nomeProjeto,
         distCode: distCode,
+        geometry: geo == null ? null : jsonEncode(geo),
         filterParams: {
           'dist_codes': [distCode],
           'mun_codes': munCodes,
-          'polygon_geojson': areas.geoJson,
+          'polygon_geojson': geo,
           'target_layers': f.targetLayers,
           'conj_codes': f.conjCodes,
           'sub_codes': f.subCodes,
