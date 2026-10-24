@@ -31,7 +31,7 @@ spring:
       max-request-size: 4GB
   etl:
     python-executable: python
-    script-path: ../api-5/modules/etl_cli.py
+    script-path: ${ETL_SCRIPT_PATH:../api-5/modules/etl_cli.py}
     timeout-minutes: 120
 
 motor:

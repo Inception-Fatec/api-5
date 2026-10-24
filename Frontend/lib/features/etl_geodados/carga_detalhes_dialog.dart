@@ -9,7 +9,6 @@ import 'widgets/etl_buttons.dart';
 
 /// Modal "Detalhes da carga" (aberto ao clicar num card da lista).
 ///
-/// Devolve `true` se o utilizador carregou em "Visualizar no Mapa".
 class CargaDetalhesDialog extends StatelessWidget {
   const CargaDetalhesDialog({super.key, required this.carga});
 
@@ -102,17 +101,15 @@ class CargaDetalhesDialog extends StatelessWidget {
                                     const SizedBox(width: 12),
                                     Expanded(
                                       child: _Metrica(
-                                        rotulo: 'SRID / Projeção',
-                                        valor: c.sridCurto ?? '—',
-                                        tooltip: c.srid,
-                                        tamanhoValor: 12,
+                                        rotulo: 'Tabelas Carregadas',
+                                        valor: c.totalCamadas > 0 ? '${c.totalCamadas}' : '—',
                                       ),
                                     ),
                                     const SizedBox(width: 12),
                                     Expanded(
                                       child: _Metrica(
-                                        rotulo: 'Total de Feições',
-                                        valor: c.totalFeicoes ?? '—',
+                                        rotulo: 'Registros Gravados',
+                                        valor: c.camadas.isEmpty ? '—' : EtlCarga.milhar(c.totalGravados),
                                         corValor: EtlColors.slate900,
                                       ),
                                     ),
@@ -120,9 +117,7 @@ class CargaDetalhesDialog extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(height: 20),
-                              const _CaixaTopologia(),
-                              const SizedBox(height: 20),
-                              _SecaoCamadas(camadas: c.camadas, total: c.totalCamadas),
+                              _SecaoCamadas(camadas: c.camadas),
                             ],
                           ),
                         ),
@@ -134,19 +129,9 @@ class CargaDetalhesDialog extends StatelessWidget {
                           border: Border(top: BorderSide(color: EtlColors.slate100)),
                         ),
                         child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          mainAxisAlignment: MainAxisAlignment.end,
                           children: [
                             EtlOutlineButton(label: 'Fechar', onPressed: () => Navigator.of(context).pop()),
-                            EtlPrimaryButton(
-                              label: 'Visualizar no Mapa',
-                              icon: Icons.map_outlined,
-                              iconSize: 16,
-                              fontSize: 12,
-                              gap: 6,
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                              shadowColor: EtlColors.teal600Shadow20,
-                              onPressed: () => Navigator.of(context).pop(true),
-                            ),
                           ],
                         ),
                       ),
@@ -241,7 +226,7 @@ class _Cabecalho extends StatelessWidget {
                     const SizedBox(width: 6),
                     Flexible(
                       child: Text(
-                        'Executado em ${carga.executadoEm ?? '—'} • Pipeline PostGIS / GeoServer',
+                        'Executado em ${carga.executadoEm ?? '—'}',
                         style: etlText(12, color: EtlColors.slate500, lineHeight: 16),
                       ),
                     ),
@@ -341,74 +326,18 @@ class _Metrica extends StatelessWidget {
   }
 }
 
-class _CaixaTopologia extends StatelessWidget {
-  const _CaixaTopologia();
-
-  @override
-  Widget build(BuildContext context) {
-    final TextStyle base = etlText(12, color: EtlColors.slate600, lineHeight: 19.5);
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: EtlColors.teal50a60,
-        border: Border.all(color: EtlColors.teal100),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.only(top: 2),
-            child: Icon(Icons.verified_user_outlined, size: 18, color: EtlColors.teal600),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text.rich(
-              TextSpan(
-                style: base,
-                children: [
-                  TextSpan(
-                    text: 'Topologia e Integridade Espacial:',
-                    style: etlText(12, weight: FontWeight.w600, color: EtlColors.slate800, lineHeight: 19.5),
-                  ),
-                  const TextSpan(text: ' Todas as geometrias foram validadas no banco PostGIS com índice '),
-                  WidgetSpan(
-                    alignment: PlaceholderAlignment.middle,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: const Color(0xB3CCFBF1), // teal-100/70
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text('GIST', style: etlText(11, color: EtlColors.teal800, lineHeight: 14, mono: true)),
-                    ),
-                  ),
-                  const TextSpan(text: ' e schemas isolados por projeto.'),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 // ─────────────────────────────── Camadas ───────────────────────────────
 
 class _SecaoCamadas extends StatelessWidget {
-  const _SecaoCamadas({required this.camadas, required this.total});
+  const _SecaoCamadas({required this.camadas});
 
   final List<EtlCamada> camadas;
-  final int total;
 
-  static const int _fNome = 5;
-  static const int _fTipo = 4;
-  static const int _fReg = 2;
+  static const int _fNome = 4;
+  static const int _fNum = 2;
 
   @override
   Widget build(BuildContext context) {
-    final int n = camadas.isNotEmpty ? camadas.length : total;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -417,103 +346,119 @@ class _SecaoCamadas extends StatelessWidget {
             const Icon(Icons.layers_outlined, size: 14, color: EtlColors.teal600),
             const SizedBox(width: 6),
             Text(
-              'CAMADAS EXTRAÍDAS NO POSTGIS ($n)',
+              'TABELAS CARREGADAS NO POSTGIS (${camadas.length})',
               style: etlText(12,
                   weight: FontWeight.w700, color: EtlColors.slate900, lineHeight: 16, letterSpacing: 0.6),
             ),
-            const Spacer(),
-            Text('Banco de Destino: ', style: etlText(11, color: EtlColors.slate400, lineHeight: 16.5)),
-            Text('tecsys_geodb',
-                style: etlText(11, weight: FontWeight.w700, color: EtlColors.slate600, lineHeight: 16.5)),
           ],
         ),
         const SizedBox(height: 10),
-        Container(
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border.all(color: EtlColors.slate200),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: const BoxDecoration(
-                  color: Color(0xCCF8FAFC), // slate-50/80
-                  border: Border(bottom: BorderSide(color: EtlColors.slate200)),
-                ),
-                child: Row(
-                  children: [
-                    _cel(_fNome, 16, Text('Tabela / Layer PostGIS', style: _cab())),
-                    _cel(_fTipo, 12, Text('Tipo de Geometria', style: _cab())),
-                    _cel(_fReg, 12, Text('Registros', style: _cab())),
-                    Padding(
-                      padding: const EdgeInsets.only(left: 12, right: 16),
-                      child: SizedBox(
-                        width: 76,
-                        child: Text('Integridade', textAlign: TextAlign.right, style: _cab()),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              for (int i = 0; i < camadas.length; i++)
+        if (camadas.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: EtlColors.slate200),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Text(
+              'Nenhuma tabela registrada para esta carga até o momento.',
+              style: etlText(12, color: EtlColors.slate500, lineHeight: 16),
+            ),
+          )
+        else
+          Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: EtlColors.slate200),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 10),
-                  decoration: BoxDecoration(
-                    border: i == camadas.length - 1
-                        ? null
-                        : const Border(bottom: BorderSide(color: EtlColors.slate100)),
+                  decoration: const BoxDecoration(
+                    color: Color(0xCCF8FAFC), // slate-50/80
+                    border: Border(bottom: BorderSide(color: EtlColors.slate200)),
                   ),
                   child: Row(
                     children: [
-                      _cel(
-                        _fNome,
-                        16,
-                        Row(
-                          children: [
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: const BoxDecoration(color: EtlColors.teal500, shape: BoxShape.circle),
-                            ),
-                            const SizedBox(width: 8),
-                            Flexible(
-                              child: Text(
-                                camadas[i].nome,
-                                overflow: TextOverflow.ellipsis,
-                                style: etlText(12,
-                                    weight: FontWeight.w500, color: EtlColors.slate800, lineHeight: 16, mono: true),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      _cel(_fTipo, 12, Align(alignment: Alignment.centerLeft, child: _ChipGeometria(tipo: camadas[i].tipo))),
-                      _cel(
-                        _fReg,
-                        12,
-                        Text(camadas[i].registros,
-                            style: etlText(12, weight: FontWeight.w500, color: EtlColors.slate700, lineHeight: 16)),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(left: 12, right: 16),
-                        child: SizedBox(
-                          width: 76,
-                          child: Align(alignment: Alignment.centerRight, child: _ChipIntegridade(valida: camadas[i].valida)),
-                        ),
-                      ),
+                      _cel(_fNome, 16, Text('Tabela PostGIS', style: _cab())),
+                      _celNum(Tooltip(
+                        message: 'Registros dos municípios selecionados que passaram pelos filtros.',
+                        child: Text('Na cidade', style: _cab()),
+                      )),
+                      _celNum(Tooltip(
+                        message:
+                            'Subestações/transformadores fora dos municípios, gravados para manter os vínculos da rede.',
+                        child: Text('Pais fora', style: _cab()),
+                      )),
+                      _celNum(Tooltip(
+                        message: 'Registros inseridos no banco nesta execução.',
+                        child: Text('Gravados', style: _cab()),
+                      )),
+                      _celNum(Tooltip(
+                        message: 'Registros ignorados (já existentes no banco ou sem transformador).',
+                        child: Text('Ignorados', style: _cab()),
+                      )),
                     ],
                   ),
                 ),
-            ],
+                for (int i = 0; i < camadas.length; i++)
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      border: i == camadas.length - 1
+                          ? null
+                          : const Border(bottom: BorderSide(color: EtlColors.slate100)),
+                    ),
+                    child: Row(
+                      children: [
+                        _cel(
+                          _fNome,
+                          16,
+                          Row(
+                            children: [
+                              Container(
+                                width: 6,
+                                height: 6,
+                                decoration: const BoxDecoration(color: EtlColors.teal500, shape: BoxShape.circle),
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  camadas[i].nome,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: etlText(12,
+                                      weight: FontWeight.w500, color: EtlColors.slate800, lineHeight: 16, mono: true),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        _celNum(_valor(camadas[i].naCidade)),
+                        _celNum(_valor(camadas[i].paisForaDaArea)),
+                        _celNum(_valor(camadas[i].gravados, destaque: true)),
+                        _celNum(_valor(camadas[i].ignorados)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
           ),
-        ),
       ],
     );
   }
+
+  static Widget _valor(int n, {bool destaque = false}) => Text(
+        EtlCarga.milhar(n),
+        style: etlText(12,
+            weight: destaque ? FontWeight.w700 : FontWeight.w500,
+            color: destaque ? EtlColors.slate900 : EtlColors.slate700,
+            lineHeight: 16),
+      );
 
   static TextStyle _cab() => etlText(12, weight: FontWeight.w600, color: EtlColors.slate500, lineHeight: 16);
 
@@ -523,67 +468,13 @@ class _SecaoCamadas extends StatelessWidget {
       child: Padding(padding: EdgeInsets.only(left: padEsq), child: child),
     );
   }
-}
 
-class _ChipGeometria extends StatelessWidget {
-  const _ChipGeometria({required this.tipo});
-
-  final String tipo;
-
-  @override
-  Widget build(BuildContext context) {
-    IconData icone = Icons.polyline_outlined;
-    if (tipo.contains('Point')) icone = Icons.pin_drop_outlined;
-    if (tipo.contains('Polygon')) icone = Icons.pentagon_outlined;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: EtlColors.slate100,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icone, size: 13, color: EtlColors.teal600),
-          const SizedBox(width: 4),
-          Flexible(
-            child: Text(tipo,
-                overflow: TextOverflow.ellipsis,
-                style: etlText(11, color: EtlColors.slate700, lineHeight: 16.5, mono: true)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ChipIntegridade extends StatelessWidget {
-  const _ChipIntegridade({required this.valida});
-
-  final bool valida;
-
-  @override
-  Widget build(BuildContext context) {
-    final Color fundo = valida ? EtlColors.emerald50 : const Color(0xFFFFF1F2);
-    final Color borda = valida ? EtlColors.emerald200 : EtlColors.rose200;
-    final Color texto = valida ? EtlColors.emerald700 : EtlColors.rose700;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: fundo,
-        border: Border.all(color: borda),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(valida ? Icons.check : Icons.close, size: 12, color: texto),
-          const SizedBox(width: 4),
-          Text(valida ? 'Válida' : 'Inválida',
-              style: etlText(11, weight: FontWeight.w500, color: texto, lineHeight: 16.5)),
-        ],
+  static Widget _celNum(Widget child) {
+    return Expanded(
+      flex: _fNum,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 8, right: 16),
+        child: Align(alignment: Alignment.centerRight, child: child),
       ),
     );
   }

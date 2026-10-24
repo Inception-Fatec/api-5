@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -20,6 +21,9 @@ class EtlGeodadosScreen extends StatefulWidget {
 class _EtlGeodadosScreenState extends State<EtlGeodadosScreen> {
   List<EtlCarga> _cargas = [];
   bool _carregando = true;
+  Timer? _timer;
+  bool _consultando = false;
+  int _falhasSeguidas = 0;
 
   @override
   void initState() {
@@ -50,14 +54,64 @@ class _EtlGeodadosScreenState extends State<EtlGeodadosScreen> {
     final EtlCarga? nova = await UploadModalDialog.show(context);
     if (nova == null || !mounted) return;
     setState(() => _cargas = <EtlCarga>[nova, ..._cargas]);
-    _mostrarToast('Arquivo ${nova.nomeArquivo} enviado com sucesso! Clique para ver os detalhes.');
+    _mostrarToast('Arquivo ${nova.nomeArquivo} enviado. O processamento foi iniciado no servidor.');
+    _iniciarPolling();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  /// O backend processa em segundo plano (responde 202 com o job PENDING),
+  /// então consultamos o status até a carga terminar.
+  void _iniciarPolling() {
+    _falhasSeguidas = 0;
+    _timer ??= Timer.periodic(const Duration(seconds: 4), (_) => _atualizarPendentes());
+  }
+
+  Future<void> _atualizarPendentes() async {
+    if (_consultando) return;
+    final List<EtlCarga> pendentes =
+        _cargas.where((c) => c.status == EtlCargaStatus.processando).toList();
+    if (pendentes.isEmpty) {
+      _timer?.cancel();
+      _timer = null;
+      return;
+    }
+
+    _consultando = true;
+    try {
+      for (final EtlCarga antiga in pendentes) {
+        final EtlCarga nova = await EtlService.consultarCarga(antiga);
+        if (!mounted) return;
+        setState(() {
+          _cargas = <EtlCarga>[for (final EtlCarga c in _cargas) c.id == nova.id ? nova : c];
+        });
+        if (nova.status == EtlCargaStatus.concluido) {
+          _mostrarToast('Carga ${nova.nomeArquivo} concluída.');
+        } else if (nova.status == EtlCargaStatus.erro) {
+          _mostrarToast(
+            'A carga ${nova.nomeArquivo} falhou: ${nova.errorMessage ?? 'sem detalhes do servidor'}',
+            icone: Icons.error_outline,
+          );
+        }
+      }
+      _falhasSeguidas = 0;
+    } catch (_) {
+      // Falha de rede/sessão: tenta de novo; depois de 5 falhas seguidas, para de consultar.
+      if (++_falhasSeguidas >= 5) {
+        _timer?.cancel();
+        _timer = null;
+      }
+    } finally {
+      _consultando = false;
+    }
   }
 
   Future<void> _abrirDetalhes(EtlCarga carga) async {
-    final bool? verNoMapa = await CargaDetalhesDialog.show(context, carga);
-    if (verNoMapa == true && mounted) {
-      _mostrarToast('Carregando camadas no visualizador de mapa...', icone: Icons.map_outlined);
-    }
+    await CargaDetalhesDialog.show(context, carga);
   }
 
   void _mostrarToast(String mensagem, {IconData icone = Icons.check_circle_outline}) {
@@ -245,13 +299,6 @@ class _ListaCargas extends StatelessWidget {
                 Text(
                   'Clique em um card para abrir detalhes',
                   style: etlText(11, color: EtlColors.slate400, lineHeight: 16.5),
-                ),
-                const SizedBox(width: 12),
-                Text('•', style: etlText(12, weight: FontWeight.w500, color: EtlColors.slate500, lineHeight: 16)),
-                const SizedBox(width: 12),
-                Text(
-                  'Atualizado há poucos minutos',
-                  style: etlText(12, weight: FontWeight.w500, color: EtlColors.slate500, lineHeight: 16),
                 ),
               ],
             ),

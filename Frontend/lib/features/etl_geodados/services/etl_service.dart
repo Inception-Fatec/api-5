@@ -5,6 +5,8 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+// Ajuste o caminho se o seu AuthService estiver em outra pasta.
+import 'package:tecsys_app/features/auth/data/services/auth_service.dart';
 
 import '../models/etl_carga.dart';
 
@@ -45,6 +47,7 @@ class EtlService {
   static const String baseUrl = 'http://localhost:8081';
   static const String uploadPath = '/api/v1/etl/upload-gdb';
   static const Duration timeout = Duration(minutes: 10);
+  static const String jobsPath = '/api/v1/etl/jobs';
 
   /// Quantos bytes do fim do .zip (diretório central) são varridos à procura de ".gdb".
   static const int _janelaVarredura = 2 * 1024 * 1024;
@@ -99,16 +102,23 @@ class EtlService {
   static Future<EtlCarga> enviarZip({
     required String caminho,
     required String nomeArquivo,
+    required List<String> municipios, // códigos IBGE de 7 dígitos
     required void Function(double progresso) onProgress,
   }) async {
     final Uri uri = Uri.parse('$baseUrl$uploadPath');
     final request = _ProgressMultipartRequest('POST', uri, onProgress: onProgress);
+
+    // O endpoint exige role ADM: sem o token o Spring responde "Access Denied".
+    final String? token = AuthService.instance.token;
+    if (token != null) {
+      request.headers['Authorization'] = 'Bearer $token';
+    }
     
     // Anexa o ficheiro com o nome do campo 'file' exigido pelo EtlController do backend
     request.files.add(await http.MultipartFile.fromPath('file', caminho, filename: nomeArquivo));
     
-    // Parâmetros opcionais/exigidos pelo controlador Java (ex: municípios)
-    request.fields['municipios'] = 'São José dos Campos';
+    // Municípios escolhidos pelo usuário (o backend só aceita códigos IBGE, separados por vírgula).
+    request.fields['municipios'] = municipios.join(',');
     request.fields['incluirConsumidores'] = 'true';
 
     final int tamanho = await File(caminho).length();
@@ -145,6 +155,23 @@ class EtlService {
         : (json ?? <String, dynamic>{});
 
     return EtlCarga.fromJson(dados, nomeFallback: nomeArquivo, tamanhoFallback: tamanho);
+  }
+
+  /// GET /api/v1/etl/jobs/{id}: devolve a carga com o status atual do processamento.
+  static Future<EtlCarga> consultarCarga(EtlCarga atual) async {
+    final String? token = AuthService.instance.token;
+    final http.Response resposta = await http
+        .get(
+          Uri.parse('$baseUrl$jobsPath/${atual.id}'),
+          headers: <String, String>{if (token != null) 'Authorization': 'Bearer $token'},
+        )
+        .timeout(const Duration(seconds: 30));
+
+    final Map<String, dynamic>? json = _tentarJson(resposta);
+    if (resposta.statusCode < 200 || resposta.statusCode >= 300 || json == null) {
+      throw EtlUploadException('Não foi possível consultar o status (HTTP ${resposta.statusCode}).');
+    }
+    return EtlCarga.fromJson(json, nomeFallback: atual.nomeArquivo, tamanhoFallback: atual.tamanhoBytes);
   }
 
   static Map<String, dynamic>? _tentarJson(http.Response r) {

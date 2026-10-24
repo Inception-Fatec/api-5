@@ -1,31 +1,49 @@
 /// Estado de uma carga ETL.
 enum EtlCargaStatus { concluido, processando, erro }
 
-/// Camada (tabela PostGIS) extraída de uma carga.
+/// Tabela PostGIS carregada, com as métricas reais devolvidas pelo ETL (summary do job).
 class EtlCamada {
   const EtlCamada({
     required this.nome,
-    required this.tipo,
-    required this.registros,
-    this.valida = true,
+    required this.naCidade,
+    required this.paisForaDaArea,
+    required this.gravados,
+    required this.ignorados,
   });
 
+  /// Nome da tabela (ex.: "ssdmt").
   final String nome;
 
-  /// Ex.: Point, Polygon, MultiLineString.
-  final String tipo;
+  /// Registros dos municípios selecionados que passaram pelos filtros.
+  final int naCidade;
 
-  /// Já formatado, ex.: "45.120".
-  final String registros;
-  final bool valida;
+  /// Subestações/transformadores fora dos municípios, gravados só para manter os vínculos da rede.
+  final int paisForaDaArea;
 
-  factory EtlCamada.fromJson(Map<String, dynamic> json) {
-    final Object? reg = EtlCarga.primeiro(json, const ['registros', 'records', 'count', 'total']);
+  /// Registros inseridos no banco nesta execução.
+  final int gravados;
+
+  /// Registros ignorados (já existentes no banco ou sem transformador).
+  final int ignorados;
+
+  factory EtlCamada.fromMetricas(String nome, Map<String, dynamic> m) {
+    int i(String k) => EtlCarga._asInt(m[k]) ?? 0;
+
+    final bool consumidor = m.containsKey('retidos'); // ucat_pj / ucmt_pj
+    final bool baixaTensao = m.containsKey('raw_disponiveis'); // ucbt
+
+    final int naCidade = consumidor
+        ? i('retidos')
+        : baixaTensao
+            ? i('raw_disponiveis')
+            : i('lidos') - i('fora_municipio') - i('inativos') - i('descartados_geometria');
+
     return EtlCamada(
-      nome: EtlCarga.primeiro(json, const ['nome', 'name', 'tabela', 'layer'])?.toString() ?? '-',
-      tipo: EtlCarga.primeiro(json, const ['tipo', 'type', 'geometria', 'geometryType'])?.toString() ?? '-',
-      registros: reg is num ? EtlCarga.milhar(reg.toInt()) : (reg?.toString() ?? '-'),
-      valida: json['valida'] != false && json['valid'] != false,
+      nome: nome,
+      naCidade: naCidade < 0 ? 0 : naCidade,
+      paisForaDaArea: i('pais_fora_da_area'),
+      gravados: i('inseridos'),
+      ignorados: baixaTensao ? i('sem_transformador_ou_ja_existentes') : i('ignorados_ja_existentes'),
     );
   }
 }
@@ -36,29 +54,28 @@ class EtlCarga {
     required this.id,
     required this.nomeArquivo,
     required this.tamanhoBytes,
-    this.motor = 'Geodatabase Esri v10.8',
     this.totalCamadas = 0,
     this.status = EtlCargaStatus.concluido,
     this.duracao,
-    this.srid,
-    this.sridCurto,
-    this.totalFeicoes,
     this.executadoEm,
+    this.errorMessage,
     this.camadas = const <EtlCamada>[],
   });
 
   final String id;
   final String nomeArquivo;
   final int tamanhoBytes;
-  final String motor;
   final int totalCamadas;
   final EtlCargaStatus status;
   final String? duracao;
-  final String? srid;
-  final String? sridCurto;
-  final String? totalFeicoes;
   final String? executadoEm;
+
+  /// Motivo da falha informado pelo backend (só quando o status é FAILED).
+  final String? errorMessage;
   final List<EtlCamada> camadas;
+
+  /// Total de registros gravados no banco (soma de todas as tabelas).
+  int get totalGravados => camadas.fold<int>(0, (soma, c) => soma + c.gravados);
 
   /// Ex.: "42.8 MB".
   String get tamanhoFormatado {
@@ -68,9 +85,9 @@ class EtlCarga {
     return '$tamanhoBytes B';
   }
 
-  /// Ex.: "42.8 MB • Geodatabase Esri v10.8 • 3 Camadas PostGIS".
+  /// Ex.: "42.8 MB • 3 Camadas PostGIS".
   String get resumo {
-    final partes = <String>[tamanhoFormatado, motor];
+    final partes = <String>[tamanhoFormatado];
     if (totalCamadas > 0) {
       partes.add('$totalCamadas ${totalCamadas == 1 ? 'Camada' : 'Camadas'} PostGIS');
     }
@@ -94,19 +111,12 @@ class EtlCarga {
     String? nomeFallback,
     int? tamanhoFallback,
   }) {
-    final Object? camadasRaw =
-        primeiro(json, const ['camadas', 'layers', 'totalCamadas', 'total_camadas', 'layersCount']);
-    final List<EtlCamada> camadas = camadasRaw is List
-        ? camadasRaw
-            .whereType<Map>()
-            .map((m) => EtlCamada.fromJson(Map<String, dynamic>.from(m)))
-            .toList()
-        : <EtlCamada>[];
-    final int totalCamadas = camadasRaw is List ? camadasRaw.length : _asInt(camadasRaw) ?? 0;
-
-    final Object? feicoes = primeiro(json, const ['totalFeicoes', 'total_feicoes', 'featuresCount', 'features']);
-    final String? sridCurto = primeiro(json, const ['sridCurto', 'sridShort'])?.toString();
-    final String? srid = primeiro(json, const ['srid', 'projecao'])?.toString();
+    final Map<String, dynamic> summary = _mapa(json['summary']);
+    final List<EtlCamada> camadas = <EtlCamada>[
+      ..._camadasDe(_mapa(summary['geodatabase'])),
+      ..._camadasDe(_mapa(summary['consumidores'])),
+    ];
+    final int totalCamadas = camadas.length;
 
     return EtlCarga(
       id: primeiro(json, const ['id', 'cargaId', 'carga_id'])?.toString() ??
@@ -118,15 +128,11 @@ class EtlCarga {
       tamanhoBytes: _asInt(primeiro(json, const ['tamanhoBytes', 'tamanho_bytes', 'tamanho', 'size', 'sizeBytes'])) ??
           tamanhoFallback ??
           0,
-      motor: primeiro(json, const ['motor', 'engine'])?.toString() ?? 'Geodatabase Esri v10.8',
       totalCamadas: totalCamadas,
       status: _parseStatus(primeiro(json, const ['status', 'estado'])?.toString()),
-      duracao: primeiro(json, const ['duracao', 'duration', 'tempoProcessamento'])?.toString(),
-      srid: srid ?? sridCurto,
-      sridCurto: sridCurto ?? srid,
-      totalFeicoes: feicoes is num ? milhar(feicoes.toInt()) : feicoes?.toString(),
-      executadoEm: primeiro(json, const ['executadoEm', 'executado_em', 'timestamp', 'createdAt'])?.toString() ??
-          _agora(),
+      duracao: _duracao(json['startedAt'], json['finishedAt']),
+      executadoEm: _formatarData(primeiro(json, const ['executadoEm', 'executado_em', 'timestamp', 'createdAt'])),
+      errorMessage: primeiro(json, const ['errorMessage', 'error_message'])?.toString(),
       camadas: camadas,
     );
   }
@@ -140,40 +146,27 @@ class EtlCarga {
         .toList();
   }
 
-  /// Dados de exemplo atualizados para a data de hoje.
-  static List<EtlCarga> amostras() => <EtlCarga>[
-        EtlCarga(
-          id: 'carga-1',
-          nomeArquivo: 'rede_distribuicao_sp_sul.zip',
-          tamanhoBytes: (42.8 * 1024 * 1024).round(),
-          totalCamadas: 3,
-          duracao: '42 segundos',
-          srid: 'SIRGAS 2000 (EPSG:4674)',
-          sridCurto: 'EPSG:4674',
-          totalFeicoes: '128.450',
-          executadoEm: _agora(),
-          camadas: const [
-            EtlCamada(nome: 'geo_redes_alta_tensao', tipo: 'MultiLineString', registros: '45.120'),
-            EtlCamada(nome: 'geo_postes_equipamentos', tipo: 'Point', registros: '78.230'),
-            EtlCamada(nome: 'geo_subestacoes_poligonos', tipo: 'Polygon', registros: '5.100'),
-          ],
-        ),
-        EtlCarga(
-          id: 'carga-2',
-          nomeArquivo: 'sensores_telemetria_rj.zip',
-          tamanhoBytes: (18.4 * 1024 * 1024).round(),
-          totalCamadas: 2,
-          duracao: '18 segundos',
-          srid: 'SIRGAS 2000 (EPSG:4674)',
-          sridCurto: 'EPSG:4674',
-          totalFeicoes: '34.820',
-          executadoEm: _agora(),
-          camadas: const [
-            EtlCamada(nome: 'geo_estacoes_sensores', tipo: 'Point', registros: '32.400'),
-            EtlCamada(nome: 'geo_bacias_hidrograficas', tipo: 'Polygon', registros: '2.420'),
-          ],
-        ),
-      ];
+  static Map<String, dynamic> _mapa(Object? v) =>
+      v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
+
+  /// Uma camada por tabela do resumo (summary.<bloco>.tabelas) devolvido pelo ETL.
+  static List<EtlCamada> _camadasDe(Map<String, dynamic> bloco) {
+    final Map<String, dynamic> tabelas = _mapa(bloco['tabelas']);
+    return <EtlCamada>[
+      for (final MapEntry<String, dynamic> e in tabelas.entries) EtlCamada.fromMetricas(e.key, _mapa(e.value)),
+    ];
+  }
+
+  /// startedAt/finishedAt (ISO-8601) -> "1 min 35 s". Nulo enquanto o job não terminou.
+  static String? _duracao(Object? inicio, Object? fim) {
+    final DateTime? a = inicio == null ? null : DateTime.tryParse(inicio.toString());
+    final DateTime? b = fim == null ? null : DateTime.tryParse(fim.toString());
+    if (a == null || b == null) return null;
+    final Duration d = b.difference(a);
+    if (d.inSeconds < 60) return '${d.inSeconds} s';
+    if (d.inMinutes < 60) return '${d.inMinutes} min ${d.inSeconds % 60} s';
+    return '${d.inHours} h ${d.inMinutes % 60} min';
+  }
 
   static Object? primeiro(Map<String, dynamic> json, List<String> chaves) {
     for (final k in chaves) {
@@ -193,9 +186,12 @@ class EtlCarga {
     return n < 0 ? '-$b' : b.toString();
   }
 
-  static String _agora() {
-    final DateTime d = DateTime.now();
-    String p(int v) => v.toString().padLeft(2, '0');
+  /// Data ISO-8601 do backend -> "23/10/2026 às 18:32" (horário local).
+  static String? _formatarData(Object? v) {
+    if (v == null) return null;
+    final DateTime? d = DateTime.tryParse(v.toString())?.toLocal();
+    if (d == null) return v.toString();
+    String p(int n) => n.toString().padLeft(2, '0');
     return '${p(d.day)}/${p(d.month)}/${d.year} às ${p(d.hour)}:${p(d.minute)}';
   }
 

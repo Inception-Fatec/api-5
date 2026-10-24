@@ -11,6 +11,7 @@ import 'etl_theme.dart';
 import 'models/etl_carga.dart';
 import 'services/etl_service.dart';
 import 'widgets/etl_buttons.dart';
+import 'widgets/seletor_municipio.dart';
 
 
 enum _Fase { vazio, pronto, enviando, erro }
@@ -20,13 +21,9 @@ enum _Fase { vazio, pronto, enviando, erro }
 /// Uso: `final EtlCarga? nova = await UploadModalDialog.show(context);`
 /// Devolve a carga criada pelo backend, ou `null` se foi cancelado.
 class UploadModalDialog extends StatefulWidget {
-  const UploadModalDialog({super.key, this.modoPreview = false});
+  const UploadModalDialog({super.key});
 
-  /// Se `true`, abre já no estado do protótipo Stitch (dados_geograficos_rede.zip
-  /// validado, 100 %) apenas para comparação visual. O envio fica desativado.
-  final bool modoPreview;
-
-  static Future<EtlCarga?> show(BuildContext context, {bool modoPreview = false}) {
+  static Future<EtlCarga?> show(BuildContext context) {
     return showGeneralDialog<EtlCarga>(
       context: context,
       barrierDismissible: false,
@@ -46,7 +43,7 @@ class UploadModalDialog extends StatefulWidget {
             Center(
               child: FadeTransition(
                 opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
-                child: UploadModalDialog(modoPreview: modoPreview),
+                child: const UploadModalDialog(),
               ),
             ),
           ],
@@ -67,16 +64,7 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
   String? _caminho;
   double _progresso = 0;
   String? _erro;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.modoPreview) {
-      _nome = 'dados_geograficos_rede.zip';
-      _fase = _Fase.pronto;
-      _progresso = 1;
-    }
-  }
+  List<Municipio> _municipios = <Municipio>[];
 
   bool get _ocupado => _fase == _Fase.enviando;
 
@@ -147,7 +135,8 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
   Future<void> _enviar() async {
     final String? caminho = _caminho;
     final String? nome = _nome;
-    if (caminho == null || nome == null || _ocupado) return;
+    final List<Municipio> municipios = _municipios;
+    if (caminho == null || nome == null || municipios.isEmpty || _ocupado) return;
 
     setState(() {
       _fase = _Fase.enviando;
@@ -159,6 +148,7 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
       final EtlCarga carga = await EtlService.enviarZip(
         caminho: caminho,
         nomeArquivo: nome,
+        municipios: municipios.map((m) => m.codigo).toList(),
         onProgress: (p) {
           if (mounted) setState(() => _progresso = p);
         },
@@ -183,7 +173,7 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
   @override
   Widget build(BuildContext context) {
     final bool temArquivo = _nome != null;
-    final bool podeEnviar = _caminho != null && !_ocupado;
+    final bool podeEnviar = _caminho != null && _municipios.isNotEmpty && !_ocupado;
 
     return CallbackShortcuts(
       bindings: {const SingleActivator(LogicalKeyboardKey.escape): _fechar},
@@ -231,6 +221,12 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
                                   onSubstituir: _ocupado ? null : _escolherArquivo,
                                 ),
                               ],
+                              const SizedBox(height: 16),
+                              SeletorMunicipio(
+                                key: const ValueKey('seletor-municipio'),
+                                enabled: !_ocupado,
+                                onChanged: (lista) => setState(() => _municipios = lista),
+                              ),
                               if (_fase == _Fase.pronto || _fase == _Fase.enviando) ...[
                                 const SizedBox(height: 16),
                                 _CardProgresso(
