@@ -9,6 +9,9 @@ spring:
     url: ${DB_URL}
     username: ${DB_USER}
     password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 3
+      minimum-idle: 1
 
 server:
   port: ${MOTOR_PORT:8082}

@@ -1,17 +1,18 @@
 package com.tecsys.domain.decision;
 
+import java.util.ArrayList;
+import java.util.List;
+
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.stereotype.Repository;
+
 import com.tecsys.domain.decision.model.CandidateType;
 import com.tecsys.domain.decision.model.CoveragePoint;
 import com.tecsys.domain.decision.model.CoverageRelation;
 import com.tecsys.domain.decision.model.DecisionCriteria;
 import com.tecsys.domain.decision.model.GatewayCandidate;
 import com.tecsys.domain.decision.model.VoltageLevel;
-import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
-import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.stereotype.Repository;
-
-import java.util.ArrayList;
-import java.util.List;
 
 @Repository
 public class DecisionRepository {
@@ -545,13 +546,12 @@ public class DecisionRepository {
 
             sql.append("""
                      AND ST_Intersects(
-                         u.geom,
-                         ST_Transform(
-                             ST_GeomFromGeoJSON(
-                                 :polygonGeojson
-                             ),
-                             4674
-                         )
+                        u.geom,
+                        ST_Transform(
+                                (SELECT ST_Union(d.geom)
+                                FROM ST_Dump(ST_GeomFromGeoJSON(:polygonGeojson)) d),
+                                4674
+                        )
                      )
                     """);
         }

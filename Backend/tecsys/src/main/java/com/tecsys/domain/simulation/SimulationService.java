@@ -38,6 +38,7 @@ public class SimulationService {
         // salva o historico com o poligono e filtros da página de novo projeto
         ProjectHistory history = ProjectHistory.builder()
                 .project(project)
+                .polygonGeojson(request.geometry())
                 .filterParams(request.filterParams())
                 .build();
         projectHistoryRepository.save(history);

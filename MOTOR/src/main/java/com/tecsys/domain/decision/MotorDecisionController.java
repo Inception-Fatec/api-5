@@ -1,13 +1,12 @@
 package com.tecsys.domain.decision;
 
+import com.tecsys.domain.decision.dto.CalculateRequestDto;
 import com.tecsys.domain.decision.dto.DecisionResultResponseDto;
-import com.tecsys.domain.decision.model.DecisionCriteria;
-
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/internal/decision")
+@RequestMapping("/api")
 public class MotorDecisionController {
 
     private final DecisionService decisionService;
@@ -18,15 +17,14 @@ public class MotorDecisionController {
 
     @PostMapping("/calculate")
     public ResponseEntity<DecisionResultResponseDto> calculate(
-            @RequestBody DecisionCriteria criteria
+            @RequestBody CalculateRequestDto request
     ) {
         long start = System.nanoTime();
 
-        DecisionResultResponseDto response =
-                decisionService.calculate(criteria);
+        DecisionResultResponseDto response = 
+                decisionService.calculateByProjectId(request.projectId());
 
-        long elapsedMs =
-                (System.nanoTime() - start) / 1_000_000;
+        long elapsedMs = (System.nanoTime() - start) / 1_000_000;
 
         return ResponseEntity.ok()
                 .header("X-Calculation-Time-Ms", String.valueOf(elapsedMs))
