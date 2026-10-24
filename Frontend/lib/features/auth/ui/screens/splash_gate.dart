@@ -5,6 +5,7 @@ import 'package:tecsys_app/features/auth/data/services/auth_service.dart';
 import 'package:tecsys_app/app/navigation/account_menu_sheet.dart'
     show showAccountMenu;
 import 'package:tecsys_app/features/auth/ui/screens/login_screen.dart';
+import 'package:tecsys_app/features/auth/ui/session_expiry.dart';
 
 /// Primeira tela do app — usar como `home:` do MaterialApp no lugar de
 /// `LoginScreen()` direto.
@@ -29,6 +30,7 @@ class _SplashGateState extends State<SplashGate> {
   @override
   void initState() {
     super.initState();
+    configurarExpiracaoDeSessao();
     _restore();
   }
 

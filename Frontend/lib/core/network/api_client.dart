@@ -47,6 +47,10 @@ class ApiClient {
 
   void setToken(String? token) => _token = token;
 
+  /// Chamado quando uma chamada autenticada volta 401/403 (ex.: token
+  /// vencido). O AuthService decide se é sessão expirada e desloga.
+  void Function(int statusCode)? onUnauthorized;
+
   Uri _uri(String path) => Uri.parse('${ApiConfig.baseUrl}$path');
 
   Map<String, String> get _headers => {
@@ -105,6 +109,10 @@ class ApiClient {
   /// assume um corpo `{"message": "..."}` (ou string pura) e cai
   /// para uma mensagem genérica se o corpo não bater com isso.
   ApiException _errorFrom(http.Response response) {
+    final status = response.statusCode;
+    if ((status == 401 || status == 403) && _token != null) {
+      onUnauthorized?.call(status);
+    }
     String message = 'Erro inesperado (${response.statusCode}).';
     try {
       final decoded = jsonDecode(response.body);
