@@ -3,8 +3,6 @@ import 'package:tecsys_app/features/projects/data/models/project_model.dart';
 
 /// Serviço de acesso a `/projects` (a base `/api/v1` já vem do
 /// ApiConfig.baseUrl usado pelo ApiClient).
-///
-/// Colocar em: lib/services/projects_service.dart
 class ProjectsService {
   final ApiClient _client;
 
@@ -18,14 +16,20 @@ class ProjectsService {
         .toList();
   }
 
-  /// POST /projects — espelha o ProjectCreateRequestDto do backend
-  /// (só `name` e `dist_code`; status/created_by/created_at são
-  /// preenchidos lá). Devolve o Project já criado, com id.
-  Future<Project> criar(
-      {required String name, required String distCode, required Map<String, dynamic> filterParams}) async {
+  /// POST /simulation/run — espelha o SimulationRunRequestDto do backend:
+  /// `name`, `dist_code`, `geometry` (polígono da área como texto GeoJSON,
+  /// gravado no histórico do projeto) e `filter_params`. Devolve o
+  /// Project já criado, com id.
+  Future<Project> criar({
+    required String name,
+    required String distCode,
+    required Map<String, dynamic> filterParams,
+    String? geometry,
+  }) async {
     final data = await _client.postJson('/simulation/run', {
       'name': name,
       'dist_code': distCode,
+      if (geometry != null) 'geometry': geometry,
       'filter_params': filterParams,
     });
     return Project.fromJson(data);
