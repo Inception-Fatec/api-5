@@ -59,6 +59,7 @@ docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 if [[ "$DB_MODE" == "supabase" ]]; then
   docker run -d --name "$CONTAINER" --network host \
     -e DB_URL="$DB_URL" -e DB_USER="$DB_USER" -e DB_PASSWORD="$DB_PASSWORD" \
+    -e ENGINE_URL="http://127.0.0.1:8082/api/calculate" \
     "$IMAGE" >/dev/null
 else
   docker network create tecsys-net >/dev/null 2>&1 || true
@@ -67,6 +68,7 @@ else
     -e DB_URL="$DB_URL" \
     -e DB_USER="$DB_USER" \
     -e DB_PASSWORD="$DB_PASSWORD" \
+    -e ENGINE_URL="http://tecsys-motor:8082/api/calculate" \
     -p "$PORT:8081" "$IMAGE" >/dev/null
 fi
 

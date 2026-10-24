@@ -12,6 +12,7 @@ import com.tecsys.domain.decision.model.DecisionResult;
 import com.tecsys.domain.decision.model.GatewayCandidate;
 import com.tecsys.domain.decision.service.AreaElevationRaster;
 import com.tecsys.domain.decision.service.LineOfSightService;
+import com.tecsys.domain.decision.service.ElevationService;
 
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
@@ -32,18 +33,62 @@ public class DecisionService {
     private final DecisionRepository repository;
     private final DecisionEngine engine;
     private final LineOfSightService lineOfSightService;
-    private final com.tecsys.domain.decision.service.ElevationService elevationService;
+    private final ElevationService elevationService;
+    private final ProjectLookupRepository projectLookupRepository;
+    private final ProjectCoverageService projectCoverageService;
+    private final ProjectStatusRepository projectStatusRepository;
 
     public DecisionService(
             DecisionRepository repository,
             DecisionEngine engine,
             LineOfSightService lineOfSightService,
-            com.tecsys.domain.decision.service.ElevationService elevationService
+            ElevationService elevationService,
+            ProjectLookupRepository projectLookupRepository,
+            ProjectCoverageService projectCoverageService,
+            ProjectStatusRepository projectStatusRepository
     ) {
         this.repository = repository;
         this.engine = engine;
         this.lineOfSightService = lineOfSightService;
         this.elevationService = elevationService;
+        this.projectLookupRepository = projectLookupRepository;
+        this.projectCoverageService = projectCoverageService;
+        this.projectStatusRepository = projectStatusRepository;
+    }
+    
+    public DecisionResultResponseDto calculateByProjectId(long projectId) {
+        try {
+            DecisionCriteria criteria = projectLookupRepository.findCriteriaByProjectId(projectId);
+
+            // trava: sem área, cidade, conjunto ou subestação o motor varreria a distribuidora inteira
+            if (!criteria.hasPolygon() && criteria.munCodes().isEmpty()
+                    && criteria.subCodes().isEmpty() && criteria.conjCodes().isEmpty()) {
+                throw new IllegalArgumentException("Projeto sem área, município, conjunto ou subestação.");
+            }
+
+            DecisionResultResponseDto response = calculate(criteria);
+            projectCoverageService.saveCoverage(projectId, response);
+            projectStatusRepository.updateStatus(projectId, "SUCESSO");
+            return response;
+
+        } catch (Exception e) {
+            log.error("Erro ao processar simulação para o projeto {}: {}", projectId, e.getMessage(), e);
+            projectStatusRepository.updateStatus(projectId, "FALHA");
+            throw e;
+        }
+    }
+
+    public DecisionResultResponseDto calculate(
+            Long projectId,
+            DecisionCriteria criteria
+    ) {
+        DecisionResultResponseDto response = calculate(criteria);
+
+        if (projectId != null) {
+            projectCoverageService.saveCoverage(projectId, response);
+        }
+
+        return response;
     }
 
     public DecisionResultResponseDto calculate(
@@ -98,7 +143,6 @@ public class DecisionService {
         List<CoverageRelation> unobstructedRelations = new ArrayList<>();
 
         // 3. Download temporário da Bounding Box via OpenTopography com try-with-resources
-        // O arquivo temporário é apagado automaticamente do disco ao sair deste bloco
         long inicioDownload = System.nanoTime();
         try (AreaElevationRaster raster = elevationService.downloadAreaRaster(south, north, west, east)) {
             long fimDownload = System.nanoTime();
@@ -124,7 +168,7 @@ public class DecisionService {
                     }
                 }
             }
-        } // <- O arquivo temporário GeoTIFF é excluído aqui pelo close()
+        }
 
         long fimRelacoes = System.nanoTime();
 
@@ -144,81 +188,28 @@ public class DecisionService {
 
         long fimResposta = System.nanoTime();
 
-        // ==========================================
         // LOGS DE DESEMPENHO
-        // ==========================================
-
         log.info("======================================");
         log.info("       PERFORMANCE DO MOTOR");
         log.info("======================================");
-
-        log.info(
-                "1. Busca de UCs: {} ms",
-                (fimPontos - inicio) / 1_000_000
-        );
-
-        log.info(
-                "2. Busca de candidatos: {} ms",
-                (fimCandidatos - fimPontos) / 1_000_000
-        );
-
-        log.info(
-                "3. Relacoes e Visada 3D (Relevo): {} ms",
-                (fimRelacoes - fimCandidatos) / 1_000_000
-        );
-
-        log.info(
-                "4. Algoritmo Greedy: {} ms",
-                (fimAlgoritmo - fimRelacoes) / 1_000_000
-        );
-
-        log.info(
-                "5. Montagem do JSON (DTO): {} ms",
-                (fimResposta - fimAlgoritmo) / 1_000_000
-        );
-
+        log.info("1. Busca de UCs: {} ms", (fimPontos - inicio) / 1_000_000);
+        log.info("2. Busca de candidatos: {} ms", (fimCandidatos - fimPontos) / 1_000_000);
+        log.info("3. Relacoes e Visada 3D (Relevo): {} ms", (fimRelacoes - fimCandidatos) / 1_000_000);
+        log.info("4. Algoritmo Greedy: {} ms", (fimAlgoritmo - fimRelacoes) / 1_000_000);
+        log.info("5. Montagem do JSON (DTO): {} ms", (fimResposta - fimAlgoritmo) / 1_000_000);
         log.info("--------------------------------------");
-
-        log.info(
-                "TEMPO TOTAL DO SERVICO: {} ms",
-                (fimResposta - inicio) / 1_000_000
-        );
-
+        log.info("TEMPO TOTAL DO SERVICO: {} ms", (fimResposta - inicio) / 1_000_000);
         log.info("--------------------------------------");
-
-        log.info(
-                "Total de UCs: {}",
-                coveragePoints.size()
-        );
-
-        log.info(
-                "Total de candidatos: {}",
-                candidates.size()
-        );
-
-        log.info(
-                "Total de relacoes espaciais desobstruidas: {}",
-                unobstructedRelations.size()
-        );
-
-        log.info(
-                "Gateways selecionados: {}",
-                result.selectedGateways().size()
-        );
-
-        log.info(
-                "Cobertura: {}%",
-                result.coveragePercentage()
-        );
-
+        log.info("Total de UCs: {}", coveragePoints.size());
+        log.info("Total de candidatos: {}", candidates.size());
+        log.info("Total de relacoes espaciais desobstruidas: {}", unobstructedRelations.size());
+        log.info("Gateways selecionados: {}", result.selectedGateways().size());
+        log.info("Cobertura: {}%", result.coveragePercentage());
         log.info("======================================");
 
         return response;
     }
 
-    /**
-     * Calcula a distancia geodesica em metros entre duas coordenadas (Formula de Haversine)
-     */
     private double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
         double dLat = Math.toRadians(lat2 - lat1);
         double dLon = Math.toRadians(lon2 - lon1);
@@ -256,7 +247,7 @@ public class DecisionService {
                                     selected.candidate();
 
                             return new SelectedGatewayResponseDto(
-                                     selected.order(),
+                                    selected.order(),
                                     gateway.id(),
                                     gateway.type().name(),
                                     gateway.posto(),
