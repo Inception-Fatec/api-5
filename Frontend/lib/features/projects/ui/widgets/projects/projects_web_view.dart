@@ -70,8 +70,13 @@ class ProjectsWebView extends StatelessWidget {
             ),
           ),
         ),
-        const SliverToBoxAdapter(
-          child: AppFooter(),
+        const SliverFillRemaining(
+          hasScrollBody: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [AppFooter()],
+          ),
         ),
       ],
     );
