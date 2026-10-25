@@ -123,7 +123,7 @@ Future<Uint8List> buildReportPdf({
         heading('Quantos gateways valem a pena'),
         for (final m in milestones)
           kv('Meta de ${formatInt(m.target.round())}%',
-              '${formatInt(m.gatewayCount)} gateways (${formatDecimal(100 * m.shareOfGateways)}% da rede)'),
+              '${formatInt(m.gatewayCount)} gateways'),
         if (steps.isNotEmpty) ...[
           pw.SizedBox(height: 6),
           pw.Table(
