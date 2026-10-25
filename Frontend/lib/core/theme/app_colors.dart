@@ -51,4 +51,10 @@ class AppColors {
   static const layerMedium = Color(0xFFFFA000);
   static const layerLow = infoBlue;
   static const layerSubstation = Color(0xFF9C27B0);
+
+  // --- Relatório de cobertura (mancha no estilo da referência do cliente)
+  static const coverageStain = Color(0xFF5B2EE8); // mancha de cobertura
+  static const coverageStainSoft = Color(0x8C5B2EE8); // pontos atendidos (55%)
+  static const uncoveredPoint = Color(0xFFE53935); // pontos sem cobertura
+  static const gatewayPin = Color(0xFFD81B60); // pin do gateway proposto
 }

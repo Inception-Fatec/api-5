@@ -10,12 +10,16 @@ import 'package:tecsys_app/features/projects/ui/widgets/new_project/new_project_
 /// Popup "Novo Projeto": nome, distribuidora e cidades. Ao confirmar
 /// devolve um [NovoProjetoResultado] (ou null se o usuário fechar).
 class NewProjectDialog extends StatefulWidget {
-  const NewProjectDialog({super.key});
+  const NewProjectDialog({super.key, this.nomeInicial});
 
-  static Future<NovoProjetoResultado?> mostrar(BuildContext context) {
+  /// Nome já preenchido (ex.: ao refazer um projeto que falhou).
+  final String? nomeInicial;
+
+  static Future<NovoProjetoResultado?> mostrar(BuildContext context,
+      {String? nomeInicial}) {
     return showDialog<NovoProjetoResultado>(
       context: context,
-      builder: (context) => const NewProjectDialog(),
+      builder: (context) => NewProjectDialog(nomeInicial: nomeInicial),
     );
   }
 
@@ -30,6 +34,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
   @override
   void initState() {
     super.initState();
+    _nomeController.text = widget.nomeInicial ?? '';
     _controller.carregarCidades();
   }
 

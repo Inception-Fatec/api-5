@@ -15,10 +15,14 @@ import 'package:tecsys_app/features/projects/data/services/project_service.dart'
 ///
 /// Colocar em: lib/services/projects_store.dart
 class ProjectsStore extends ChangeNotifier {
-  ProjectsStore._();
+  ProjectsStore._() : _service = ProjectsService();
   static final ProjectsStore instance = ProjectsStore._();
 
-  final ProjectsService _service = ProjectsService();
+  /// Instância isolada, com serviço injetado (só para testes).
+  @visibleForTesting
+  ProjectsStore.forTesting(ProjectsService service) : _service = service;
+
+  final ProjectsService _service;
 
   List<Project> projects = [];
   bool loading = false;
@@ -46,6 +50,41 @@ class ProjectsStore extends ChangeNotifier {
       loading = false;
       notifyListeners();
     }
+  }
+
+  /// Status em que o motor ainda não terminou (o back/motor muda o status
+  /// direto no banco, então só um novo GET descobre que acabou).
+  static const statusPendentes = {'CRIADO', 'ENVIADO', 'PROCESSANDO'};
+
+  bool get temPendentes =>
+      projects.any((p) => statusPendentes.contains(p.status));
+
+  /// Recarrega a lista sem mostrar loading nem erro (atualização em
+  /// segundo plano). Só notifica se algo mudou, para não reconstruir a
+  /// tela à toa a cada ciclo.
+  Future<void> atualizarSilencioso() async {
+    if (loading) return;
+    try {
+      final novos = await _service.listar();
+      if (_mudou(projects, novos)) {
+        projects = novos;
+        notifyListeners();
+      }
+    } catch (_) {
+      // Mantém a lista atual; o próximo ciclo tenta de novo.
+    }
+  }
+
+  static bool _mudou(List<Project> a, List<Project> b) {
+    if (a.length != b.length) return true;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].id != b[i].id ||
+          a[i].status != b[i].status ||
+          a[i].name != b[i].name) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /// Insere um projeto recém-criado no topo da lista imediatamente —

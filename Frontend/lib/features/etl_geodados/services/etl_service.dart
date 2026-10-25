@@ -20,7 +20,8 @@ class EtlUploadException implements Exception {
 
 /// MultipartRequest que reporta o progresso real de envio (0.0 – 1.0).
 class _ProgressMultipartRequest extends http.MultipartRequest {
-  _ProgressMultipartRequest(super.method, super.url, {required this.onProgress});
+  _ProgressMultipartRequest(super.method, super.url,
+      {required this.onProgress});
 
   final void Function(double progresso) onProgress;
 
@@ -56,7 +57,9 @@ class EtlService {
   /// nos nomes das entradas. Devolve `null` se estiver OK, ou a mensagem de erro.
   static Future<String?> validarEstruturaZip(String caminho) async {
     final file = File(caminho);
-    if (!await file.exists()) return 'O arquivo selecionado não foi encontrado.';
+    if (!await file.exists()) {
+      return 'O arquivo selecionado não foi encontrado.';
+    }
 
     final int tamanho = await file.length();
     if (tamanho < 22) return 'O arquivo .zip está vazio ou corrompido.';
@@ -85,6 +88,24 @@ class EtlService {
     }
   }
 
+  /// Valida a assinatura ZIP e procura a pasta `.gdb` em arquivos lidos no navegador.
+  static String? validarEstruturaZipBytes(Uint8List bytes) {
+    if (bytes.length < 22) return 'O arquivo .zip está vazio ou corrompido.';
+    final bool assinaturaOk = bytes.length >= 4 &&
+        bytes[0] == 0x50 &&
+        bytes[1] == 0x4B &&
+        bytes[2] == 0x03 &&
+        bytes[3] == 0x04;
+    if (!assinaturaOk) {
+      return 'O arquivo não é um .zip válido (assinatura ZIP não encontrada).';
+    }
+    final int inicio = math.max(0, bytes.length - _janelaVarredura);
+    if (!_contemGdb(Uint8List.sublistView(bytes, inicio))) {
+      return 'O .zip não parece conter um File Geodatabase (.gdb).';
+    }
+    return null;
+  }
+
   static bool _contemGdb(Uint8List b) {
     for (int i = 0; i + 3 < b.length; i++) {
       if (b[i] == 0x2E && // .
@@ -100,32 +121,42 @@ class EtlService {
 
   /// POST multipart para o endpoint de upload-gdb do backend.
   static Future<EtlCarga> enviarZip({
-    required String caminho,
+    String? caminho,
+    Uint8List? arquivoBytes,
     required String nomeArquivo,
     required List<String> municipios, // códigos IBGE de 7 dígitos
     required void Function(double progresso) onProgress,
   }) async {
     final Uri uri = Uri.parse('$baseUrl$uploadPath');
-    final request = _ProgressMultipartRequest('POST', uri, onProgress: onProgress);
+    final request =
+        _ProgressMultipartRequest('POST', uri, onProgress: onProgress);
 
     // O endpoint exige role ADM: sem o token o Spring responde "Access Denied".
     final String? token = AuthService.instance.token;
     if (token != null) {
       request.headers['Authorization'] = 'Bearer $token';
     }
-    
-    // Anexa o ficheiro com o nome do campo 'file' exigido pelo EtlController do backend
-    request.files.add(await http.MultipartFile.fromPath('file', caminho, filename: nomeArquivo));
-    
+
+    if (arquivoBytes == null && caminho == null) {
+      throw const EtlUploadException(
+          'O arquivo selecionado não está disponível.');
+    }
+    request.files.add(arquivoBytes != null
+        ? http.MultipartFile.fromBytes('file', arquivoBytes,
+            filename: nomeArquivo)
+        : await http.MultipartFile.fromPath('file', caminho!,
+            filename: nomeArquivo));
+
     // Municípios escolhidos pelo usuário (o backend só aceita códigos IBGE, separados por vírgula).
     request.fields['municipios'] = municipios.join(',');
     request.fields['incluirConsumidores'] = 'true';
 
-    final int tamanho = await File(caminho).length();
+    final int tamanho = arquivoBytes?.length ?? await File(caminho!).length();
 
     final http.Response resposta;
     try {
-      final http.StreamedResponse streamed = await request.send().timeout(timeout);
+      final http.StreamedResponse streamed =
+          await request.send().timeout(timeout);
       resposta = await http.Response.fromStream(streamed);
     } on SocketException {
       throw const EtlUploadException(
@@ -138,15 +169,20 @@ class EtlService {
         'Verifique se o backend está em execução.',
       );
     } on TimeoutException {
-      throw const EtlUploadException('O servidor ETL demorou demasiado tempo a responder.');
+      throw const EtlUploadException(
+          'O servidor ETL demorou demasiado tempo a responder.');
     }
 
     final Map<String, dynamic>? json = _tentarJson(resposta);
 
     if (resposta.statusCode < 200 || resposta.statusCode >= 300) {
-      final Object? msg = json?['message'] ?? json?['mensagem'] ?? json?['error'] ?? json?['detail'];
+      final Object? msg = json?['message'] ??
+          json?['mensagem'] ??
+          json?['error'] ??
+          json?['detail'];
       throw EtlUploadException(
-        msg?.toString() ?? 'O servidor respondeu com o código HTTP ${resposta.statusCode}.',
+        msg?.toString() ??
+            'O servidor respondeu com o código HTTP ${resposta.statusCode}.',
       );
     }
 
@@ -154,24 +190,29 @@ class EtlService {
         ? Map<String, dynamic>.from(json!['data'] as Map)
         : (json ?? <String, dynamic>{});
 
-    return EtlCarga.fromJson(dados, nomeFallback: nomeArquivo, tamanhoFallback: tamanho);
+    return EtlCarga.fromJson(dados,
+        nomeFallback: nomeArquivo, tamanhoFallback: tamanho);
   }
 
   /// GET /api/v1/etl/jobs/{id}: devolve a carga com o status atual do processamento.
   static Future<EtlCarga> consultarCarga(EtlCarga atual) async {
     final String? token = AuthService.instance.token;
-    final http.Response resposta = await http
-        .get(
-          Uri.parse('$baseUrl$jobsPath/${atual.id}'),
-          headers: <String, String>{if (token != null) 'Authorization': 'Bearer $token'},
-        )
-        .timeout(const Duration(seconds: 30));
+    final http.Response resposta = await http.get(
+      Uri.parse('$baseUrl$jobsPath/${atual.id}'),
+      headers: <String, String>{
+        if (token != null) 'Authorization': 'Bearer $token'
+      },
+    ).timeout(const Duration(seconds: 30));
 
     final Map<String, dynamic>? json = _tentarJson(resposta);
-    if (resposta.statusCode < 200 || resposta.statusCode >= 300 || json == null) {
-      throw EtlUploadException('Não foi possível consultar o status (HTTP ${resposta.statusCode}).');
+    if (resposta.statusCode < 200 ||
+        resposta.statusCode >= 300 ||
+        json == null) {
+      throw EtlUploadException(
+          'Não foi possível consultar o status (HTTP ${resposta.statusCode}).');
     }
-    return EtlCarga.fromJson(json, nomeFallback: atual.nomeArquivo, tamanhoFallback: atual.tamanhoBytes);
+    return EtlCarga.fromJson(json,
+        nomeFallback: atual.nomeArquivo, tamanhoFallback: atual.tamanhoBytes);
   }
 
   static Map<String, dynamic>? _tentarJson(http.Response r) {

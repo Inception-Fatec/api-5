@@ -25,7 +25,7 @@ class BottomNavBar extends StatelessWidget {
         color: AppColors.background,
         border: Border(top: BorderSide(color: AppColors.divider)),
       ),
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: SafeArea(
         top: false,
         child: Row(
@@ -33,24 +33,40 @@ class BottomNavBar extends StatelessWidget {
             final item = navItems[i];
             final active = i == currentIndex;
             final color = active ? AppColors.primary : AppColors.textSecondary;
+            final label =
+                item.label == 'ETL & Geodados' ? 'ETL\nGeodados' : item.label;
 
             return Expanded(
               child: InkWell(
                 onTap: () => onTap(i),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(item.icon, size: 24, color: color),
-                    const SizedBox(height: 4),
-                    Text(
-                      item.label,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                        color: color,
+                child: SizedBox(
+                  height: 52,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        height: 26,
+                        child: Icon(item.icon, size: 24, color: color),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 2),
+                      SizedBox(
+                        height: 24,
+                        child: Text(
+                          label,
+                          maxLines: 2,
+                          textAlign: TextAlign.center,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            height: 1.05,
+                            fontWeight:
+                                active ? FontWeight.w700 : FontWeight.w500,
+                            color: color,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );

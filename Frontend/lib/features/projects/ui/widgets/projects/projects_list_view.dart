@@ -63,7 +63,7 @@ class ProjectsListView extends StatelessWidget {
       return const Padding(
         padding: ProjectsStyles.messagePadding,
         child: Center(
-          child: Text('Nenhum projeto encontrado para essa busca.',
+          child: Text('Nenhum projeto encontrado para essa busca ou filtro.',
               style: AppTextStyles.bodyMuted),
         ),
       );

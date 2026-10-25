@@ -120,6 +120,7 @@ class UsersView extends StatelessWidget {
           const SliverFillRemaining(
             hasScrollBody: false,
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisAlignment: MainAxisAlignment.end,
               children: [AppFooter()],
             ),

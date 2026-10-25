@@ -9,6 +9,7 @@ import 'package:tecsys_app/features/projects/ui/widgets/projects/new_project_but
 import 'package:tecsys_app/features/projects/ui/widgets/projects/projects_list_view.dart';
 import 'package:tecsys_app/features/projects/ui/widgets/projects/projects_metrics.dart';
 import 'package:tecsys_app/features/projects/ui/widgets/projects/projects_search_field.dart';
+import 'package:tecsys_app/features/projects/ui/widgets/projects/projects_status_filter.dart';
 import 'package:tecsys_app/features/projects/ui/widgets/projects/projects_title.dart';
 
 /// Layout web (dashboard) da tela de projetos — mesmos dados e
@@ -55,6 +56,8 @@ class ProjectsWebView extends StatelessWidget {
                 ProjectsSearchField(
                     initialText: controller.busca,
                     onChanged: controller.setBusca),
+                const SizedBox(height: AppSpacing.sm),
+                ProjectsStatusFilter(controller: controller),
                 const SizedBox(height: AppSpacing.lg),
                 ProjectsListView(
                   controller: controller,
@@ -70,8 +73,10 @@ class ProjectsWebView extends StatelessWidget {
         const SliverFillRemaining(
           hasScrollBody: false,
           child: Column(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [AppFooter()]),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [AppFooter()],
+          ),
         ),
       ],
     );
