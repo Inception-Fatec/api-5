@@ -117,12 +117,8 @@ class UsersView extends StatelessWidget {
               ),
             ),
           ),
-          const SliverFillRemaining(
-            hasScrollBody: false,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [AppFooter()],
-            ),
+          const SliverToBoxAdapter(
+            child: AppFooter(),
           ),
         ],
       ),

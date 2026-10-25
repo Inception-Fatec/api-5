@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform;
@@ -84,6 +85,15 @@ class ApiClient {
       if (response.body.isEmpty) return null;
       return jsonDecode(response.body);
     }
+    throw _errorFrom(response);
+  }
+
+  /// GET que devolve o corpo cru em bytes, sem decodificar — pra
+  /// respostas muito grandes (ex.: relatório com centenas de milhares
+  /// de pontos), que o chamador decodifica fora da thread da UI.
+  Future<Uint8List> getBytes(String path) async {
+    final response = await http.get(_uri(path), headers: _headers);
+    if (_isSuccess(response.statusCode)) return response.bodyBytes;
     throw _errorFrom(response);
   }
 

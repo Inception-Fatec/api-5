@@ -32,6 +32,9 @@ class ListCard extends StatelessWidget {
   /// Esmaece o card (ex: enquanto exclui).
   final bool dimmed;
 
+  /// Oculta o controle de exclusão em cards que representam itens imutáveis.
+  final bool showDelete;
+
   const ListCard({
     super.key,
     required this.leading,
@@ -43,6 +46,7 @@ class ListCard extends StatelessWidget {
     this.accentColor,
     this.onTap,
     this.dimmed = false,
+    this.showDelete = true,
   });
 
   @override
@@ -108,16 +112,19 @@ class ListCard extends StatelessWidget {
         Row(
           children: [
             badge,
-            const SizedBox(width: AppSpacing.xs),
-            InkWell(
-              onTap: onDelete,
-              borderRadius: AppRadius.xxl,
-              child: const Padding(
-                padding: EdgeInsets.all(AppSpacing.xs),
-                child: Icon(Icons.delete_outline,
-                    size: AppCardStyles.deleteIconSize, color: AppColors.error),
+            if (showDelete) ...[
+              const SizedBox(width: AppSpacing.xs),
+              InkWell(
+                onTap: onDelete,
+                borderRadius: AppRadius.xxl,
+                child: const Padding(
+                  padding: EdgeInsets.all(AppSpacing.xs),
+                  child: Icon(Icons.delete_outline,
+                      size: AppCardStyles.deleteIconSize,
+                      color: AppColors.error),
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ],

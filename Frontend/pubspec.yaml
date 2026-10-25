@@ -16,6 +16,8 @@ dependencies:
   flutter_map: ^7.0.2
   latlong2: ^0.9.1
   desktop_drop: ^0.8.4
+  pdf: ^3.11.1
+  printing: ^5.13.4
 
 dev_dependencies:
   flutter_test:

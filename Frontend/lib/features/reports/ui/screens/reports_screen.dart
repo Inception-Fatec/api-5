@@ -1,115 +1,105 @@
 import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
 
-import 'package:tecsys_app/features/projects/data/models/project_model.dart';
 import 'package:tecsys_app/core/theme/app_theme.dart';
 import 'package:tecsys_app/core/utils/distributors.dart';
-import 'package:tecsys_app/core/widgets/page_body.dart';
+import 'package:tecsys_app/features/projects/data/models/project_model.dart';
+import 'package:tecsys_app/features/reports/export/report_map_capture.dart';
+import 'package:tecsys_app/features/reports/export/report_pdf.dart';
+import 'package:tecsys_app/features/reports/state/report_controller.dart';
+import 'package:tecsys_app/features/reports/ui/report_texts.dart';
+import 'package:tecsys_app/features/reports/ui/widgets/report_header.dart';
+import 'package:tecsys_app/features/reports/ui/widgets/report_view.dart';
 
-import 'package:tecsys_app/features/projects/ui/styles/project_status_style.dart';
-
-/// Tela de detalhe do projeto — pra onde o card clicável da
-/// ProjectsScreen leva. No fim vai ter o relatório e o mapa com os
-/// pontos definidos na Etapa 2 da NewProjectScreen.
+/// Tela de relatório do projeto — pra onde o card clicável da
+/// ProjectsScreen leva. Mostra o estudo que o motor de decisão já
+/// salvou: resumo, mancha de cobertura, gateways propostos e parâmetros
+/// (ver [ReportView]).
 ///
-/// Por enquanto é só uma tela de exemplo, sem nada implementado —
-/// existe pra já ter a navegação funcionando e um lugar pra encaixar
-/// o conteúdo de verdade depois. Web e mobile mostram o mesmo
-/// placeholder (não há diferença de plataforma aqui ainda).
-class ProjectDetailScreen extends StatelessWidget {
+/// Fecha devolvendo o [Project] quando o usuário pede para refazer um
+/// projeto que falhou (`Navigator.pop<Project>`).
+///
+/// O nome da classe continua [ProjectDetailScreen] para não mexer na
+/// navegação da ProjectsScreen.
+class ProjectDetailScreen extends StatefulWidget {
   final Project project;
 
   const ProjectDetailScreen({super.key, required this.project});
 
   @override
-  Widget build(BuildContext context) {
-    final statusColor = ProjectStatusStyle.color(project.status);
+  State<ProjectDetailScreen> createState() => _ProjectDetailScreenState();
+}
 
-    return PageBody(
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  InkWell(
-                    onTap: () => Navigator.of(context).pop(),
-                    borderRadius: BorderRadius.circular(20),
-                    child: const Padding(
-                      padding: EdgeInsets.all(4),
-                      child:
-                          Icon(Icons.arrow_back, color: AppColors.textPrimary),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      project.name,
-                      style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textPrimary),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                        color: statusColor.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(8)),
-                    child: Text(
-                      ProjectStatusStyle.label(project.status),
-                      style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: statusColor),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Padding(
-                padding: const EdgeInsets.only(left: 32),
-                child: Text(
-                  'ID #${project.id} • ${nomeDistribuidora(project.distCode)} • ${project.dataFormatada}',
-                  style: const TextStyle(
-                      fontSize: 13, color: AppColors.textSecondary),
-                ),
-              ),
-              Expanded(
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.construction_outlined,
-                          size: 48, color: AppColors.textSecondary),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Em desenvolvimento',
-                        style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textPrimary),
-                      ),
-                      const SizedBox(height: 6),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 24),
-                        child: Text(
-                          'Aqui vai entrar o relatório do projeto e o mapa com os pontos definidos na Etapa 2 da criação (New Project).',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                              fontSize: 13, color: AppColors.textSecondary),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
+  late final ReportController _controller;
+  bool _exportingPdf = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = ReportController(project: widget.project)
+      ..carregar()
+      // Projeto ainda calculando: a tela se atualiza sozinha ao terminar.
+      ..iniciarAtualizacaoAutomatica();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _exportPdf() async {
+    final report = _controller.report;
+    if (report == null || _exportingPdf) return;
+    final project = widget.project;
+    setState(() => _exportingPdf = true);
+    try {
+      // Foto do mapa (mancha + gateways); null = PDF sai sem a imagem.
+      final mapImage = await captureReportMap(context, report);
+      final bytes = await buildReportPdf(
+        projectName: project.name,
+        distribuidora: nomeDistribuidora(project.distCode),
+        date: project.dataFormatada,
+        report: report,
+        mapImage: mapImage,
+      );
+      await Printing.sharePdf(
+          bytes: bytes, filename: 'relatorio-cobertura-${project.id}.pdf');
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Não foi possível gerar o PDF agora.')));
+    } finally {
+      if (mounted) setState(() => _exportingPdf = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.pageBg,
+      body: Column(
+        children: [
+          ListenableBuilder(
+            listenable: _controller,
+            builder: (context, _) => ReportHeader(
+              project: widget.project,
+              onExportPdf: _controller.status == ReportStatus.ready
+                  ? _exportPdf
+                  : null,
+              exportingPdf: _exportingPdf,
+            ),
           ),
-        ),
+          Expanded(
+            child: ReportView(
+              controller: _controller,
+              // Volta para a lista devolvendo o projeto: ela abre o
+              // formulário de novo projeto já com o nome preenchido.
+              onRedo: () => Navigator.of(context).pop<Project>(widget.project),
+            ),
+          ),
+        ],
       ),
     );
   }

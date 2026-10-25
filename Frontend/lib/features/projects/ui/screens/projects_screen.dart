@@ -39,8 +39,9 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
 
   /// "Novo Projeto": abre o popup de dados básicos e, se confirmado,
   /// segue para o mapa de pontos.
-  Future<void> _goToNewProject() async {
-    final resultado = await NewProjectDialog.mostrar(context);
+  Future<void> _goToNewProject({String? nomeInicial}) async {
+    final resultado =
+        await NewProjectDialog.mostrar(context, nomeInicial: nomeInicial);
     if (resultado == null || !mounted) return;
 
     await Navigator.of(context).push(
@@ -55,10 +56,15 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
     );
   }
 
-  void _openDetail(Project project) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => ProjectDetailScreen(project: project)),
+  Future<void> _openDetail(Project project) async {
+    // O relatório devolve o projeto quando o usuário toca em "Refazer
+    // projeto" (cálculo que falhou): abre o novo projeto com o mesmo nome.
+    final refazer = await Navigator.of(context).push<Project>(
+      MaterialPageRoute<Project>(
+          builder: (_) => ProjectDetailScreen(project: project)),
     );
+    if (refazer == null || !mounted) return;
+    await _goToNewProject(nomeInicial: refazer.name);
   }
 
   @override

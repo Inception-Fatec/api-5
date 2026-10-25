@@ -17,9 +17,9 @@ class AppFooter extends StatelessWidget {
       decoration: const BoxDecoration(
         border: Border(top: BorderSide(color: AppColors.divider)),
       ),
-      child: Row(
+      child: const Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: const [
+        children: [
           Flexible(
             child: Text(
               '© 2024 Tecsys Inc. Enterprise Supply Chain Velocity. All rights reserved.',

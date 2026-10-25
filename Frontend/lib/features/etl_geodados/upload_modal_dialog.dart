@@ -1,10 +1,10 @@
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 
 import 'etl_theme.dart';
@@ -12,7 +12,6 @@ import 'models/etl_carga.dart';
 import 'services/etl_service.dart';
 import 'widgets/etl_buttons.dart';
 import 'widgets/seletor_municipio.dart';
-
 
 enum _Fase { vazio, pronto, enviando, erro }
 
@@ -42,7 +41,8 @@ class UploadModalDialog extends StatefulWidget {
             ),
             Center(
               child: FadeTransition(
-                opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+                opacity:
+                    CurvedAnimation(parent: animation, curve: Curves.easeOut),
                 child: const UploadModalDialog(),
               ),
             ),
@@ -62,6 +62,7 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
   _Fase _fase = _Fase.vazio;
   String? _nome;
   String? _caminho;
+  Uint8List? _arquivoBytes;
   double _progresso = 0;
   String? _erro;
   List<Municipio> _municipios = <Municipio>[];
@@ -80,11 +81,19 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
         type: FileType.custom,
         allowedExtensions: const ['zip'],
         allowMultiple: false,
+        withData: kIsWeb,
       );
       if (resultado == null || resultado.files.isEmpty) return;
-      final String? caminho = resultado.files.first.path;
-      if (caminho == null) return;
-      await _selecionar(caminho);
+      final file = resultado.files.first;
+      if (file.path == null && file.bytes == null) {
+        throw const EtlUploadException(
+            'Não foi possível ler o arquivo selecionado.');
+      }
+      await _selecionarArquivo(
+        nome: file.name,
+        caminho: file.path,
+        bytes: file.bytes,
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -96,7 +105,16 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
 
   Future<void> _selecionar(String caminho) async {
     if (_ocupado) return;
-    final String nome = caminho.split(Platform.pathSeparator).last;
+    final String nome = caminho.split(RegExp(r'[/\\]')).last;
+    await _selecionarArquivo(nome: nome, caminho: caminho);
+  }
+
+  Future<void> _selecionarArquivo({
+    required String nome,
+    String? caminho,
+    Uint8List? bytes,
+  }) async {
+    if (_ocupado) return;
 
     if (!nome.toLowerCase().endsWith('.zip')) {
       setState(() {
@@ -109,7 +127,9 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
 
     String? problema;
     try {
-      problema = await EtlService.validarEstruturaZip(caminho);
+      problema = bytes != null
+          ? EtlService.validarEstruturaZipBytes(bytes)
+          : await EtlService.validarEstruturaZip(caminho!);
     } catch (e) {
       problema = 'Não foi possível ler o arquivo: $e';
     }
@@ -126,6 +146,7 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
     setState(() {
       _nome = nome;
       _caminho = caminho;
+      _arquivoBytes = bytes;
       _progresso = 1;
       _erro = null;
       _fase = _Fase.pronto;
@@ -134,9 +155,15 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
 
   Future<void> _enviar() async {
     final String? caminho = _caminho;
+    final Uint8List? arquivoBytes = _arquivoBytes;
     final String? nome = _nome;
     final List<Municipio> municipios = _municipios;
-    if (caminho == null || nome == null || municipios.isEmpty || _ocupado) return;
+    if ((caminho == null && arquivoBytes == null) ||
+        nome == null ||
+        municipios.isEmpty ||
+        _ocupado) {
+      return;
+    }
 
     setState(() {
       _fase = _Fase.enviando;
@@ -147,6 +174,7 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
     try {
       final EtlCarga carga = await EtlService.enviarZip(
         caminho: caminho,
+        arquivoBytes: arquivoBytes,
         nomeArquivo: nome,
         municipios: municipios.map((m) => m.codigo).toList(),
         onProgress: (p) {
@@ -173,7 +201,8 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
   @override
   Widget build(BuildContext context) {
     final bool temArquivo = _nome != null;
-    final bool podeEnviar = _caminho != null && _municipios.isNotEmpty && !_ocupado;
+    final bool podeEnviar =
+        _caminho != null && _municipios.isNotEmpty && !_ocupado;
 
     return CallbackShortcuts(
       bindings: {const SingleActivator(LogicalKeyboardKey.escape): _fechar},
@@ -191,7 +220,11 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
                   borderRadius: BorderRadius.circular(kEtlModalRadius),
                   border: Border.all(color: EtlColors.slate100),
                   boxShadow: const [
-                    BoxShadow(color: EtlColors.black25, blurRadius: 50, spreadRadius: -12, offset: Offset(0, 25)),
+                    BoxShadow(
+                        color: EtlColors.black25,
+                        blurRadius: 50,
+                        spreadRadius: -12,
+                        offset: Offset(0, 25)),
                   ],
                 ),
                 child: ClipRRect(
@@ -218,27 +251,34 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
                                 const SizedBox(height: 16),
                                 _CardArquivo(
                                   nome: _nome!,
-                                  onSubstituir: _ocupado ? null : _escolherArquivo,
+                                  onSubstituir:
+                                      _ocupado ? null : _escolherArquivo,
                                 ),
                               ],
                               const SizedBox(height: 16),
                               SeletorMunicipio(
                                 key: const ValueKey('seletor-municipio'),
                                 enabled: !_ocupado,
-                                onChanged: (lista) => setState(() => _municipios = lista),
+                                onChanged: (lista) =>
+                                    setState(() => _municipios = lista),
                               ),
-                              if (_fase == _Fase.pronto || _fase == _Fase.enviando) ...[
+                              if (_fase == _Fase.pronto ||
+                                  _fase == _Fase.enviando) ...[
                                 const SizedBox(height: 16),
                                 _CardProgresso(
                                   enviando: _fase == _Fase.enviando,
-                                  progresso: _fase == _Fase.enviando ? _progresso : 1,
+                                  progresso:
+                                      _fase == _Fase.enviando ? _progresso : 1,
                                 ),
                               ],
                               if (_fase == _Fase.erro) ...[
                                 const SizedBox(height: 16),
                                 _CaixaErro(
-                                  mensagem: _erro ?? 'Falha no envio do arquivo.',
-                                  onTentar: _caminho != null ? _enviar : _escolherArquivo,
+                                  mensagem:
+                                      _erro ?? 'Falha no envio do arquivo.',
+                                  onTentar: _caminho != null
+                                      ? _enviar
+                                      : _escolherArquivo,
                                 ),
                               ],
                             ],
@@ -246,23 +286,29 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 16),
                         decoration: const BoxDecoration(
                           color: EtlColors.slate50,
-                          border: Border(top: BorderSide(color: EtlColors.slate100)),
+                          border: Border(
+                              top: BorderSide(color: EtlColors.slate100)),
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            EtlOutlineButton(label: 'Cancelar', onPressed: _ocupado ? null : _fechar),
+                            EtlOutlineButton(
+                                label: 'Cancelar',
+                                onPressed: _ocupado ? null : _fechar),
                             const SizedBox(width: 12),
                             EtlPrimaryButton(
-                              label: _ocupado ? 'Enviando...' : 'Iniciar Upload',
+                              label:
+                                  _ocupado ? 'Enviando...' : 'Iniciar Upload',
                               icon: Icons.cloud_upload_outlined,
                               iconSize: 16,
                               fontSize: 12,
                               gap: 6,
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20, vertical: 10),
                               shadowColor: EtlColors.teal600Shadow20,
                               onPressed: podeEnviar ? _enviar : null,
                             ),
@@ -306,7 +352,8 @@ class _Cabecalho extends StatelessWidget {
               color: EtlColors.teal50,
               borderRadius: BorderRadius.circular(16),
             ),
-            child: const Icon(Icons.cloud_upload_outlined, size: 24, color: EtlColors.teal600),
+            child: const Icon(Icons.cloud_upload_outlined,
+                size: 24, color: EtlColors.teal600),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -352,7 +399,9 @@ class _BotaoIconeState extends State<_BotaoIcone> {
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
-      cursor: widget.onTap != null ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      cursor: widget.onTap != null
+          ? SystemMouseCursors.click
+          : SystemMouseCursors.basic,
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
       child: GestureDetector(
@@ -383,7 +432,8 @@ class _CaixaDiretrizes extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final TextStyle base = etlText(12, color: EtlColors.slate600, lineHeight: 19.5);
+    final TextStyle base =
+        etlText(12, color: EtlColors.slate600, lineHeight: 19.5);
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -406,14 +456,25 @@ class _CaixaDiretrizes extends StatelessWidget {
                 children: [
                   TextSpan(
                     text: 'Diretrizes do Arquivo:',
-                    style: etlText(12, weight: FontWeight.w600, color: EtlColors.slate800, lineHeight: 19.5),
+                    style: etlText(12,
+                        weight: FontWeight.w600,
+                        color: EtlColors.slate800,
+                        lineHeight: 19.5),
                   ),
-                  const TextSpan(text: ' O File Geodatabase (.gdb) deve ser enviado exclusivamente compactado em formato '),
+                  const TextSpan(
+                      text:
+                          ' O File Geodatabase (.gdb) deve ser enviado exclusivamente compactado em formato '),
                   TextSpan(
                     text: '.zip',
-                    style: etlText(12, weight: FontWeight.w600, color: EtlColors.teal800, lineHeight: 19.5, mono: true),
+                    style: etlText(12,
+                        weight: FontWeight.w600,
+                        color: EtlColors.teal800,
+                        lineHeight: 19.5,
+                        mono: true),
                   ),
-                  const TextSpan(text: '. O ETL irá ler schemas, camadas vetoriais e tabelas alfanuméricas.'),
+                  const TextSpan(
+                      text:
+                          '. O ETL irá ler schemas, camadas vetoriais e tabelas alfanuméricas.'),
                 ],
               ),
             ),
@@ -427,7 +488,8 @@ class _CaixaDiretrizes extends StatelessWidget {
 // ──────────────────────────────── Dropzone ────────────────────────────────
 
 class _DropZone extends StatefulWidget {
-  const _DropZone({required this.enabled, required this.onTap, required this.onPath});
+  const _DropZone(
+      {required this.enabled, required this.onTap, required this.onPath});
 
   final bool enabled;
   final VoidCallback onTap;
@@ -454,7 +516,9 @@ class _DropZoneState extends State<_DropZone> {
         if (detalhe.files.isNotEmpty) widget.onPath(detalhe.files.first.path);
       },
       child: MouseRegion(
-        cursor: widget.enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        cursor: widget.enabled
+            ? SystemMouseCursors.click
+            : SystemMouseCursors.basic,
         onEnter: (_) => setState(() => _hover = true),
         onExit: (_) => setState(() => _hover = false),
         child: GestureDetector(
@@ -482,24 +546,34 @@ class _DropZoneState extends State<_DropZone> {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: ativo ? EtlColors.teal200 : EtlColors.slate200),
+                      border: Border.all(
+                          color:
+                              ativo ? EtlColors.teal200 : EtlColors.slate200),
                       boxShadow: const [
-                        BoxShadow(color: EtlColors.black5, blurRadius: 1, offset: Offset(0, 1)),
+                        BoxShadow(
+                            color: EtlColors.black5,
+                            blurRadius: 1,
+                            offset: Offset(0, 1)),
                       ],
                     ),
-                    child: const Icon(Icons.upload, size: 24, color: EtlColors.teal600),
+                    child: const Icon(Icons.upload,
+                        size: 24, color: EtlColors.teal600),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'Arraste o arquivo .zip aqui ou clique para selecionar',
                     textAlign: TextAlign.center,
-                    style: etlText(12, weight: FontWeight.w600, color: EtlColors.slate800, lineHeight: 16),
+                    style: etlText(12,
+                        weight: FontWeight.w600,
+                        color: EtlColors.slate800,
+                        lineHeight: 16),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     'Formato exclusivo aceito: .zip (File Geodatabase)',
                     textAlign: TextAlign.center,
-                    style: etlText(11, color: EtlColors.slate400, lineHeight: 16.5),
+                    style: etlText(11,
+                        color: EtlColors.slate400, lineHeight: 16.5),
                   ),
                 ],
               ),
@@ -551,7 +625,9 @@ class _DashedBorderPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _DashedBorderPainter old) =>
-      old.color != color || old.radius != radius || old.strokeWidth != strokeWidth;
+      old.color != color ||
+      old.radius != radius ||
+      old.strokeWidth != strokeWidth;
 }
 
 // ───────────────────────────── Card do ficheiro ─────────────────────────────
@@ -580,10 +656,14 @@ class _CardArquivo extends StatelessWidget {
               color: EtlColors.teal600,
               borderRadius: BorderRadius.circular(16),
               boxShadow: const [
-                BoxShadow(color: EtlColors.teal600Shadow20, blurRadius: 3, offset: Offset(0, 1)),
+                BoxShadow(
+                    color: EtlColors.teal600Shadow20,
+                    blurRadius: 3,
+                    offset: Offset(0, 1)),
               ],
             ),
-            child: const Icon(Icons.folder_zip_outlined, size: 24, color: Colors.white),
+            child: const Icon(Icons.folder_zip_outlined,
+                size: 24, color: Colors.white),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -597,19 +677,26 @@ class _CardArquivo extends StatelessWidget {
                         nome,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: etlText(14, weight: FontWeight.w600, color: EtlColors.slate900, lineHeight: 20),
+                        style: etlText(14,
+                            weight: FontWeight.w600,
+                            color: EtlColors.slate900,
+                            lineHeight: 20),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: EtlColors.emerald100,
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
                         'Válido',
-                        style: etlText(10, weight: FontWeight.w600, color: EtlColors.emerald800, lineHeight: 15),
+                        style: etlText(10,
+                            weight: FontWeight.w600,
+                            color: EtlColors.emerald800,
+                            lineHeight: 15),
                       ),
                     ),
                   ],
@@ -619,17 +706,21 @@ class _CardArquivo extends StatelessWidget {
                   children: [
                     Text(
                       '.zip (.gdb compactado)',
-                      style: etlText(12, color: EtlColors.teal700, lineHeight: 16, mono: true),
+                      style: etlText(12,
+                          color: EtlColors.teal700, lineHeight: 16, mono: true),
                     ),
                     const SizedBox(width: 8),
-                    Text('•', style: etlText(12, color: EtlColors.slate500, lineHeight: 16)),
+                    Text('•',
+                        style: etlText(12,
+                            color: EtlColors.slate500, lineHeight: 16)),
                     const SizedBox(width: 8),
                     Flexible(
                       child: Text(
                         'Pronto para processamento',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: etlText(12, color: EtlColors.slate500, lineHeight: 16),
+                        style: etlText(12,
+                            color: EtlColors.slate500, lineHeight: 16),
                       ),
                     ),
                   ],
@@ -679,21 +770,29 @@ class _CardProgresso extends StatelessWidget {
                   height: 16,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(EtlColors.teal600),
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(EtlColors.teal600),
                   ),
                 )
               else
-                const Icon(Icons.check_circle_outline, size: 16, color: EtlColors.teal600),
+                const Icon(Icons.check_circle_outline,
+                    size: 16, color: EtlColors.teal600),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   texto,
-                  style: etlText(12, weight: FontWeight.w600, color: EtlColors.slate700, lineHeight: 16),
+                  style: etlText(12,
+                      weight: FontWeight.w600,
+                      color: EtlColors.slate700,
+                      lineHeight: 16),
                 ),
               ),
               Text(
                 '$pct%',
-                style: etlText(12, weight: FontWeight.w700, color: EtlColors.teal700, lineHeight: 16),
+                style: etlText(12,
+                    weight: FontWeight.w700,
+                    color: EtlColors.teal700,
+                    lineHeight: 16),
               ),
             ],
           ),
@@ -750,7 +849,8 @@ class _CaixaErro extends StatelessWidget {
               color: EtlColors.rose100,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.error_outline, size: 24, color: EtlColors.rose600),
+            child: const Icon(Icons.error_outline,
+                size: 24, color: EtlColors.rose600),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -759,12 +859,16 @@ class _CaixaErro extends StatelessWidget {
               children: [
                 Text(
                   'Falha no Envio do Arquivo',
-                  style: etlText(14, weight: FontWeight.w700, color: EtlColors.rose900, lineHeight: 20),
+                  style: etlText(14,
+                      weight: FontWeight.w700,
+                      color: EtlColors.rose900,
+                      lineHeight: 20),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   mensagem,
-                  style: etlText(12, color: EtlColors.rose700, lineHeight: 19.5),
+                  style:
+                      etlText(12, color: EtlColors.rose700, lineHeight: 19.5),
                 ),
                 const SizedBox(height: 14),
                 GestureDetector(
@@ -772,7 +876,8 @@ class _CaixaErro extends StatelessWidget {
                   child: MouseRegion(
                     cursor: SystemMouseCursors.click,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 6),
                       decoration: BoxDecoration(
                         color: EtlColors.rose600,
                         borderRadius: BorderRadius.circular(12),
@@ -780,11 +885,15 @@ class _CaixaErro extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.refresh, size: 14, color: Colors.white),
+                          const Icon(Icons.refresh,
+                              size: 14, color: Colors.white),
                           const SizedBox(width: 6),
                           Text(
                             'Tentar Novamente',
-                            style: etlText(12, weight: FontWeight.w600, color: Colors.white, lineHeight: 16),
+                            style: etlText(12,
+                                weight: FontWeight.w600,
+                                color: Colors.white,
+                                lineHeight: 16),
                           ),
                         ],
                       ),
