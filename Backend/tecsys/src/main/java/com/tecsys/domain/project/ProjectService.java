@@ -58,7 +58,8 @@ public class ProjectService {
     @Transactional
     public void deleteProject(Long id) {
         Project project = getProjectOrThrow(id);
-        projectRepository.delete(project);
+        project.setActive(false);
+        projectRepository.save(project);
     }
 
     private Project getProjectOrThrow(Long id) {

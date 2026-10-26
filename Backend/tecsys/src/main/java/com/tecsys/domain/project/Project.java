@@ -37,4 +37,8 @@ public class Project {
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;
+
+    @Builder.Default
+    @Column(nullable = false)
+    private boolean active = true;
 }
