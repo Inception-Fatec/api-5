@@ -5,6 +5,7 @@ import 'package:flutter_map/flutter_map.dart';
 
 import 'package:tecsys_app/features/map/data/constants/map_config.dart';
 import 'package:tecsys_app/features/map/data/constants/map_regions.dart';
+import 'package:tecsys_app/features/map/ui/widgets/map/center_scroll_zoom.dart';
 import 'package:tecsys_app/features/reports/data/models/coverage_report.dart';
 import 'package:tecsys_app/features/reports/state/report_controller.dart';
 import 'package:tecsys_app/features/reports/ui/report_formatters.dart';
@@ -85,7 +86,8 @@ class _ReportMapState extends State<ReportMap> {
   /// Toque num gateway da lista: centraliza o mapa nele.
   void _onControllerChanged() {
     final controller = widget.controller;
-    if (controller == null || controller.focusVersion == _lastFocusVersion) return;
+    if (controller == null || controller.focusVersion == _lastFocusVersion)
+      return;
     _lastFocusVersion = controller.focusVersion;
     final gateway = controller.focusedGateway;
     if (gateway == null) return;
@@ -95,8 +97,7 @@ class _ReportMapState extends State<ReportMap> {
 
   void _zoomBy(double delta) {
     final camera = _mapController.camera;
-    _mapController.move(
-        camera.center, clampZoom(camera.zoom + delta));
+    _mapController.move(camera.center, clampZoom(camera.zoom + delta));
   }
 
   @override
@@ -128,57 +129,67 @@ class _ReportMapState extends State<ReportMap> {
     final focus = widget.initialFocus;
     final bounds = focus == null ? report.focusBounds : null;
 
-    return FlutterMap(
-      mapController: _mapController,
-      options: MapOptions(
-        // Sem limites (nada a enquadrar): cai na região com dados.
-        initialCenter: focus?.position ?? MapRegions.centroSaoJoseDosCampos,
-        initialZoom:
-            focus == null ? ReportStyles.fallbackZoom : ReportStyles.focusZoom,
-        initialCameraFit: bounds == null
-            ? null
-            : CameraFit.bounds(
-                bounds: bounds,
-                padding: widget.fitPadding,
-                maxZoom: MapConfig.maxZoom,
-              ),
-        minZoom: MapConfig.minZoom,
-        maxZoom: MapConfig.maxZoom,
-        // Rotação desligada: o PointsLayer assume o norte para cima. O resto
-        // (arrastar, pinça, duplo toque e roda do mouse) fica ligado.
-        interactionOptions: InteractionOptions(
-          flags: widget.interactive
-              ? InteractiveFlag.all & ~InteractiveFlag.rotate
-              : InteractiveFlag.none,
-          // Mesma sensibilidade da roda do mouse do mapa principal do app.
-          scrollWheelVelocity: MapConfig.scrollWheelVelocity,
-        ),
-      ),
-      children: [
-        TileLayer(
-          urlTemplate: MapConfig.osmTileUrl,
-          userAgentPackageName: MapConfig.userAgentPackage,
-        ),
-        // A mancha é desenhada pelo PointsLayer, a partir dos pontos
-        // realmente atendidos (sem círculo de alcance).
-        PointsLayer(
-          covered: report.coveredPoints,
-          uncovered: report.uncoveredPoints,
-          stainRadiusM: _stainRadiusM,
-        ),
-        if (widget.gatewayMarkers != GatewayMarkerMode.hidden)
-          GatewayMarkersLayer(
-              gateways: report.gateways, mode: widget.gatewayMarkers),
-        // Atribuição do OSM é obrigatória (licença dos tiles): em texto
-        // pequeno, sem os ícones (logo do flutter_map e botão "i").
-        const SimpleAttributionWidget(
-          source: Text(
-            '© OpenStreetMap contributors',
-            style: TextStyle(fontSize: 10, color: Color(0xFF3C4350)),
+    return CenterScrollZoom(
+      controller: _mapController,
+      enabled: widget.interactive,
+      child: FlutterMap(
+        mapController: _mapController,
+        options: MapOptions(
+          // Sem limites (nada a enquadrar): cai na região com dados.
+          initialCenter: focus?.position ?? MapRegions.centroSaoJoseDosCampos,
+          initialZoom: focus == null
+              ? ReportStyles.fallbackZoom
+              : ReportStyles.focusZoom,
+          initialCameraFit: bounds == null
+              ? null
+              : CameraFit.bounds(
+                  bounds: bounds,
+                  padding: widget.fitPadding,
+                  maxZoom: MapConfig.maxZoom,
+                ),
+          minZoom: MapConfig.minZoom,
+          maxZoom: MapConfig.maxZoom,
+          // Rotação desligada: o PointsLayer assume o norte para cima. O resto
+          // (arrastar, pinça, duplo toque e roda do mouse) fica ligado; no
+          // celular a roda fica com o CenterScrollZoom.
+          interactionOptions: InteractionOptions(
+            flags: widget.interactive
+                ? InteractiveFlag.all &
+                    ~InteractiveFlag.rotate &
+                    (CenterScrollZoom.ativo
+                        ? ~InteractiveFlag.scrollWheelZoom
+                        : InteractiveFlag.all)
+                : InteractiveFlag.none,
+            // Mesma sensibilidade da roda do mouse do mapa principal do app.
+            scrollWheelVelocity: MapConfig.scrollWheelVelocity,
           ),
-          backgroundColor: Color(0xCCFFFFFF),
         ),
-      ],
+        children: [
+          TileLayer(
+            urlTemplate: MapConfig.osmTileUrl,
+            userAgentPackageName: MapConfig.userAgentPackage,
+          ),
+          // A mancha é desenhada pelo PointsLayer, a partir dos pontos
+          // realmente atendidos (sem círculo de alcance).
+          PointsLayer(
+            covered: report.coveredPoints,
+            uncovered: report.uncoveredPoints,
+            stainRadiusM: _stainRadiusM,
+          ),
+          if (widget.gatewayMarkers != GatewayMarkerMode.hidden)
+            GatewayMarkersLayer(
+                gateways: report.gateways, mode: widget.gatewayMarkers),
+          // Atribuição do OSM é obrigatória (licença dos tiles): em texto
+          // pequeno, sem os ícones (logo do flutter_map e botão "i").
+          const SimpleAttributionWidget(
+            source: Text(
+              '© OpenStreetMap contributors',
+              style: TextStyle(fontSize: 10, color: Color(0xFF3C4350)),
+            ),
+            backgroundColor: Color(0xCCFFFFFF),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -318,18 +329,18 @@ class _GatewayMarker extends StatelessWidget {
                 size: ReportStyles.markerSmallPinSize,
                 color: ReportStyles.pinColor)
             : Stack(
-            alignment: Alignment.topCenter,
-            children: [
-              const Icon(Icons.location_on,
-                  size: ReportStyles.pinIconSize,
-                  color: ReportStyles.pinColor),
-              Positioned(
-                top: ReportStyles.pinNumberTop,
-                child: Text('${gateway.order}',
-                    style: ReportStyles.pinNumberStyle),
-              ),
-            ],
-          );
+                alignment: Alignment.topCenter,
+                children: [
+                  const Icon(Icons.location_on,
+                      size: ReportStyles.pinIconSize,
+                      color: ReportStyles.pinColor),
+                  Positioned(
+                    top: ReportStyles.pinNumberTop,
+                    child: Text('${gateway.order}',
+                        style: ReportStyles.pinNumberStyle),
+                  ),
+                ],
+              );
     return Tooltip(
       message: label,
       child: Semantics(label: label, child: visual),

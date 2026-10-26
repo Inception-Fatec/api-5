@@ -148,6 +148,8 @@ class _SeletorMunicipioState extends State<SeletorMunicipio> {
                 .take(30);
           },
           onSelected: _adicionar,
+          // Com o teclado aberto quase não sobra espaço embaixo do campo.
+          optionsViewOpenDirection: OptionsViewOpenDirection.mostSpace,
           fieldViewBuilder: (context, controller, focusNode, onSubmitted) {
             _campo = controller;
             return TextField(

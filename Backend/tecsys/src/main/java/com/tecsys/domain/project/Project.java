@@ -39,6 +39,6 @@ public class Project {
     private Instant createdAt;
 
     @Builder.Default
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "boolean default true")
     private boolean active = true;
 }

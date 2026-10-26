@@ -26,7 +26,7 @@ class ProjectsStore extends ChangeNotifier {
     notifyListeners();
 
     try {
-      projects = _maisNovosPrimeiro(await _service.listar());
+      projects = _ativosMaisNovosPrimeiro(await _service.listar());
       _carregouAlgumaVez = true;
     } catch (_) {
       erro = 'Não foi possível carregar os projetos agora.';
@@ -49,7 +49,7 @@ class ProjectsStore extends ChangeNotifier {
   Future<void> atualizarSilencioso() async {
     if (loading) return;
     try {
-      final novos = _maisNovosPrimeiro(await _service.listar());
+      final novos = _ativosMaisNovosPrimeiro(await _service.listar());
       if (_mudou(projects, novos)) {
         projects = novos;
         notifyListeners();
@@ -59,8 +59,11 @@ class ProjectsStore extends ChangeNotifier {
     }
   }
 
-  static List<Project> _maisNovosPrimeiro(List<Project> lista) =>
-      [...lista]..sort((a, b) => b.id.compareTo(a.id));
+  /// A tela só mostra projetos ativos — os excluídos (soft delete)
+  /// continuam no banco, mas ficam fora da lista e das contagens.
+  static List<Project> _ativosMaisNovosPrimeiro(List<Project> lista) =>
+      lista.where((p) => p.ativo).toList()
+        ..sort((a, b) => b.id.compareTo(a.id));
 
   static bool _mudou(List<Project> a, List<Project> b) {
     if (a.length != b.length) return true;
@@ -81,7 +84,7 @@ class ProjectsStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Exclui de verdade (DELETE /projects/{id}) e já tira da lista
+  /// Exclui (DELETE /projects/{id}, soft delete no backend) e já tira da lista
   /// compartilhada se der certo. Deixa o erro estourar pra quem
   /// chamou decidir como avisar o usuário.
   Future<void> excluir(int id) async {
