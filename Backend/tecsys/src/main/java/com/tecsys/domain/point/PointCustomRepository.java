@@ -109,14 +109,10 @@ public class PointCustomRepository {
                     subQuery.append(" AND cnae IN (:cnaeCodes").append(suf).append(") ");
                     params.addValue("cnaeCodes" + suf, request.cnaeCodes());
                 }
+                // Bairro por nome exato (IN), igual ao motor de decisão.
                 if (request.bairroNames() != null && !request.bairroNames().isEmpty()) {
-                    List<String> condicoesBairro = new ArrayList<>();
-                    for (int i = 0; i < request.bairroNames().size(); i++) {
-                        String nomeParametro = "bairro" + i + suf;
-                        condicoesBairro.add("brr ILIKE :" + nomeParametro);
-                        params.addValue(nomeParametro, "%" + request.bairroNames().get(i) + "%");
-                    }
-                    subQuery.append(" AND (").append(String.join(" OR ", condicoesBairro)).append(") ");
+                    subQuery.append(" AND brr IN (:bairroNames").append(suf).append(") ");
+                    params.addValue("bairroNames" + suf, request.bairroNames());
                 }
             }
 
@@ -271,9 +267,6 @@ public class PointCustomRepository {
                 new TableMetadata("sub", "cod_id", "SUB", false, false, false, Set.of("nome", "dist")),
                 new TableMetadata("ucat_pj", "cod_id_encr", "ALTO", true, true, true,
                         Set.of("mun", "brr", "sub", "conj", "clas_sub", "cnae", "car_inst", "dem_cont", "tip_sist", "are_loc")),
-                // Redes e transformadores: só as colunas que as próprias consultas
-                // deste arquivo já usam (sub, conj, mun, uni_tr_*), então sabemos
-                // que existem. Antes era Set.of() e o detalhe vinha todo vazio.
                 new TableMetadata("ssdat", "cod_id", "ALTO", false, true, false, Set.of("sub", "conj")),
                 new TableMetadata("untrat", "cod_id", "ALTO", true, true, false, Set.of("mun", "sub", "conj")),
                 new TableMetadata("ucmt_pj", "cod_id_encr", "MEDIO", true, true, true,
@@ -285,13 +278,17 @@ public class PointCustomRepository {
                 new TableMetadata("ssdbt", "cod_id", "BAIXO", false, true, false, Set.of("sub", "conj", "uni_tr_mt"))
         );
 
+        List<TableMetadata> ucs = allTables.stream()
+                .filter(TableMetadata::hasAttributes)
+                .toList();
+
         if (targetLayers == null || targetLayers.isEmpty() || targetLayers.contains("all")) {
-            return Set.copyOf(allTables);
+            return Set.copyOf(ucs);
         }
 
         Set<String> upperLayers = targetLayers.stream().map(String::toUpperCase).collect(Collectors.toSet());
-        return allTables.stream()
-                .filter(t -> upperLayers.contains(t.layerName) || t.layerName.equals("SUB"))
+        return ucs.stream()
+                .filter(t -> upperLayers.contains(t.layerName))
                 .collect(Collectors.toSet());
     }
 
