@@ -121,7 +121,7 @@ class EtlCarga {
     return EtlCarga(
       id: primeiro(json, const ['id', 'cargaId', 'carga_id'])?.toString() ??
           DateTime.now().microsecondsSinceEpoch.toString(),
-      nomeArquivo: primeiro(json, const ['nomeArquivo', 'nome_arquivo', 'filename', 'fileName', 'name'])
+      nomeArquivo: primeiro(json, const ['nomeArquivo', 'nome_arquivo', 'originalFilename', 'filename', 'fileName', 'name'])
               ?.toString() ??
           nomeFallback ??
           'arquivo.zip',

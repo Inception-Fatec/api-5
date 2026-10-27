@@ -14,5 +14,7 @@ public record ProjectResponseDto(
 
         @JsonProperty("created_at")
         @JsonFormat(pattern = "dd/MM/yyyy HH:mm:ss", timezone = "America/Sao_Paulo")
-        Instant createdAt
+        Instant createdAt,
+
+        boolean active
 ) {}

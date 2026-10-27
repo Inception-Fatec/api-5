@@ -3,22 +3,10 @@ import 'package:flutter/foundation.dart';
 import 'package:tecsys_app/features/projects/data/models/project_model.dart';
 import 'package:tecsys_app/features/projects/data/services/project_service.dart';
 
-/// Fonte única dos projetos carregados, compartilhada entre
-/// ProjectsScreen e NewProjectScreen.
-///
-/// Resolve o problema de um projeto recém-criado não aparecer na
-/// hora na tela de Projetos: em vez de cada tela buscar/guardar sua
-/// própria lista (o que trava no primeiro fetch se o AppShell mantém
-/// as telas vivas ao trocar de aba), as duas leem e escrevem aqui.
-/// Depois de criar um projeto, a NewProjectScreen chama [adicionar]
-/// e ele já entra na lista antes mesmo de qualquer novo GET.
-///
-/// Colocar em: lib/services/projects_store.dart
 class ProjectsStore extends ChangeNotifier {
   ProjectsStore._() : _service = ProjectsService();
   static final ProjectsStore instance = ProjectsStore._();
 
-  /// Instância isolada, com serviço injetado (só para testes).
   @visibleForTesting
   ProjectsStore.forTesting(ProjectsService service) : _service = service;
 
@@ -29,10 +17,6 @@ class ProjectsStore extends ChangeNotifier {
   String? erro;
   bool _carregouAlgumaVez = false;
 
-  /// Busca a lista no backend. Se já tiver carregado antes, não
-  /// busca de novo sozinho (evita refazer o GET toda vez que a tela
-  /// remonta) — passe `force: true` pra recarregar de propósito
-  /// (botão "Tentar de novo", pull-to-refresh, etc.).
   Future<void> carregar({bool force = false}) async {
     if (loading) return;
     if (_carregouAlgumaVez && !force) return;
@@ -42,7 +26,7 @@ class ProjectsStore extends ChangeNotifier {
     notifyListeners();
 
     try {
-      projects = await _service.listar();
+      projects = _ativosMaisNovosPrimeiro(await _service.listar());
       _carregouAlgumaVez = true;
     } catch (_) {
       erro = 'Não foi possível carregar os projetos agora.';
@@ -65,7 +49,7 @@ class ProjectsStore extends ChangeNotifier {
   Future<void> atualizarSilencioso() async {
     if (loading) return;
     try {
-      final novos = await _service.listar();
+      final novos = _ativosMaisNovosPrimeiro(await _service.listar());
       if (_mudou(projects, novos)) {
         projects = novos;
         notifyListeners();
@@ -74,6 +58,12 @@ class ProjectsStore extends ChangeNotifier {
       // Mantém a lista atual; o próximo ciclo tenta de novo.
     }
   }
+
+  /// A tela só mostra projetos ativos — os excluídos (soft delete)
+  /// continuam no banco, mas ficam fora da lista e das contagens.
+  static List<Project> _ativosMaisNovosPrimeiro(List<Project> lista) =>
+      lista.where((p) => p.ativo).toList()
+        ..sort((a, b) => b.id.compareTo(a.id));
 
   static bool _mudou(List<Project> a, List<Project> b) {
     if (a.length != b.length) return true;
@@ -94,7 +84,7 @@ class ProjectsStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Exclui de verdade (DELETE /projects/{id}) e já tira da lista
+  /// Exclui (DELETE /projects/{id}, soft delete no backend) e já tira da lista
   /// compartilhada se der certo. Deixa o erro estourar pra quem
   /// chamou decidir como avisar o usuário.
   Future<void> excluir(int id) async {

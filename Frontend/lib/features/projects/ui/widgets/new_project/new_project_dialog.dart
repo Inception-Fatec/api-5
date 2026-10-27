@@ -61,64 +61,67 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
           padding: NewProjectDialogStyles.padding,
           child: ListenableBuilder(
             listenable: _controller,
-            builder: (context, _) => Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Expanded(
-                      child: Text('Novo Projeto',
-                          style: NewProjectDialogStyles.title),
+            // Rola quando o teclado encolhe o diálogo.
+            builder: (context, _) => SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text('Novo Projeto',
+                            style: NewProjectDialogStyles.title),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  const FieldLabel('Nome do Projeto'),
+                  TextField(
+                    controller: _nomeController,
+                    autofocus: true,
+                    decoration: AppDecorations.filledInput(
+                      hint: 'ex: Cobertura RF - Zona Leste SJC',
+                      hintStyle: AppTextStyles.bodyMuted,
+                      contentPadding: NewProjectDialogStyles.fieldPadding,
+                      borderRadius: AppRadius.sm,
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  const FieldLabel('Empresa / Distribuidora'),
+                  Container(
+                    width: double.infinity,
+                    padding: NewProjectDialogStyles.fieldPadding,
+                    decoration: NewProjectDialogStyles.readonlyFieldDecoration,
+                    child: Text(
+                      _controller.distribuidoraLabel,
+                      style: AppTextStyles.input,
                     ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  const FieldLabel('Cidade(s)'),
+                  NewProjectCitiesField(controller: _controller),
+                  if (_controller.erro != null) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(_controller.erro!, style: AppTextStyles.captionError),
                   ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-                const FieldLabel('Nome do Projeto'),
-                TextField(
-                  controller: _nomeController,
-                  autofocus: true,
-                  decoration: AppDecorations.filledInput(
-                    hint: 'ex: Cobertura RF - Zona Leste SJC',
-                    hintStyle: AppTextStyles.bodyMuted,
-                    contentPadding: NewProjectDialogStyles.fieldPadding,
-                    borderRadius: AppRadius.sm,
+                  const SizedBox(height: AppSpacing.lg),
+                  SizedBox(
+                    width: double.infinity,
+                    height: NewProjectDialogStyles.submitHeight,
+                    child: ElevatedButton(
+                      onPressed: _controller.carregando ? null : _confirmar,
+                      style: AppButtonStyles.primary(),
+                      child:
+                          const Text('Buscar', style: AppTextStyles.buttonText),
+                    ),
                   ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                const FieldLabel('Empresa / Distribuidora'),
-                Container(
-                  width: double.infinity,
-                  padding: NewProjectDialogStyles.fieldPadding,
-                  decoration: NewProjectDialogStyles.readonlyFieldDecoration,
-                  child: Text(
-                    _controller.distribuidoraLabel,
-                    style: AppTextStyles.input,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                const FieldLabel('Cidade(s)'),
-                NewProjectCitiesField(controller: _controller),
-                if (_controller.erro != null) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(_controller.erro!, style: AppTextStyles.captionError),
                 ],
-                const SizedBox(height: AppSpacing.lg),
-                SizedBox(
-                  width: double.infinity,
-                  height: NewProjectDialogStyles.submitHeight,
-                  child: ElevatedButton(
-                    onPressed: _controller.carregando ? null : _confirmar,
-                    style: AppButtonStyles.primary(),
-                    child:
-                        const Text('Buscar', style: AppTextStyles.buttonText),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),

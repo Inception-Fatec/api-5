@@ -18,6 +18,13 @@ class TecsysApp extends StatelessWidget {
       navigatorKey: appNavigatorKey,
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
+      // Tocar fora de um campo de texto tira o foco e fecha o teclado
+      // (celular/tablet). Envolve o Navigator, então vale para telas e diálogos.
+      builder: (context, child) => GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: child,
+      ),
       // SplashGate decide entre restaurar a sessão salva ou mostrar o login.
       home: const SplashGate(),
       routes: {

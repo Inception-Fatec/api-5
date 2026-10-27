@@ -4,15 +4,11 @@ import 'package:tecsys_app/app/navigation/account_actions.dart';
 import 'package:tecsys_app/core/theme/app_theme.dart';
 import 'package:tecsys_app/features/reports/state/report_controller.dart';
 
-/// Telas de estado do relatório: carregando, vazio, calculando, falha
-/// no cálculo, sessão expirada e erro. [ReportStatus.ready] não passa
-/// por aqui.
 class ReportStatusView extends StatelessWidget {
   const ReportStatusView({super.key, required this.controller, this.onRedo});
 
   final ReportController controller;
 
-  /// "Refazer projeto" (só aparece quando o cálculo falhou e há callback).
   final VoidCallback? onRedo;
 
   @override
@@ -33,16 +29,13 @@ class ReportStatusView extends StatelessWidget {
               'Revise os filtros do projeto e calcule novamente.',
         );
       case ReportStatus.calculating:
-        return _Message(
+        return const _Message(
           icon: Icons.hourglass_top_outlined,
           title: 'Cálculo em andamento',
-          message: 'O relatório abre sozinho assim que o cálculo terminar. '
-              'Você pode sair desta tela e voltar depois.',
-          actionLabel: controller.podeAtualizar
-              ? 'Atualizar'
-              : 'Aguarde ${controller.cooldownRestante}s',
-          onAction: controller.podeAtualizar ? controller.atualizar : null,
-          showDisabledAction: true,
+          message: 'Seu relatório está sendo gerado. Ele abre sozinho assim '
+              'que o cálculo terminar. você pode sair desta tela e voltar '
+              'depois.',
+          spinnerBelow: true,
         );
       case ReportStatus.calculationFailed:
         return _Message(
@@ -84,6 +77,7 @@ class _Message extends StatelessWidget {
     required this.message,
     this.icon,
     this.loading = false,
+    this.spinnerBelow = false,
     this.actionLabel,
     this.onAction,
     this.showDisabledAction = false,
@@ -93,10 +87,11 @@ class _Message extends StatelessWidget {
   final String message;
   final IconData? icon;
   final bool loading;
+
+  final bool spinnerBelow;
   final String? actionLabel;
   final VoidCallback? onAction;
 
-  /// Mostra o botão mesmo sem [onAction] (desabilitado, ex.: cooldown).
   final bool showDisabledAction;
 
   @override
@@ -117,6 +112,14 @@ class _Message extends StatelessWidget {
             const SizedBox(height: AppSpacing.xs),
             Text(message,
                 textAlign: TextAlign.center, style: AppTextStyles.bodySmallMuted),
+            if (spinnerBelow) ...[
+              const SizedBox(height: AppSpacing.lg),
+              const SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+            ],
             if (actionLabel != null && (onAction != null || showDisabledAction)) ...[
               const SizedBox(height: AppSpacing.md),
               ElevatedButton(

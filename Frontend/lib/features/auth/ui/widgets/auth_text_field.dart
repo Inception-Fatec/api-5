@@ -55,6 +55,9 @@ class _AuthTextFieldState extends State<AuthTextField> {
           controller: widget.controller,
           obscureText: _obscured,
           keyboardType: widget.keyboardType,
+          // Ao focar, rola o bastante para o botão de baixo (Entrar,
+          // Confirmar...) também ficar acima do teclado.
+          scrollPadding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
           style: const TextStyle(fontSize: 15, color: AppColors.textPrimary),
           decoration: InputDecoration(
             hintText: widget.hint,

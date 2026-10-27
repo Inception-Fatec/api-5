@@ -39,11 +39,19 @@ class UploadModalDialog extends StatefulWidget {
                 child: const ColoredBox(color: Color(0x00000000)),
               ),
             ),
-            Center(
-              child: FadeTransition(
-                opacity:
-                    CurvedAnimation(parent: animation, curve: Curves.easeOut),
-                child: const UploadModalDialog(),
+            // showGeneralDialog não desvia do teclado: o cartão sobe e
+            // encolhe (o conteúdo dele já rola).
+            AnimatedPadding(
+              duration: const Duration(milliseconds: 100),
+              curve: Curves.decelerate,
+              padding:
+                  EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+              child: Center(
+                child: FadeTransition(
+                  opacity:
+                      CurvedAnimation(parent: animation, curve: Curves.easeOut),
+                  child: const UploadModalDialog(),
+                ),
               ),
             ),
           ],
@@ -68,6 +76,9 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
   List<Municipio> _municipios = <Municipio>[];
 
   bool get _ocupado => _fase == _Fase.enviando;
+
+  /// Na web o arquivo vem em bytes; nas demais plataformas, pelo caminho.
+  bool get _temArquivo => _caminho != null || _arquivoBytes != null;
 
   void _fechar() {
     if (_ocupado) return;
@@ -103,10 +114,27 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
     }
   }
 
-  Future<void> _selecionar(String caminho) async {
+  Future<void> _selecionarSolto(DropItem item) async {
     if (_ocupado) return;
-    final String nome = caminho.split(RegExp(r'[/\\]')).last;
-    await _selecionarArquivo(nome: nome, caminho: caminho);
+    // Na web o "path" do arquivo solto é uma URL blob: o conteúdo só sai pelos bytes.
+    if (kIsWeb) {
+      final Uint8List bytes;
+      try {
+        bytes = await item.readAsBytes();
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _fase = _Fase.erro;
+          _erro = 'Não foi possível ler o arquivo: $e';
+        });
+        return;
+      }
+      if (!mounted) return;
+      await _selecionarArquivo(nome: item.name, bytes: bytes);
+      return;
+    }
+    final String nome = item.path.split(RegExp(r'[/\\]')).last;
+    await _selecionarArquivo(nome: nome, caminho: item.path);
   }
 
   Future<void> _selecionarArquivo({
@@ -201,8 +229,7 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
   @override
   Widget build(BuildContext context) {
     final bool temArquivo = _nome != null;
-    final bool podeEnviar =
-        _caminho != null && _municipios.isNotEmpty && !_ocupado;
+    final bool podeEnviar = _temArquivo && _municipios.isNotEmpty && !_ocupado;
 
     return CallbackShortcuts(
       bindings: {const SingleActivator(LogicalKeyboardKey.escape): _fechar},
@@ -245,7 +272,7 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
                               _DropZone(
                                 enabled: !_ocupado,
                                 onTap: _escolherArquivo,
-                                onPath: _selecionar,
+                                onDrop: _selecionarSolto,
                               ),
                               if (temArquivo) ...[
                                 const SizedBox(height: 16),
@@ -276,9 +303,10 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
                                 _CaixaErro(
                                   mensagem:
                                       _erro ?? 'Falha no envio do arquivo.',
-                                  onTentar: _caminho != null
-                                      ? _enviar
-                                      : _escolherArquivo,
+                                  onTentar:
+                                      _temArquivo && _municipios.isNotEmpty
+                                          ? _enviar
+                                          : _escolherArquivo,
                                 ),
                               ],
                             ],
@@ -489,11 +517,11 @@ class _CaixaDiretrizes extends StatelessWidget {
 
 class _DropZone extends StatefulWidget {
   const _DropZone(
-      {required this.enabled, required this.onTap, required this.onPath});
+      {required this.enabled, required this.onTap, required this.onDrop});
 
   final bool enabled;
   final VoidCallback onTap;
-  final ValueChanged<String> onPath;
+  final ValueChanged<DropItem> onDrop;
 
   @override
   State<_DropZone> createState() => _DropZoneState();
@@ -513,7 +541,7 @@ class _DropZoneState extends State<_DropZone> {
       onDragExited: (_) => setState(() => _arrastando = false),
       onDragDone: (detalhe) {
         setState(() => _arrastando = false);
-        if (detalhe.files.isNotEmpty) widget.onPath(detalhe.files.first.path);
+        if (detalhe.files.isNotEmpty) widget.onDrop(detalhe.files.first);
       },
       child: MouseRegion(
         cursor: widget.enabled
