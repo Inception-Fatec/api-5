@@ -1,11 +1,12 @@
 import logging
+import os
 import re
 import uuid
 
 import geopandas as gpd
 import pandas as pd
 from shapely.geometry import MultiLineString, MultiPolygon
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 
 
 CRS_ALVO = "EPSG:4674"
@@ -14,6 +15,19 @@ CRS_ORIGEM_BDGD = "EPSG:4674"
 logger = logging.getLogger("etl")
 
 _REGEX_IBGE = re.compile(r"^\d{7}$")
+
+VAR_DB_URL = "ETL_DB_URL"
+
+
+def criar_engine(**kwargs):
+    url = (os.getenv(VAR_DB_URL) or "").strip()
+    if not url:
+        raise RuntimeError(
+            f"Variável de ambiente {VAR_DB_URL} não definida. Copie modules/.env.example "
+            "para modules/.env e preencha, ex.: "
+            "postgresql+psycopg2://usuario:senha@localhost:5432/bdgd"
+        )
+    return create_engine(url, **kwargs)
 
 
 def validar_municipios(municipios) -> list[str]:
