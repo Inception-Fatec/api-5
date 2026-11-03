@@ -5,7 +5,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
-// Ajuste o caminho se o seu AuthService estiver em outra pasta.
+import 'package:tecsys_app/core/network/api_client.dart';
 import 'package:tecsys_app/features/auth/data/services/auth_service.dart';
 
 import '../models/etl_carga.dart';
@@ -45,10 +45,22 @@ class _ProgressMultipartRequest extends http.MultipartRequest {
 class EtlService {
   EtlService._();
 
-  static const String baseUrl = 'http://localhost:8081';
-  static const String uploadPath = '/api/v1/etl/upload-gdb';
+  static const String uploadPath = '/etl/upload-gdb';
   static const Duration timeout = Duration(minutes: 10);
-  static const String jobsPath = '/api/v1/etl/jobs';
+  static const String jobsPath = '/etl/jobs';
+
+  static const String _falhaConexao =
+      'Falha na conexão com o servidor de processamento ETL. '
+      'Verifique se o backend está em execução.';
+
+  /// Mesma regra do ApiClient: 401/403 com sessão aberta pode ser token
+  /// vencido, e o AuthService decide se desloga.
+  static void _verificarSessao(int status) {
+    if ((status == 401 || status == 403) &&
+        AuthService.instance.token != null) {
+      ApiClient.instance.onUnauthorized?.call(status);
+    }
+  }
 
   /// Quantos bytes do fim do .zip (diretório central) são varridos à procura de ".gdb".
   static const int _janelaVarredura = 2 * 1024 * 1024;
@@ -127,7 +139,7 @@ class EtlService {
     required List<String> municipios, // códigos IBGE de 7 dígitos
     required void Function(double progresso) onProgress,
   }) async {
-    final Uri uri = Uri.parse('$baseUrl$uploadPath');
+    final Uri uri = Uri.parse('${ApiConfig.baseUrl}$uploadPath');
     final request =
         _ProgressMultipartRequest('POST', uri, onProgress: onProgress);
 
@@ -159,15 +171,9 @@ class EtlService {
           await request.send().timeout(timeout);
       resposta = await http.Response.fromStream(streamed);
     } on SocketException {
-      throw const EtlUploadException(
-        'Falha na conexão com o servidor de processamento ETL (localhost:8081). '
-        'Verifique se o backend está em execução.',
-      );
+      throw const EtlUploadException(_falhaConexao);
     } on http.ClientException {
-      throw const EtlUploadException(
-        'Falha na conexão com o servidor de processamento ETL (localhost:8081). '
-        'Verifique se o backend está em execução.',
-      );
+      throw const EtlUploadException(_falhaConexao);
     } on TimeoutException {
       throw const EtlUploadException(
           'O servidor ETL demorou demasiado tempo a responder.');
@@ -176,6 +182,7 @@ class EtlService {
     final Map<String, dynamic>? json = _tentarJson(resposta);
 
     if (resposta.statusCode < 200 || resposta.statusCode >= 300) {
+      _verificarSessao(resposta.statusCode);
       final Object? msg = json?['message'] ??
           json?['mensagem'] ??
           json?['error'] ??
@@ -198,12 +205,13 @@ class EtlService {
   static Future<EtlCarga> consultarCarga(EtlCarga atual) async {
     final String? token = AuthService.instance.token;
     final http.Response resposta = await http.get(
-      Uri.parse('$baseUrl$jobsPath/${atual.id}'),
+      Uri.parse('${ApiConfig.baseUrl}$jobsPath/${atual.id}'),
       headers: <String, String>{
         if (token != null) 'Authorization': 'Bearer $token'
       },
     ).timeout(const Duration(seconds: 30));
 
+    _verificarSessao(resposta.statusCode);
     final Map<String, dynamic>? json = _tentarJson(resposta);
     if (resposta.statusCode < 200 ||
         resposta.statusCode >= 300 ||

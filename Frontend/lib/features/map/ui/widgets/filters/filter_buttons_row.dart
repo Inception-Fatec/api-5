@@ -51,7 +51,7 @@ class FilterButtonsRow extends StatelessWidget {
         label: 'Bairro',
         icon: Icons.signpost_outlined,
         ativo: controller.bairroNames.isNotEmpty,
-        panelBuilder: (context, fechar) => Padding(
+        panelBuilder: (context, fechar) => SingleChildScrollView(
           padding: FiltersStyles.panelPadding,
           child: BairroAutocompleteField(
             munCodes: controller.munCodes,

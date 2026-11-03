@@ -83,6 +83,12 @@ class _EtlGeodadosScreenState extends State<EtlGeodadosScreen> {
       if (++_falhasSeguidas >= 5) {
         _timer?.cancel();
         _timer = null;
+        if (mounted) {
+          _mostrarToast(
+            'Não foi possível acompanhar o processamento. Verifique a conexão com o servidor.',
+            icone: Icons.error_outline,
+          );
+        }
       }
     } finally {
       _consultando = false;

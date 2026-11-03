@@ -79,6 +79,13 @@ class _DropdownFilterButtonState extends State<DropdownFilterButton> {
     _overlay = OverlayEntry(
       builder: (context) {
         final (left, top, larguraMaxPainel) = _calcularPosicionamento();
+        // Só o espaço entre o painel e o teclado (ou o fim da tela).
+        final espacoAbaixo = MediaQuery.sizeOf(context).height -
+            MediaQuery.viewInsetsOf(context).bottom -
+            top -
+            FiltersStyles.overlayMargin;
+        final alturaMax = espacoAbaixo.clamp(
+            FiltersStyles.overlayMinHeight, FiltersStyles.overlayMaxHeight);
         return Stack(
           children: [
             Positioned.fill(
@@ -96,7 +103,7 @@ class _DropdownFilterButtonState extends State<DropdownFilterButton> {
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
                     maxWidth: larguraMaxPainel,
-                    maxHeight: FiltersStyles.overlayMaxHeight,
+                    maxHeight: alturaMax,
                   ),
                   child: widget.panelBuilder(context, _fechar),
                 ),

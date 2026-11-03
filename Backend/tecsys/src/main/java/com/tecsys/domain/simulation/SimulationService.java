@@ -69,7 +69,8 @@ public class SimulationService {
                 project.getDistCode(),
                 project.getStatus(),
                 project.getCreatedBy().getId(),
-                project.getCreatedAt()
+                project.getCreatedAt(),
+                project.isActive()
         );
     }
 }

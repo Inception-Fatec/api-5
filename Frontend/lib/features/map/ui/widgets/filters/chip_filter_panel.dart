@@ -20,7 +20,8 @@ class ChipFilterPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    // Rola quando o teclado deixa o painel mais baixo que o conteúdo.
+    return SingleChildScrollView(
       padding: FiltersStyles.panelPadding,
       child: ChipInputField(
         label: label,

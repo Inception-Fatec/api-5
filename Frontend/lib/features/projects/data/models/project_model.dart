@@ -8,6 +8,9 @@ class Project {
   final int createdById;
   final DateTime createdAt;
 
+  /// Falso quando o projeto foi excluído (soft delete) no backend.
+  final bool ativo;
+
   const Project({
     required this.id,
     required this.name,
@@ -15,6 +18,7 @@ class Project {
     required this.status,
     required this.createdById,
     required this.createdAt,
+    this.ativo = true,
   });
 
   factory Project.fromJson(Map<String, dynamic> json) {
@@ -26,6 +30,8 @@ class Project {
       createdById: json['created_by_id'] as int? ?? 0,
       createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
           DateTime.now(),
+      // Ausente em respostas antigas: conta como ativo.
+      ativo: json['active'] as bool? ?? true,
     );
   }
 
