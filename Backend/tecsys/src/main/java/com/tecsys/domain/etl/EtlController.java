@@ -9,6 +9,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import com.tecsys.domain.etl.dto.ExternalPointsImportResponseDto;
 
 import java.util.List;
 
@@ -18,6 +19,7 @@ import java.util.List;
 public class EtlController {
 
     private final EtlService etlService;
+    private final ExternalPointsImportService externalPointsImportService;
 
     @PostMapping(value = "/upload-gdb", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('ADM')")
@@ -28,6 +30,18 @@ public class EtlController {
             @AuthenticationPrincipal User currentUser) {
         EtlJobResponseDto response = etlService.startGdbUpload(file, municipios, incluirConsumidores, currentUser.getId());
         return ResponseEntity.accepted().body(response);
+    }
+
+    @PostMapping(value = "/upload-csv", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('ADM')")
+    public ResponseEntity<ExternalPointsImportResponseDto> uploadCsv(
+            @RequestPart("file") MultipartFile file,
+            @RequestParam("distribuidora") String distribuidora,
+            @RequestParam("municipio") String municipio,
+            @AuthenticationPrincipal User currentUser) {
+        ExternalPointsImportResponseDto response =
+                externalPointsImportService.importar(file, distribuidora, municipio, currentUser.getId());
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/jobs/{id}")
