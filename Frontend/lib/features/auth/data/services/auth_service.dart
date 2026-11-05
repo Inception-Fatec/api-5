@@ -81,8 +81,14 @@ class AuthService extends ChangeNotifier {
     _mustChangePassword = data['mustChangePassword'] as bool? ?? false;
 
     ApiClient.instance.setToken(_token);
-    await TokenStorage.instance
-        .save(token: _token!, role: _role!, email: _email!, name: _name);
+    // O flag também é salvo: depois de um F5 o app precisa saber que a
+    // senha ainda não foi trocada (senão o backend recusa tudo com 403).
+    await TokenStorage.instance.save(
+        token: _token!,
+        role: _role!,
+        email: _email!,
+        name: _name,
+        mustChangePassword: _mustChangePassword);
     notifyListeners();
   }
 
@@ -94,6 +100,7 @@ class AuthService extends ChangeNotifier {
       'newPassword': newPassword,
     });
     _mustChangePassword = false;
+    await TokenStorage.instance.saveMustChangePassword(false);
     notifyListeners();
   }
 
@@ -110,6 +117,7 @@ class AuthService extends ChangeNotifier {
     final role = await TokenStorage.instance.readRole();
     final email = await TokenStorage.instance.readEmail();
     final name = await TokenStorage.instance.readName();
+    _mustChangePassword = await TokenStorage.instance.readMustChangePassword();
     _token = token;
     _role = role;
     _email = email;
