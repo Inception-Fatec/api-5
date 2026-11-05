@@ -1,12 +1,14 @@
 import logging
-import os
 import re
+import time
 import uuid
+from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
+import requests
 from shapely.geometry import MultiLineString, MultiPolygon
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 
 CRS_ALVO = "EPSG:4674"
@@ -16,18 +18,12 @@ logger = logging.getLogger("etl")
 
 _REGEX_IBGE = re.compile(r"^\d{7}$")
 
-VAR_DB_URL = "ETL_DB_URL"
-
-
-def criar_engine(**kwargs):
-    url = (os.getenv(VAR_DB_URL) or "").strip()
-    if not url:
-        raise RuntimeError(
-            f"Variável de ambiente {VAR_DB_URL} não definida. Copie modules/.env.example "
-            "para modules/.env e preencha, ex.: "
-            "postgresql+psycopg2://usuario:senha@localhost:5432/bdgd"
-        )
-    return create_engine(url, **kwargs)
+DOWNLOAD_TENTATIVAS = 5
+DOWNLOAD_TIMEOUT = (30, 60) 
+DOWNLOAD_ESPERA_MAXIMA = 30
+DOWNLOAD_BLOCO = 64 * 1024 
+_STATUS_COM_RETRY = {408, 429}
+_REGEX_CONTENT_RANGE = re.compile(r"bytes\s+(?:(\d+)-(\d+)|\*)/(\d+|\*)")
 
 
 def validar_municipios(municipios) -> list[str]:
@@ -38,6 +34,86 @@ def validar_municipios(municipios) -> list[str]:
     if invalidos:
         raise ValueError(f"Códigos IBGE inválidos (esperado 7 dígitos): {invalidos}")
     return codigos
+
+
+class _DownloadIncompleto(Exception):
+    pass
+
+
+def _parse_content_range(valor: str | None) -> tuple[int | None, int | None]:
+    if not valor:
+        return None, None
+    m = _REGEX_CONTENT_RANGE.match(valor.strip())
+    if not m:
+        return None, None
+    inicio = int(m.group(1)) if m.group(1) is not None else None
+    total = int(m.group(3)) if m.group(3) != "*" else None
+    return inicio, total
+
+
+def baixar_com_retomada(url: str, destino: Path, tentativas: int = DOWNLOAD_TENTATIVAS) -> None:
+    destino = Path(destino)
+    temporario = destino.with_name(destino.name + ".part")
+    ultimo_erro: Exception | None = None
+
+    for tentativa in range(1, tentativas + 1):
+        baixados = temporario.stat().st_size if temporario.exists() else 0
+        headers = {"Accept-Encoding": "identity"}
+        if baixados:
+            headers["Range"] = f"bytes={baixados}-"
+            logger.info("Retomando %s a partir de %.0f MB (tentativa %s/%s)",
+                        destino.name, baixados / (1 << 20), tentativa, tentativas)
+
+        try:
+            with requests.get(url, stream=True, timeout=DOWNLOAD_TIMEOUT, headers=headers) as resposta:
+                status = resposta.status_code
+
+                if status == 416:
+                    _, total = _parse_content_range(resposta.headers.get("Content-Range"))
+                    if baixados and total == baixados:
+                        temporario.replace(destino) 
+                        return
+                    temporario.unlink(missing_ok=True)
+                    raise _DownloadIncompleto("Servidor recusou o Range; reiniciando o download do zero.")
+
+                if 400 <= status < 500 and status not in _STATUS_COM_RETRY:
+                    raise RuntimeError(f"Falha ao baixar {url}: HTTP {status}")
+                resposta.raise_for_status()
+
+                if status == 206:
+                    inicio, total = _parse_content_range(resposta.headers.get("Content-Range"))
+                    if inicio != baixados:
+                        temporario.unlink(missing_ok=True)
+                        raise _DownloadIncompleto(
+                            f"Content-Range inesperado (início {inicio}, esperado {baixados}); reiniciando.")
+                    modo = "ab"
+                else:
+                    if baixados:
+                        logger.warning("Servidor não suporta retomada; reiniciando o download do zero.")
+                    baixados = 0
+                    modo = "wb"
+                    comprimento = resposta.headers.get("Content-Length")
+                    total = int(comprimento) if comprimento and comprimento.isdigit() else None
+
+                with open(temporario, modo) as arquivo:
+                    for bloco in resposta.iter_content(DOWNLOAD_BLOCO):
+                        arquivo.write(bloco)
+                        baixados += len(bloco)
+
+            if total is not None and baixados != total:
+                raise _DownloadIncompleto(f"Download incompleto: {baixados} de {total} bytes.")
+
+            temporario.replace(destino)
+            return
+
+        except (requests.RequestException, _DownloadIncompleto) as exc:
+            ultimo_erro = exc
+            logger.warning("Falha ao baixar %s (tentativa %s/%s): %s: %s",
+                           destino.name, tentativa, tentativas, type(exc).__name__, exc)
+            if tentativa < tentativas:
+                time.sleep(min(2 ** tentativa, DOWNLOAD_ESPERA_MAXIMA))
+
+    raise RuntimeError(f"Não foi possível baixar {url} após {tentativas} tentativas: {ultimo_erro}")
 
 
 class Metricas:

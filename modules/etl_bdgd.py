@@ -8,17 +8,16 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.csv as pacsv
-import requests
 from dotenv import load_dotenv
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 
 from etl_common import (
     CRS_ALVO,
     CRS_ORIGEM_BDGD,
     Metricas,
     anular_fk_orfas,
+    baixar_com_retomada,
     carregar_idempotente,
-    criar_engine,
     prefixar,
     validar_municipios,
 )
@@ -68,13 +67,7 @@ def obter_csv_local(origem: str) -> Path:
         destino = CACHE_DIR / origem.rsplit("/", 1)[-1]
         if not destino.exists():
             logger.info(f"Baixando {origem}")
-            temporario = destino.with_name(destino.name + ".part")
-            with requests.get(origem, stream=True, timeout=60) as resposta:
-                resposta.raise_for_status()
-                with open(temporario, "wb") as arquivo:
-                    for bloco in resposta.iter_content(1024 * 1024):
-                        arquivo.write(bloco)
-            temporario.rename(destino)
+            baixar_com_retomada(origem, destino)
     else:
         destino = Path(origem)
         if not destino.exists():
@@ -191,7 +184,7 @@ def main(municipios: list[str] | None = None, distribuidoras: list[str] | None =
     municipios = validar_municipios(municipios) if municipios else None
     distribuidoras = [str(d) for d in distribuidoras] if distribuidoras else None
 
-    engine = engine or criar_engine(pool_size=MAX_WORKERS + 2)
+    engine = engine or create_engine(os.getenv("ETL_DB_URL"), pool_size=MAX_WORKERS + 2)
     metricas = Metricas()
 
     logger.info("0) Verificando cobertura no banco...")

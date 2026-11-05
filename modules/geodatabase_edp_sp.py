@@ -186,7 +186,7 @@ def extrair_da_geodatabase_original(gdb: Path, nivel: dict, codigos, metricas: M
         lista_sql = ", ".join("'" + str(c).replace("'", "''") + "'" for c in lote)
         partes.append(gpd.read_file(gdb, layer=nivel["layer_gdb"], where=f"{campo_pk} IN ({lista_sql})"))
 
-    gdf = _para_crs_alvo(gpd.GeoDataFrame(pd.concat(partes, ignore_index=True), geometry="geom", crs=partes[0].crs))
+    gdf = _para_crs_alvo(gpd.GeoDataFrame(pd.concat(partes, ignore_index=True), crs=partes[0].crs))
     gdf = normalizar_geometria(gdf, nivel["geom_tipo"], nivel["tabela"], metricas)
     gdf = _vazio_para_nulo(gdf, nivel["colunas"], nivel["tabela"], metricas)
     return _podar_colunas(gdf, nivel["colunas"])
