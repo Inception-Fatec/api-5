@@ -11,7 +11,10 @@ public record GatewayCandidate(
         String conjunto,
 
         double latitude,
-        double longitude
+        double longitude,
+
+        // false = trafo fora dos filtros do projeto, mas ao alcance da área (#TG-138)
+        boolean insideFilters
 
 ) {
 }
