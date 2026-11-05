@@ -27,7 +27,7 @@ class PointsLayerController extends ChangeNotifier {
 
   final Map<String, dynamic>? Function()? lerAreas;
 
-  final ValueChanged<int>? onTotalChanged;
+  final ValueChanged<ContagemPontos>? onTotalChanged;
   final ValueChanged<bool>? onZoomMuitoBaixo;
   final Duration debounce;
   final Duration revealDelay;
@@ -43,18 +43,18 @@ class PointsLayerController extends ChangeNotifier {
   bool _disposed = false;
 
   String? _chaveContagemAreas;
-  int? _totalAreas;
+  ContagemPontos? _totalAreas;
 
   String? _chaveVisaoGeral;
   List<MapPoint> _celulas = const [];
   String? _chaveCarregando;
   Future<List<MapPoint>>? _visaoGeralEmAndamento;
   bool _carregandoVisaoGeral = false;
-  int _totalVisaoGeral = 0;
+  ContagemPontos _totalVisaoGeral = ContagemPontos.zero;
   String? _erro;
 
   String? _chaveTotal;
-  int _totalCidades = 0;
+  ContagemPontos _totalCidades = ContagemPontos.zero;
 
   String? _chaveDetalhe;
   MapViewport? _areaDetalhe;
@@ -188,7 +188,7 @@ class PointsLayerController extends ChangeNotifier {
       if (_chaveCarregando == chave) {
         _chaveVisaoGeral = chave;
         _celulas = celulas;
-        _totalVisaoGeral = r.totalPoints;
+        _totalVisaoGeral = r.contagem;
       }
       terminou();
       return celulas;
@@ -280,14 +280,14 @@ class PointsLayerController extends ChangeNotifier {
       }
 
       if (contagem != null) {
-        final total = (await contagem).totalPoints;
+        final total = (await contagem).contagem;
         if (_disposed || meuPedido != _pedidoId) return;
         _chaveContagemAreas = chaveAreas;
         _totalAreas = total;
       }
       if (_disposed || meuPedido != _pedidoId) return;
       if (areas != null) {
-        onTotalChanged?.call(_totalAreas ?? 0);
+        onTotalChanged?.call(_totalAreas ?? ContagemPontos.zero);
       } else {
         final total = await _totalDasCidades(f);
         if (_disposed || meuPedido != _pedidoId) return;
@@ -300,13 +300,13 @@ class PointsLayerController extends ChangeNotifier {
     }
   }
 
-  Future<int> _totalDasCidades(FiltrosPontos f) async {
+  Future<ContagemPontos> _totalDasCidades(FiltrosPontos f) async {
     final chave = _chaveFiltros(f);
     if (chave == _chaveVisaoGeral) return _totalVisaoGeral;
     if (chave == _chaveTotal) return _totalCidades;
     final r = await _buscar(f, null, countOnly: true);
     _chaveTotal = chave;
-    _totalCidades = r.totalPoints;
+    _totalCidades = r.contagem;
     return _totalCidades;
   }
 
