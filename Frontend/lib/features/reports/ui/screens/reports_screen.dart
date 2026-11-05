@@ -7,7 +7,6 @@ import 'package:tecsys_app/features/projects/data/models/project_model.dart';
 import 'package:tecsys_app/features/reports/export/report_map_capture.dart';
 import 'package:tecsys_app/features/reports/export/report_pdf.dart';
 import 'package:tecsys_app/features/reports/state/report_controller.dart';
-import 'package:tecsys_app/features/reports/ui/report_texts.dart';
 import 'package:tecsys_app/features/reports/ui/widgets/report_header.dart';
 import 'package:tecsys_app/features/reports/ui/widgets/report_view.dart';
 

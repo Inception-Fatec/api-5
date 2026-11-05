@@ -6,6 +6,7 @@ import 'package:tecsys_app/core/utils/distributors.dart';
 import 'package:tecsys_app/core/utils/text_normalizer.dart';
 import 'package:tecsys_app/features/projects/data/models/project_model.dart';
 import 'package:tecsys_app/features/projects/state/project_store.dart';
+import 'package:tecsys_app/features/auth/data/services/auth_service.dart';
 import 'package:tecsys_app/features/users/state/user_store.dart';
 
 /// Estado da tela "Meus Projetos": a lista de verdade vive no
@@ -40,7 +41,8 @@ class ProjectsListController extends ChangeNotifier {
   /// atualização automática.
   void carregarInicial() {
     _store.carregar();
-    _userStore.carregar();
+    // /users é só de ADM: para o usuário comum a chamada só voltaria 403.
+    if (AuthService.instance.role == 'ADM') _userStore.carregar();
     iniciarAtualizacaoAutomatica();
   }
 
