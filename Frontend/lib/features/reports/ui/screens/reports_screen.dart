@@ -4,6 +4,8 @@ import 'package:printing/printing.dart';
 import 'package:tecsys_app/core/theme/app_theme.dart';
 import 'package:tecsys_app/core/utils/distributors.dart';
 import 'package:tecsys_app/features/projects/data/models/project_model.dart';
+import 'package:tecsys_app/features/projects/data/services/distribuidoras_service.dart';
+import 'package:tecsys_app/features/projects/data/services/ibge_service.dart';
 import 'package:tecsys_app/features/reports/export/report_map_capture.dart';
 import 'package:tecsys_app/features/reports/export/report_pdf.dart';
 import 'package:tecsys_app/features/reports/state/report_controller.dart';
@@ -41,6 +43,17 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       ..carregar()
       // Projeto ainda calculando: a tela se atualiza sozinha ao terminar.
       ..iniciarAtualizacaoAutomatica();
+    _carregarNomes();
+  }
+
+  /// Nomes de municípios (IBGE) e distribuidoras usados nos parâmetros
+  /// do relatório; sem eles, aparecem os códigos.
+  Future<void> _carregarNomes() async {
+    await IbgeService().precarregar();
+    try {
+      await DistribuidorasService().listar();
+    } catch (_) {}
+    if (mounted) setState(() {});
   }
 
   @override

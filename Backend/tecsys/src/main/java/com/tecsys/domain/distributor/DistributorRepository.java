@@ -12,39 +12,53 @@ import java.util.List;
 @Repository
 public interface DistributorRepository extends JpaRepository<Distributor, String> {
 
+    // Parte de `sub` (preenchida pelo ETL); `distributor` só dá o nome,
+    // quando existe. Sem nome, o front mostra o código.
     @Query(value = """
            SELECT
-               d.dist AS dist,
-               d.dist_name AS distName,
-               COUNT(s.dist) AS totalSub
-           FROM distributor d
-           JOIN sub s ON s.dist = d.dist
-           GROUP BY d.dist, d.dist_name
+               s.dist AS dist,
+               COALESCE(MAX(d.dist_name), '') AS distName,
+               COUNT(*) AS totalSub
+           FROM sub s
+           LEFT JOIN distributor d ON d.dist = s.dist
+           WHERE s.dist IS NOT NULL AND s.dist <> ''
+           GROUP BY s.dist
            ORDER BY totalSub DESC
            """, nativeQuery = true)
     List<DistributorResumoProjection> findDistribuidorasResumo();
 
+    // Cidades com consumidores (os pontos que o estudo cobre) da
+    // distribuidora; o centro é a média desses consumidores (o envelope
+    // fica torto quando o município tem pontos isolados longe da cidade).
     @Query(value = """
            WITH pontos AS (
-               SELECT t.mun, t.geom, s.dist
-               FROM untrmt t
-               JOIN sub s ON s.cod_id = t.sub
-               WHERE t.geom IS NOT NULL
-               
+               SELECT u.mun, u.geom, s.dist
+               FROM ucbt u
+               JOIN sub s ON s.cod_id = u.sub
+               WHERE u.geom IS NOT NULL
+
                UNION ALL
-               
-               SELECT a.mun, a.geom, s.dist
-               FROM untrat a
-               JOIN sub s ON s.cod_id = a.sub
-               WHERE a.geom IS NOT NULL
+
+               SELECT u.mun, u.geom, s.dist
+               FROM ucmt_pj u
+               JOIN sub s ON s.cod_id = u.sub
+               WHERE u.geom IS NOT NULL
+
+               UNION ALL
+
+               SELECT u.mun, u.geom, s.dist
+               FROM ucat_pj u
+               JOIN sub s ON s.cod_id = u.sub
+               WHERE u.geom IS NOT NULL
            )
-           SELECT 
+           SELECT
                mun AS ibgeCode,
-               ST_Y(ST_Transform(ST_SetSRID(ST_Centroid(ST_Extent(geom)::geometry), 4674), 4326)) AS latitude,
-               ST_X(ST_Transform(ST_SetSRID(ST_Centroid(ST_Extent(geom)::geometry), 4674), 4326)) AS longitude
+               ST_Y(ST_Transform(ST_SetSRID(ST_Centroid(ST_Collect(geom)), 4674), 4326)) AS latitude,
+               ST_X(ST_Transform(ST_SetSRID(ST_Centroid(ST_Collect(geom)), 4674), 4326)) AS longitude
            FROM pontos
-           WHERE dist = :dist
+           WHERE dist = :dist AND mun IS NOT NULL AND mun <> ''
            GROUP BY mun
+           ORDER BY mun
            """, nativeQuery = true)
     List<MunicipioProjection> findMunicipiosByDist(@Param("dist") String dist);
 }
