@@ -52,6 +52,14 @@
             <artifactId>commons-imaging</artifactId>
             <version>1.0.0-alpha5</version>
         </dependency>
+
+        <!-- Solver exato da cobertura de conjuntos (HiGHS, via OR-Tools). Traz as bibliotecas
+             nativas de Linux, macOS e Windows; a imagem Docker precisa de glibc. -->
+        <dependency>
+            <groupId>com.google.ortools</groupId>
+            <artifactId>ortools-java</artifactId>
+            <version>9.14.6206</version>
+        </dependency>
     </dependencies>
 
     <build>

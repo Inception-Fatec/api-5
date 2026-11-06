@@ -1,13 +1,66 @@
-
 import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 
 import 'package:tecsys_app/core/network/api_client.dart';
 import 'package:tecsys_app/core/network/api_exception.dart';
 
+/// Totais do mapa no formato do relatório: pontos = consumidores (o que o
+/// motor cobre), candidatos = transformadores (onde pode ir gateway).
+/// Trechos de rede e subestações são só desenho e não entram aqui.
+@immutable
+class ContagemPontos {
+  final int pontos;
+  final int candidatos;
+
+  const ContagemPontos({required this.pontos, required this.candidatos});
+
+  static const zero = ContagemPontos(pontos: 0, candidatos: 0);
+
+  /// 31084 -> "31.084".
+  static String numero(int n) => n.toString().replaceAllMapped(
+      RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => '.');
+
+  String get textoPontos =>
+      '${numero(pontos)} ${pontos == 1 ? 'ponto' : 'pontos'} a cobrir';
+
+  String get textoCandidatos =>
+      '${numero(candidatos)} ${candidatos == 1 ? 'local para gateway' : 'locais para gateway'}';
+
+  /// "31.084 pontos a cobrir · 11.081 locais para gateway"
+  String get texto => '$textoPontos · $textoCandidatos';
+
+  @override
+  bool operator ==(Object other) =>
+      other is ContagemPontos &&
+      other.pontos == pontos &&
+      other.candidatos == candidatos;
+
+  @override
+  int get hashCode => Object.hash(pontos, candidatos);
+}
+
 class PointsFilterResult {
+  /// Só consumidores: os pontos que o motor precisa cobrir.
   final int totalPoints;
+
+  /// Transformadores: onde o motor pode instalar gateway.
+  final int totalCandidates;
+
+  /// Trechos de rede e subestações (só desenho, não entram no cálculo).
+  final int totalNetwork;
+
   final List<Map<String, dynamic>> features;
-  const PointsFilterResult({required this.totalPoints, required this.features});
+
+  ContagemPontos get contagem =>
+      ContagemPontos(pontos: totalPoints, candidatos: totalCandidates);
+
+  const PointsFilterResult({
+    required this.totalPoints,
+    this.totalCandidates = 0,
+    this.totalNetwork = 0,
+    required this.features,
+  });
 }
 
 class PointsFilterException implements Exception {
@@ -86,6 +139,8 @@ class PointsFilterService {
     final listaFeatures = featureCollection?['features'] as List? ?? const [];
     return PointsFilterResult(
       totalPoints: (corpo['total_points'] as num?)?.toInt() ?? 0,
+      totalCandidates: (corpo['total_candidates'] as num?)?.toInt() ?? 0,
+      totalNetwork: (corpo['total_network'] as num?)?.toInt() ?? 0,
       features: List<Map<String, dynamic>>.from(listaFeatures),
     );
   }
