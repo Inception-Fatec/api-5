@@ -6,6 +6,7 @@ import 'package:tecsys_app/app/navigation/account_menu_sheet.dart'
     show showAccountMenu;
 import 'package:tecsys_app/features/auth/ui/screens/login_screen.dart';
 import 'package:tecsys_app/features/auth/ui/session_expiry.dart';
+import 'package:tecsys_app/features/auth/ui/widgets/first_access_modal.dart';
 
 /// Primeira tela do app — usar como `home:` do MaterialApp no lugar de
 /// `LoginScreen()` direto.
@@ -38,6 +39,22 @@ class _SplashGateState extends State<SplashGate> {
     await AuthService.instance.restoreSession();
     if (!mounted) return;
     setState(() => _checked = true);
+
+    // RN02: F5 antes de trocar a senha do primeiro acesso. Igual ao
+    // login: o modal vem antes do app (senão as telas carregam e o
+    // backend recusa tudo com 403 até a troca).
+    final auth = AuthService.instance;
+    if (auth.isAuthenticated && auth.mustChangePassword) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => const FirstAccessModal(),
+        );
+        if (mounted) setState(() {});
+      });
+    }
   }
 
   @override
@@ -48,6 +65,11 @@ class _SplashGateState extends State<SplashGate> {
 
     if (!AuthService.instance.isAuthenticated) {
       return const LoginScreen();
+    }
+
+    // Senha do primeiro acesso ainda não trocada: só o modal (ver _restore).
+    if (AuthService.instance.mustChangePassword) {
+      return const Scaffold();
     }
 
     // Sessão restaurada — mesma lista de tabs que o login normal monta
