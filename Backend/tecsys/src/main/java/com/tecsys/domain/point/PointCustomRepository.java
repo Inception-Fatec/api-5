@@ -247,17 +247,19 @@ public class PointCustomRepository {
                         (SELECT COUNT(*) FROM filtered_points WHERE cat = 'candidato') AS total_candidates,
                         (SELECT COUNT(*) FROM filtered_points WHERE cat = 'rede') AS total_network,
                         jsonb_build_object(
-                            'type', 'FeatureCollection',
-                            'features', COALESCE(jsonb_agg(
-                                jsonb_build_object(
-                                    'type', 'Feature',
-                                    'geometry', ST_AsGeoJSON(ST_Transform(f.geom, 4326))::jsonb,
-                                    'properties', %s
-                                )
-                            ), '[]'::jsonb)
-                        ) AS geojson_features
-                    FROM (SELECT * FROM filtered_points%s) f;
-                """.formatted(unionSql, propriedadesSql, limitSql);
+                            'type', 'Feature',
+                            'geometry', ST_AsGeoJSON(ST_Transform(f.geom, 4326))::jsonb,
+                            'properties', %s
+                        )
+                    ), '[]'::jsonb)
+                ) AS geojson_features
+            FROM (
+                -- No limite de elementos, consumidores primeiro, depois
+                -- candidatos e por último a rede (que é só desenho).
+                SELECT * FROM filtered_points
+                ORDER BY CASE cat WHEN 'ponto' THEN 0 WHEN 'candidato' THEN 1 ELSE 2 END%s
+            ) f;
+        """.formatted(unionSql, propriedadesSql, limitSql);
 
         return jdbcTemplate.queryForObject(finalSql, params, (rs, rowNum) -> {
             try {

@@ -1,5 +1,10 @@
 import 'package:latlong2/latlong.dart';
 
+/// Papel do elemento no cálculo (definição única do sistema):
+/// ponto a cobrir = consumidor; candidato = transformador (onde pode ir
+/// gateway); rede = trechos e subestação, só desenho.
+enum CategoriaPonto { ponto, candidato, rede }
+
 /// Um ponto devolvido pelo backend (feature GeoJSON) já com a posição
 /// que o mapa usa para desenhá-lo. Também representa uma célula da visão
 /// geral ([isCluster]): um ponto que resume [clusterCount] pontos.
@@ -26,6 +31,15 @@ class MapPoint {
 
   /// Camada do ponto (ALTO, MEDIO, BAIXO, SUB).
   String? get layer => properties['layer']?.toString();
+
+  /// Categoria vinda do backend (`categoria`). Sem ela (backend antigo),
+  /// subestação conta como rede e o resto como ponto.
+  CategoriaPonto get categoria => switch (properties['categoria']) {
+        'ponto' => CategoriaPonto.ponto,
+        'candidato' => CategoriaPonto.candidato,
+        'rede' => CategoriaPonto.rede,
+        _ => layer == 'SUB' ? CategoriaPonto.rede : CategoriaPonto.ponto,
+      };
 
   /// True quando é uma célula da visão geral (zoom afastado), não um ponto real.
   bool get isCluster => properties['cluster'] == true;
