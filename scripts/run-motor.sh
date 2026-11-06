@@ -6,6 +6,16 @@
 #   ./scripts/run-motor.sh --db supabase   # contra o Supabase (lê MOTOR/.env.supabase)
 #   ./scripts/run-motor.sh --stop          # para e remove o container
 #
+# Relevo: os blocos baixados da OpenTopography ficam no volume Docker
+# tecsys-dem-cache, que sobrevive ao container (a API grátis permite só
+# 50 chamadas por dia). Para semear o cache com blocos já baixados
+# (mesmo formato do motor de referência em Python: indice.json + dem_*.tif):
+#   docker run --rm -v tecsys-dem-cache:/c -v /caminho/do/cache:/src alpine cp -a /src/. /c/
+#
+# Parâmetros do motor: qualquer linha MOTOR_*=valor do arquivo de ambiente
+# (ex.: MOTOR_PROFILE=tecsys, MOTOR_EXTRA_LOSS_DB=10) é repassada ao
+# container. Ver MOTOR/README.md.
+#
 # Configurações:
 #   Lidas EXCLUSIVAMENTE de arquivos dentro de MOTOR/:
 #   - Modo local:    MOTOR/.env.properties
@@ -81,8 +91,19 @@ fi
 
 if [[ -z "$OPENTOPO_KEY" ]]; then
   echo "AVISO: OPENTOPOGRAPHY_API_KEY não definida no arquivo do ambiente selecionado em MOTOR/."
-  echo "       O motor sobe, mas o download de relevo vai falhar nos cálculos."
+  echo "       O motor sobe, mas o cálculo falha se o relevo da área não estiver no cache."
 fi
+
+# Repassa os parâmetros do motor (MOTOR_*) do arquivo de ambiente selecionado
+ENV_FILE="$MOTOR_ENV_LOCAL"
+[[ "$DB_MODE" == "supabase" ]] && ENV_FILE="$MOTOR_ENV_SUPABASE"
+MOTOR_ARGS=()
+if [[ -f "$ENV_FILE" ]]; then
+  while IFS= read -r line; do
+    MOTOR_ARGS+=(-e "$line")
+  done < <(grep -E '^MOTOR_[A-Z0-9_]+=' "$ENV_FILE" | grep -vE '^MOTOR_(PORT|BIND_ADDRESS)=' | tr -d '\r"')
+fi
+DEM_VOLUME=(-v tecsys-dem-cache:/var/cache/tecsys-dem)
 
 echo "Build da imagem $IMAGE (pode demorar na 1ª vez)..."
 docker build -q -t "$IMAGE" "$ROOT/MOTOR" >/dev/null
@@ -93,6 +114,7 @@ if [[ "$DB_MODE" == "supabase" ]]; then
   docker run -d --name "$CONTAINER" --network host \
     -e DB_URL="$DB_URL" -e DB_USER="$DB_USER" -e DB_PASSWORD="$DB_PASSWORD" \
     -e MOTOR_PORT="$PORT" -e OPENTOPOGRAPHY_API_KEY="$OPENTOPO_KEY" \
+    "${DEM_VOLUME[@]}" ${MOTOR_ARGS[@]+"${MOTOR_ARGS[@]}"} \
     "$IMAGE" >/dev/null
 else
   docker network create tecsys-net >/dev/null 2>&1 || true
@@ -100,6 +122,7 @@ else
     --network tecsys-net \
     -e DB_URL="$DB_URL" -e DB_USER="$DB_USER" -e DB_PASSWORD="$DB_PASSWORD" \
     -e MOTOR_BIND_ADDRESS=0.0.0.0 -e OPENTOPOGRAPHY_API_KEY="$OPENTOPO_KEY" \
+    "${DEM_VOLUME[@]}" ${MOTOR_ARGS[@]+"${MOTOR_ARGS[@]}"} \
     -p "127.0.0.1:$PORT:8082" "$IMAGE" >/dev/null
 fi
 

@@ -18,13 +18,38 @@ server:
   address: ${MOTOR_BIND_ADDRESS:127.0.0.1}
 
 app:
-  elevation:
-    obstruction-tolerance-meters: ${OBSTRUCTION_TOLERANCE_METERS:1.5}
-    los-samples: ${LOS_SAMPLES:5}
+  # Motor de decisão. MOTOR_PROFILE escolhe a base (tecsys | compat-preciso | compat) e qualquer
+  # variável abaixo, se preenchida, sobrescreve o valor do perfil. Vazia = valor do perfil.
+  motor:
+    profile: ${MOTOR_PROFILE:tecsys}
+    threads: ${MOTOR_THREADS:0}                      # 0 = nº de núcleos − 1
+    fixed-range-m: ${MOTOR_FIXED_RANGE_M:}           # alcance fixo (compat: 4000); 0 = usa o orçamento de enlace
+    frequency-mhz: ${MOTOR_FREQUENCY_MHZ:}           # tecsys: 915
+    tx-power-dbm: ${MOTOR_TX_POWER_DBM:}             # tecsys: 21
+    sensitivity-dbm: ${MOTOR_SENSITIVITY_DBM:}       # tecsys: -120
+    antenna-gains-db: ${MOTOR_ANTENNA_GAINS_DB:}     # tecsys: 0
+    extra-loss-db: ${MOTOR_EXTRA_LOSS_DB:}           # vegetação/obstáculos; tecsys: 0
+    max-range-m: ${MOTOR_MAX_RANGE_M:}               # teto opcional de alcance
+    bdgd-heights: ${MOTOR_BDGD_HEIGHTS:}             # true = alturas por tipo de estrutura da BDGD
+    gateway-height-m: ${MOTOR_GATEWAY_HEIGHT_M:}     # tecsys: 6
+    sensor-height-m: ${MOTOR_SENSOR_HEIGHT_M:}       # tecsys: 5
+    line-of-sight: ${MOTOR_LINE_OF_SIGHT:}           # RAYS | PROFILE | TEAM
+    los-step-m: ${MOTOR_LOS_STEP_M:}                 # tecsys: 30 (resolução do COP30)
+    team-samples: ${MOTOR_TEAM_SAMPLES:}
+    obstruction-tolerance-m: ${MOTOR_OBSTRUCTION_TOLERANCE_M:}
+    earth-curvature: ${MOTOR_EARTH_CURVATURE:}
+    refraction-k: ${MOTOR_REFRACTION_K:}             # tecsys: 4/3
+    fresnel-fraction: ${MOTOR_FRESNEL_FRACTION:}     # 0 = linha direta; 0.6 = projeto conservador
+    neighbor-candidates: ${MOTOR_NEIGHBOR_CANDIDATES:}
+    bairro-like-map: ${MOTOR_BAIRRO_LIKE_MAP:}
+    local-search: ${MOTOR_LOCAL_SEARCH:}
+    exact-seconds: ${MOTOR_EXACT_SECONDS:}           # tempo do solver exato; 0 = desliga (tecsys: 180)
+    use-terrain: ${MOTOR_USE_TERRAIN:}               # false = terreno plano (só para teste)
+
+  terrain:
+    cache-dir: ${DEM_CACHE_DIR:cache/dem}
+    download-attempts: ${DEM_DOWNLOAD_ATTEMPTS:4}
     opentopography:
       globaldem-url: ${OPENTOPOGRAPHY_GLOBALDEM_URL:https://portal.opentopography.org/API/globaldem}
-      point-url: ${OPENTOPOGRAPHY_URL:https://portal.opentopography.org/API/v1/elevation}
       api-key: ${OPENTOPOGRAPHY_API_KEY:}
       dataset: ${OPENTOPOGRAPHY_DATASET:COP30}
-    open-elevation:
-      url: ${OPEN_ELEVATION_URL:https://api.open-elevation.com/api/v1/lookup}

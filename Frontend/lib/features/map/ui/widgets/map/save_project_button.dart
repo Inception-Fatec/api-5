@@ -54,7 +54,7 @@ class SaveProjectButton extends StatelessWidget {
                   const SizedBox(width: AppSpacing.sm),
                   Text(
                     salvo
-                        ? 'Salvo — ${totalFinal ?? 0} ponto(s)'
+                        ? 'Salvo — ${totalFinal ?? 0} ponto(s) a cobrir'
                         : 'Salvar Projeto',
                     style: AppTextStyles.buttonTextLarge,
                   ),
