@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:tecsys_app/core/theme/app_theme.dart';
 import 'package:tecsys_app/features/map/data/constants/map_config.dart';
 import 'package:tecsys_app/features/map/data/constants/map_regions.dart';
 import 'package:tecsys_app/features/map/state/points_map_controller.dart';
@@ -46,7 +47,11 @@ class _PointsMapScreenState extends State<PointsMapScreen> {
       municipios: widget.municipios,
       onFocusPoint: (ponto) =>
           _mapKey.currentState?.moverPara(ponto, MapRegions.zoomFiltro),
-    )..carregarCidadesDisponiveis();
+    )
+      ..carregarCidadesDisponiveis()
+      // Centro real das cidades (endpoint da #126): usado quando a cidade
+      // não tem bolhas para enquadrar e ao marcar uma cidade nova.
+      ..carregarCentros();
   }
 
   @override
@@ -73,8 +78,10 @@ class _PointsMapScreenState extends State<PointsMapScreen> {
     }
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(
-        content: Text('Não foi possível salvar agora. Tente de novo.'),
+      ..showSnackBar(SnackBar(
+        content: Text(_controller.semPontos
+            ? _AvisoSemPontos.mensagem
+            : 'Não foi possível salvar agora. Tente de novo.'),
       ));
   }
 
@@ -88,7 +95,7 @@ class _PointsMapScreenState extends State<PointsMapScreen> {
             PointsMapView(
               key: _mapKey,
               filtros: _controller.filtros,
-              municipios: _controller.munCodes,   
+              municipios: _controller.munCodes,
               areas: _controller.areas,
               initialCenter: _controller.centroInicial,
               initialZoom: _controller.zoomInicial,
@@ -112,7 +119,15 @@ class _PointsMapScreenState extends State<PointsMapScreen> {
                 ],
               ),
             ),
-            if (_controller.zoomBaixoDemais)
+            // RN02 (US #11): sem pontos a cobrir, avisa e não deixa salvar.
+            if (_controller.semPontos)
+              const Positioned(
+                bottom: MapStyles.zoomHintBottom,
+                left: MapStyles.zoomHintSideMargin,
+                right: MapStyles.zoomHintSideMargin,
+                child: _AvisoSemPontos(),
+              )
+            else if (_controller.zoomBaixoDemais)
               const Positioned(
                 bottom: MapStyles.zoomHintBottom,
                 left: MapStyles.zoomHintSideMargin,
@@ -134,6 +149,41 @@ class _PointsMapScreenState extends State<PointsMapScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Aviso de que não há o que calcular com a seleção atual.
+class _AvisoSemPontos extends StatelessWidget {
+  const _AvisoSemPontos();
+
+  static const mensagem =
+      'Nenhum ponto a cobrir com essa seleção. Ajuste as cidades, a área '
+      'ou os filtros para poder salvar o projeto.';
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Material(
+        color: AppColors.surface,
+        elevation: 4,
+        borderRadius: AppRadius.sm,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.info_outline,
+                  size: 18, color: AppColors.textSecondary),
+              const SizedBox(width: AppSpacing.sm),
+              Flexible(
+                child: Text(mensagem, style: AppTextStyles.caption),
+              ),
+            ],
+          ),
         ),
       ),
     );

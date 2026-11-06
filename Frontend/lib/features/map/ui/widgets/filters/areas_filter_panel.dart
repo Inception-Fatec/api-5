@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:tecsys_app/core/theme/app_theme.dart';
 import 'package:tecsys_app/features/map/data/models/selected_area.dart';
+import 'package:tecsys_app/features/map/data/services/points_filter_service.dart';
 import 'package:tecsys_app/features/map/ui/styles/filters_styles.dart';
 
 
@@ -11,8 +12,8 @@ class AreasFilterPanel extends StatelessWidget {
   /// Índice da área selecionada (cartão destacado), ou null.
   final int? selecionada;
 
-  /// Pontos dentro da área com os filtros atuais; null = ainda contando.
-  final int? Function(SelectedArea area) totalDe;
+  /// Pontos a cobrir e candidatos dentro da área; null = ainda contando.
+  final ContagemPontos? Function(SelectedArea area) totalDe;
 
   final ValueChanged<int> onFocar;
   final ValueChanged<int> onRemover;
@@ -28,9 +29,9 @@ class AreasFilterPanel extends StatelessWidget {
     required this.onLimpar,
   });
 
-  static String _pontos(int? total) {
+  static String _pontos(ContagemPontos? total) {
     if (total == null) return 'contando…';
-    return total == 1 ? '1 ponto' : '$total pontos';
+    return total.texto;
   }
 
   static String _km(double v) =>
