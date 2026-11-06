@@ -247,19 +247,22 @@ public class PointCustomRepository {
                         (SELECT COUNT(*) FROM filtered_points WHERE cat = 'candidato') AS total_candidates,
                         (SELECT COUNT(*) FROM filtered_points WHERE cat = 'rede') AS total_network,
                         jsonb_build_object(
-                            'type', 'Feature',
-                            'geometry', ST_AsGeoJSON(ST_Transform(f.geom, 4326))::jsonb,
-                            'properties', %s
-                        )
-                    ), '[]'::jsonb)
-                ) AS geojson_features
-            FROM (
-                -- No limite de elementos, consumidores primeiro, depois
-                -- candidatos e por último a rede (que é só desenho).
-                SELECT * FROM filtered_points
-                ORDER BY CASE cat WHEN 'ponto' THEN 0 WHEN 'candidato' THEN 1 ELSE 2 END%s
-            ) f;
-        """.formatted(unionSql, propriedadesSql, limitSql);
+                            'type', 'FeatureCollection',
+                            'features', COALESCE(jsonb_agg(
+                                jsonb_build_object(
+                                    'type', 'Feature',
+                                    'geometry', ST_AsGeoJSON(ST_Transform(f.geom, 4326))::jsonb,
+                                    'properties', %s
+                                )
+                            ), '[]'::jsonb)
+                        ) AS geojson_features
+                    FROM (
+                        -- No limite de elementos, consumidores primeiro, depois
+                        -- candidatos e por último a rede (que é só desenho).
+                        SELECT * FROM filtered_points
+                        ORDER BY CASE cat WHEN 'ponto' THEN 0 WHEN 'candidato' THEN 1 ELSE 2 END%s
+                    ) f;
+                """.formatted(unionSql, propriedadesSql, limitSql);
 
         return jdbcTemplate.queryForObject(finalSql, params, (rs, rowNum) -> {
             try {
@@ -327,16 +330,10 @@ public class PointCustomRepository {
                                 "uni_tr_mt")),
                 new TableMetadata("ssdbt", "cod_id", "BAIXO", false, true, false, Set.of("sub", "conj", "uni_tr_mt")));
 
-        // Todas as camadas são desenhadas; a contagem é separada por categoria
-        // (ponto = consumidor, candidato = transformador, rede = trechos e
-        // subestação, que são só desenho). Ver TableMetadata.categoria().
         if (targetLayers == null || targetLayers.isEmpty() || targetLayers.contains("all")) {
             return Set.copyOf(allTables);
         }
 
-        // O filtro de tensão vale para consumidores e rede; subestação e
-        // candidatos ficam sempre (o motor usa os transformadores como
-        // candidatos independentemente do nível escolhido).
         Set<String> upperLayers = targetLayers.stream().map(String::toUpperCase).collect(Collectors.toSet());
         return allTables.stream()
                 .filter(t -> upperLayers.contains(t.layerName)
@@ -349,15 +346,11 @@ public class PointCustomRepository {
             String tableName, String idColumn, String layerName,
             boolean hasMun, boolean hasConj, boolean hasAttributes,
             Set<String> colunasExtras) {
-        /** Transformadores: onde o motor pode instalar gateway. */
+
         boolean isCandidato() {
             return tableName.startsWith("untr");
         }
 
-        /**
-         * ponto = consumidor (o motor cobre), candidato = transformador, rede = só
-         * desenho.
-         */
         String categoria() {
             if (hasAttributes)
                 return "ponto";
