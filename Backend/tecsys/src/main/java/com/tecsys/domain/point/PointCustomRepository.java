@@ -37,7 +37,24 @@ public class PointCustomRepository {
                 || (request.cnaeCodes() != null && !request.cnaeCodes().isEmpty())
                 || (request.bairroNames() != null && !request.bairroNames().isEmpty());
         if (temFiltroDeAtributo) {
-            targetTables = targetTables.stream().filter(t -> t.hasAttributes).collect(Collectors.toSet());
+            // Classe, CNAE e bairro só existem nos consumidores: a rede some do
+            // desenho, mas os candidatos continuam (o motor também os usa).
+            targetTables = targetTables.stream()
+                    .filter(t -> t.hasAttributes || t.isCandidato())
+                    .collect(Collectors.toSet());
+        }
+
+        // Rede e subestação são só desenho: só entram quando o mapa mostra os
+        // elementos um a um (zoom de perto). Nas bolhas e na contagem elas
+        // ficam de fora — as bolhas contam só pontos a cobrir, igual ao topo
+        // e ao relatório, e a consulta fica mais leve.
+        boolean countOnly = Boolean.TRUE.equals(request.countOnly());
+        Double cell = request.clusterCell();
+        boolean agrupado = !countOnly && cell != null && cell > 0;
+        if (countOnly || agrupado) {
+            targetTables = targetTables.stream()
+                    .filter(t -> !t.categoria().equals("rede"))
+                    .collect(Collectors.toSet());
         }
 
         for (TableMetadata meta : targetTables) {
@@ -45,6 +62,7 @@ public class PointCustomRepository {
             String suf = "_" + meta.tableName;
 
             subQuery.append("SELECT '").append(meta.layerName).append("' AS layer, ")
+                    .append("'").append(meta.categoria()).append("' AS cat, ")
                     .append(meta.idColumn).append(" AS id, ");
             for (String coluna : COLUNAS_EXTRAS) {
                 if (meta.colunasExtras.contains(coluna)) {
@@ -133,24 +151,30 @@ public class PointCustomRepository {
         }
 
         if (unionQueries.isEmpty()) {
-            return new PointFilterResponseDto(0L, emptyFeatureCollection());
+            return new PointFilterResponseDto(0L, 0L, 0L, emptyFeatureCollection());
         }
 
-        boolean countOnly = Boolean.TRUE.equals(request.countOnly());
         String unionSql = String.join(" UNION ALL ", unionQueries);
 
-        Double cell = request.clusterCell();
-        if (!countOnly && cell != null && cell > 0) {
+        if (agrupado) {
             String clusterSql = """
                 WITH filtered_points AS (
                     %s
+                ), totais AS (
+                    SELECT count(*) FILTER (WHERE f.cat = 'ponto') AS np,
+                           count(*) FILTER (WHERE f.cat = 'candidato') AS nc
+                    FROM filtered_points f
                 ), celulas AS (
+                    -- Cada bolha conta só pontos a cobrir (consumidores).
                     SELECT count(*) AS n,
                            ST_Transform(ST_Centroid(ST_Collect(ST_PointOnSurface(f.geom))), 4326) AS c
                     FROM filtered_points f
+                    WHERE f.cat = 'ponto'
                     GROUP BY ST_SnapToGrid(ST_PointOnSurface(f.geom), :clusterCell)
                 )
-                SELECT COALESCE(SUM(n), 0) AS total_points,
+                SELECT (SELECT np FROM totais) AS total_points,
+                       (SELECT nc FROM totais) AS total_candidates,
+                       0 AS total_network,
                        jsonb_build_object(
                            'type', 'FeatureCollection',
                            'features', COALESCE(jsonb_agg(
@@ -167,9 +191,12 @@ public class PointCustomRepository {
 
             return jdbcTemplate.queryForObject(clusterSql, params, (rs, rowNum) -> {
                 try {
-                    Long total = rs.getLong("total_points");
                     String geojsonStr = rs.getString("geojson_features");
-                    return new PointFilterResponseDto(total, objectMapper.readTree(geojsonStr));
+                    return new PointFilterResponseDto(
+                            rs.getLong("total_points"),
+                            rs.getLong("total_candidates"),
+                            rs.getLong("total_network"),
+                            objectMapper.readTree(geojsonStr));
                 } catch (Exception e) {
                     throw new RuntimeException("Falha ao serializar o agrupamento do PostGIS", e);
                 }
@@ -178,16 +205,23 @@ public class PointCustomRepository {
 
         if (countOnly) {
             String countSql = """
-                SELECT COUNT(*) AS total_points FROM (
+                SELECT COUNT(*) FILTER (WHERE f.cat = 'ponto') AS total_points,
+                       COUNT(*) FILTER (WHERE f.cat = 'candidato') AS total_candidates,
+                       COUNT(*) FILTER (WHERE f.cat = 'rede') AS total_network
+                FROM (
                     %s
                 ) f;
             """.formatted(unionSql);
 
-            Long total = jdbcTemplate.queryForObject(countSql, params, Long.class);
-            return new PointFilterResponseDto(total == null ? 0L : total, emptyFeatureCollection());
+            return jdbcTemplate.queryForObject(countSql, params, (rs, rowNum) ->
+                    new PointFilterResponseDto(
+                            rs.getLong("total_points"),
+                            rs.getLong("total_candidates"),
+                            rs.getLong("total_network"),
+                            emptyFeatureCollection()));
         }
 
-        StringBuilder propriedadesSql = new StringBuilder("jsonb_build_object('id', f.id, 'layer', f.layer");
+        StringBuilder propriedadesSql = new StringBuilder("jsonb_build_object('id', f.id, 'layer', f.layer, 'categoria', f.cat");
         for (String coluna : COLUNAS_EXTRAS) {
             propriedadesSql.append(", '").append(coluna).append("', f.extra_").append(coluna);
         }
@@ -204,7 +238,9 @@ public class PointCustomRepository {
                 %s
             )
             SELECT 
-                (SELECT COUNT(*) FROM filtered_points) AS total_points,
+                (SELECT COUNT(*) FROM filtered_points WHERE cat = 'ponto') AS total_points,
+                (SELECT COUNT(*) FROM filtered_points WHERE cat = 'candidato') AS total_candidates,
+                (SELECT COUNT(*) FROM filtered_points WHERE cat = 'rede') AS total_network,
                 jsonb_build_object(
                     'type', 'FeatureCollection',
                     'features', COALESCE(jsonb_agg(
@@ -220,9 +256,12 @@ public class PointCustomRepository {
 
         return jdbcTemplate.queryForObject(finalSql, params, (rs, rowNum) -> {
             try {
-                Long total = rs.getLong("total_points");
                 String geojsonStr = rs.getString("geojson_features");
-                return new PointFilterResponseDto(total, objectMapper.readTree(geojsonStr));
+                return new PointFilterResponseDto(
+                        rs.getLong("total_points"),
+                        rs.getLong("total_candidates"),
+                        rs.getLong("total_network"),
+                        objectMapper.readTree(geojsonStr));
             } catch (Exception e) {
                 throw new RuntimeException("Falha ao serializar o retorno GeoJSON do PostGIS", e);
             }
@@ -278,17 +317,21 @@ public class PointCustomRepository {
                 new TableMetadata("ssdbt", "cod_id", "BAIXO", false, true, false, Set.of("sub", "conj", "uni_tr_mt"))
         );
 
-        List<TableMetadata> ucs = allTables.stream()
-                .filter(TableMetadata::hasAttributes)
-                .toList();
-
+        // Todas as camadas são desenhadas; a contagem é separada por categoria
+        // (ponto = consumidor, candidato = transformador, rede = trechos e
+        // subestação, que são só desenho). Ver TableMetadata.categoria().
         if (targetLayers == null || targetLayers.isEmpty() || targetLayers.contains("all")) {
-            return Set.copyOf(ucs);
+            return Set.copyOf(allTables);
         }
 
+        // O filtro de tensão vale para consumidores e rede; subestação e
+        // candidatos ficam sempre (o motor usa os transformadores como
+        // candidatos independentemente do nível escolhido).
         Set<String> upperLayers = targetLayers.stream().map(String::toUpperCase).collect(Collectors.toSet());
-        return ucs.stream()
-                .filter(t -> upperLayers.contains(t.layerName))
+        return allTables.stream()
+                .filter(t -> upperLayers.contains(t.layerName)
+                        || t.layerName.equals("SUB")
+                        || t.isCandidato())
                 .collect(Collectors.toSet());
     }
 
@@ -296,5 +339,17 @@ public class PointCustomRepository {
             String tableName, String idColumn, String layerName,
             boolean hasMun, boolean hasConj, boolean hasAttributes,
             Set<String> colunasExtras
-    ) {}
+    ) {
+        /** Transformadores: onde o motor pode instalar gateway. */
+        boolean isCandidato() {
+            return tableName.startsWith("untr");
+        }
+
+        /** ponto = consumidor (o motor cobre), candidato = transformador, rede = só desenho. */
+        String categoria() {
+            if (hasAttributes) return "ponto";
+            if (isCandidato()) return "candidato";
+            return "rede";
+        }
+    }
 }
