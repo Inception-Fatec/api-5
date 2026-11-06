@@ -20,6 +20,8 @@ public class PointCustomRepository {
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
 
+    private static final int MAX_POINTS_LIMIT = 20000;
+
     private static final List<String> COLUNAS_EXTRAS = List.of(
             "mun", "brr", "sub", "conj", "clas_sub", "cnae",
             "car_inst", "dem_cont", "tip_sist", "are_loc", "uni_tr_mt",
@@ -109,7 +111,6 @@ public class PointCustomRepository {
                     subQuery.append(" AND cnae IN (:cnaeCodes").append(suf).append(") ");
                     params.addValue("cnaeCodes" + suf, request.cnaeCodes());
                 }
-                // Bairro por nome exato (IN), igual ao motor de decisão.
                 if (request.bairroNames() != null && !request.bairroNames().isEmpty()) {
                     subQuery.append(" AND brr IN (:bairroNames").append(suf).append(") ");
                     params.addValue("bairroNames" + suf, request.bairroNames());
@@ -193,11 +194,12 @@ public class PointCustomRepository {
         }
         propriedadesSql.append(")");
 
-        String limitSql = "";
-        if (request.limit() != null && request.limit() > 0) {
-            limitSql = " LIMIT :limit";
-            params.addValue("limit", request.limit());
-        }
+        int limitToApply = (request.limit() != null && request.limit() > 0)
+                ? Math.min(request.limit(), MAX_POINTS_LIMIT)
+                : MAX_POINTS_LIMIT;
+
+        String limitSql = " LIMIT :limit";
+        params.addValue("limit", limitToApply);
 
         String finalSql = """
             WITH filtered_points AS (
