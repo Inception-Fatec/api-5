@@ -65,6 +65,9 @@ CAMADAS_FOLHA = [
     },
 ]
 
+# Camadas da BDGD sem o campo SUB: o vínculo com a distribuidora é gravado direto na tabela.
+TABELAS_COM_DIST = {"ssdat"}
+
 
 class MunicipioNaoEncontrado(ValueError):
     pass
@@ -88,7 +91,7 @@ def _baixar_malha_municipio(codigo: str, tentativas: int = 3) -> dict:
         except (requests.RequestException, ValueError) as exc:
             ultimo_erro = exc
             logger.warning("Falha ao consultar a malha do município %s (tentativa %s/%s): %s",
-                          codigo, tentativa, tentativas, exc)
+                           codigo, tentativa, tentativas, exc)
             time.sleep(2 * tentativa)
     raise RuntimeError(f"Não foi possível consultar a API de malhas do IBGE para {codigo}: {ultimo_erro}")
 
@@ -130,23 +133,6 @@ def _podar_colunas(gdf: gpd.GeoDataFrame, colunas: list[str]) -> gpd.GeoDataFram
     return gdf.rename_geometry("geom")
 
 
-def _vazio_para_nulo(gdf: gpd.GeoDataFrame, colunas: list[str], tabela: str,
-                     metricas: Metricas) -> gpd.GeoDataFrame:
-    gdf = gdf.copy()
-    for coluna in colunas:
-        if coluna not in gdf.columns:
-            continue
-        serie = gdf[coluna]
-        if not (pd.api.types.is_object_dtype(serie) or pd.api.types.is_string_dtype(serie)):
-            continue
-        vazios = serie.notna() & serie.astype(str).str.strip().eq("")
-        n = int(vazios.sum())
-        if n:
-            gdf[coluna] = serie.mask(vazios, None)
-            metricas.add(tabela, **{f"{coluna.lower()}_vazio_para_nulo": n})
-    return gdf
-
-
 def recortar_camada(gdb: Path, nivel: dict, area, metricas: Metricas) -> gpd.GeoDataFrame:
     tabela = nivel["tabela"]
     mascara = _mascara_no_crs_da_camada(gdb, nivel["layer_gdb"], area)
@@ -163,7 +149,6 @@ def recortar_camada(gdb: Path, nivel: dict, area, metricas: Metricas) -> gpd.Geo
         gdf = gdf[ativos]
 
     gdf = normalizar_geometria(gdf, nivel["geom_tipo"], tabela, metricas)
-    gdf = _vazio_para_nulo(gdf, nivel["colunas"], tabela, metricas)
     return _podar_colunas(gdf, nivel["colunas"])
 
 
@@ -188,7 +173,6 @@ def extrair_da_geodatabase_original(gdb: Path, nivel: dict, codigos, metricas: M
 
     gdf = _para_crs_alvo(gpd.GeoDataFrame(pd.concat(partes, ignore_index=True), crs=partes[0].crs))
     gdf = normalizar_geometria(gdf, nivel["geom_tipo"], nivel["tabela"], metricas)
-    gdf = _vazio_para_nulo(gdf, nivel["colunas"], nivel["tabela"], metricas)
     return _podar_colunas(gdf, nivel["colunas"])
 
 
@@ -213,6 +197,9 @@ def garantir_integridade(camadas: dict, metricas: Metricas) -> None:
         for nome in nivel["referencias"]:
             filho = camadas[nome]
             if coluna not in filho.columns:
+                if nome not in TABELAS_COM_DIST:
+                    logger.warning("[%s] camada sem a coluna '%s' — vínculo com '%s' não será gravado",
+                                   nome, coluna, nivel["tabela"])
                 continue
             orfas = filho[coluna].notna() & ~filho[coluna].isin(existentes)
             n = int(orfas.sum())
@@ -220,7 +207,7 @@ def garantir_integridade(camadas: dict, metricas: Metricas) -> None:
                 codigos_orfaos = filho.loc[orfas, coluna].value_counts()
                 amostra = ", ".join(f"{c} ({q})" for c, q in codigos_orfaos.head(5).items())
                 logger.warning("[%s] %s registro(s) com %s sem pai em '%s' (%s código(s) distintos; mais frequentes: %s) — FK anulada",
-                              nome, n, coluna, nivel["tabela"], len(codigos_orfaos), amostra)
+                               nome, n, coluna, nivel["tabela"], len(codigos_orfaos), amostra)
                 filho.loc[orfas, coluna] = None
                 metricas.add(nome, **{f"fk_{coluna}_orfa_anulada": n})
 
@@ -264,6 +251,9 @@ def main(municipios: list[str], caminho_gdb, engine=None) -> dict:
         logger.info("Distribuidora %s: prefixo de códigos = %r", dist, prefixo)
         for nivel in CAMADAS_PAI + CAMADAS_FOLHA:
             prefixar(camadas[nivel["tabela"]], prefixo)
+            if nivel["tabela"] in TABELAS_COM_DIST:
+                # Valor cru (sem prefixo), igual ao sub.dist: é por ele que o filtro do mapa casa.
+                camadas[nivel["tabela"]]["dist"] = dist
 
         codigos_sub = camadas["sub"]["cod_id"].dropna().tolist()
         conflito = conn.execute(
