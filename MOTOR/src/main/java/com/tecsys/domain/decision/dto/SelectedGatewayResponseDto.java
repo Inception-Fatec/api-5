@@ -1,4 +1,3 @@
-
 package com.tecsys.domain.decision.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -30,7 +29,15 @@ public record SelectedGatewayResponseDto(
         int cumulativePointsCovered,
 
         @JsonProperty("cumulative_coverage_percentage")
-        double cumulativeCoveragePercentage
+        double cumulativeCoveragePercentage,
+
+        // altura da antena usada no cálculo (m)
+        @JsonProperty("height_m")
+        double heightMeters,
+
+        // trafo fora dos filtros do projeto, escolhido por estar ao alcance da área (#TG-138)
+        @JsonProperty("outside_filters")
+        boolean outsideFilters
 
 ) {
 }
