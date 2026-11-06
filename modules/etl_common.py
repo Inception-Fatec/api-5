@@ -2,15 +2,16 @@ import logging
 import os
 import re
 import uuid
+from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
+import requests
 from shapely.geometry import MultiLineString, MultiPolygon
 from sqlalchemy import create_engine, text
 
-
 CRS_ALVO = "EPSG:4674"
-CRS_ORIGEM_BDGD = "EPSG:4674" 
+CRS_ORIGEM_BDGD = "EPSG:4674"
 
 logger = logging.getLogger("etl")
 
@@ -28,6 +29,33 @@ def criar_engine(**kwargs):
             "postgresql+psycopg2://usuario:senha@localhost:5432/bdgd"
         )
     return create_engine(url, **kwargs)
+
+
+def baixar_com_retomada(url: str, destino: Path | str, chunk_size: int = 8192) -> None:
+    destino = Path(destino)
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    
+    headers = {}
+    modo = "wb"
+    tamanho_atual = 0
+    
+    if destino.exists():
+        tamanho_atual = destino.stat().st_size
+        if tamanho_atual > 0:
+            headers["Range"] = f"bytes={tamanho_atual}-"
+            modo = "ab"
+            
+    with requests.get(url, headers=headers, stream=True, timeout=60) as resposta:
+        if resposta.status_code == 200 and tamanho_atual > 0:
+            modo = "wb"
+            tamanho_atual = 0
+        elif resposta.status_code not in (200, 206):
+            resposta.raise_for_status()
+            
+        with open(destino, modo) as arquivo:
+            for chunk in resposta.iter_content(chunk_size=chunk_size):
+                if chunk:
+                    arquivo.write(chunk)
 
 
 def validar_municipios(municipios) -> list[str]:

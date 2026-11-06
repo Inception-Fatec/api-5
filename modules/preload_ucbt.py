@@ -1,3 +1,15 @@
+"""Pré-carga da baixa tensão (UCBT) da ANEEL na tabela `ucbt_raw`.
+
+Rode UMA vez (ou quando a ANEEL publicar uma versão nova). É lento de propósito: baixa o CSV nacional,
+filtra só os ativos e grava em blocos. Não depende de nenhum .gdb e não toca nas outras tabelas.
+O vínculo com os transformadores acontece depois, no upload de cada .gdb (etl_common.vincular_baixa_tensao).
+
+Uso:
+    python preload_ucbt.py                          # baixa o zip da ANEEL (URL padrão)
+    python preload_ucbt.py --arquivo ucbt_pj.zip    # arquivo .zip ou .csv local
+    python preload_ucbt.py --distribuidoras 391     # opcional: só estas distribuidoras
+    python preload_ucbt.py --municipios 3549904,3508504   # opcional: só estes municípios (códigos IBGE)
+"""
 import argparse
 import logging
 import os
@@ -10,10 +22,11 @@ import geopandas as gpd
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.csv as pacsv
+import requests
 from dotenv import load_dotenv
+from sqlalchemy import create_engine
 
-from etl_common import (CRS_ALVO, CRS_ORIGEM_BDGD, Metricas, baixar_com_retomada,
-                        carregar_idempotente, criar_engine)
+from etl_common import CRS_ALVO, CRS_ORIGEM_BDGD, Metricas, carregar_idempotente, validar_municipios
 
 load_dotenv()
 logger = logging.getLogger("preload_ucbt")
@@ -28,12 +41,19 @@ NUMERICAS = {"CAR_INST", "POINT_X", "POINT_Y"}
 
 
 def obter_csv_local(origem: str) -> Path:
+    """URL (baixa para o cache) ou caminho local; descompacta .zip se preciso."""
     if origem.startswith(("http://", "https://")):
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         destino = CACHE_DIR / origem.rsplit("/", 1)[-1]
         if not destino.exists():
             logger.info("Baixando %s", origem)
-            baixar_com_retomada(origem, destino)
+            temporario = destino.with_name(destino.name + ".part")
+            with requests.get(origem, stream=True, timeout=60) as resposta:
+                resposta.raise_for_status()
+                with open(temporario, "wb") as arquivo:
+                    for bloco in resposta.iter_content(1024 * 1024):
+                        arquivo.write(bloco)
+            temporario.rename(destino)
     else:
         destino = Path(origem)
         if not destino.exists():
@@ -74,10 +94,17 @@ def _bloco_para_gdf(bloco: pa.Table, metricas: Metricas) -> gpd.GeoDataFrame:
     return gdf.rename_geometry("geom")
 
 
-def main(origem: str = CSV_UCBT_PJ_URL, distribuidoras: list[str] | None = None, engine=None) -> dict:
-    engine = engine or criar_engine()
+def main(origem: str = CSV_UCBT_PJ_URL, distribuidoras: list[str] | None = None,
+         municipios: list[str] | None = None, engine=None) -> dict:
+    municipios = validar_municipios(municipios) if municipios else None
+    engine = engine or create_engine(os.getenv("ETL_DB_URL"))
     metricas = Metricas()
     caminho = obter_csv_local(origem)
+
+    if municipios:
+        logger.info("Filtrando pelos municípios: %s", ", ".join(municipios))
+    if distribuidoras:
+        logger.info("Filtrando pelas distribuidoras: %s", ", ".join(distribuidoras))
 
     tipos = {c: (pa.float64() if c in NUMERICAS else pa.string()) for c in COLUNAS}
     leitor = pacsv.open_csv(
@@ -93,14 +120,17 @@ def main(origem: str = CSV_UCBT_PJ_URL, distribuidoras: list[str] | None = None,
         mascara = ativo
         if distribuidoras:
             mascara = pc.and_(mascara, pc.is_in(bloco.column("DIST"), value_set=pa.array(distribuidoras, type=pa.string())))
+        if municipios:
+            mascara = pc.and_(mascara, pc.is_in(bloco.column("MUN"), value_set=pa.array(municipios, type=pa.string())))
         filtrado = bloco.filter(mascara)
         metricas.add("ucbt_raw", lidos=bloco.num_rows,
                      inativos=bloco.num_rows - (pc.sum(pc.cast(ativo, pa.int64())).as_py() or 0))
         if not filtrado.num_rows:
+            logger.info("bloco %s: nenhum registro retido", i)
             continue
 
         gdf = _bloco_para_gdf(filtrado, metricas)
-        with engine.begin() as conn:
+        with engine.begin() as conn:  # um commit por bloco: a pré-carga pode ser retomada
             carregar_idempotente(conn, gdf, "ucbt_raw", ["dist", "cod_id_encr"], metricas)
         logger.info("bloco %s: %s registros ativos processados", i, filtrado.num_rows)
 
@@ -113,8 +143,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pré-carga da baixa tensão em ucbt_raw")
     parser.add_argument("--arquivo", default=CSV_UCBT_PJ_URL, help="URL ou caminho do .zip/.csv da UCBT")
     parser.add_argument("--distribuidoras", help="Códigos DIST separados por vírgula (opcional)")
+    parser.add_argument("--municipios", help="Códigos IBGE separados por vírgula (opcional)")
     args = parser.parse_args()
-    dists = [d.strip() for d in args.distribuidoras.split(",")] if args.distribuidoras else None
-    resultado = main(args.arquivo, dists)
+    dists = [d.strip() for d in args.distribuidoras.split(",") if d.strip()] if args.distribuidoras else None
+    muns = [m.strip() for m in args.municipios.split(",") if m.strip()] if args.municipios else None
+    resultado = main(args.arquivo, dists, muns)
     print(resultado["total"])
     sys.exit(0)
