@@ -3,6 +3,7 @@ package com.tecsys.domain.project;
 import com.tecsys.core.exception.BusinessRuleException;
 import com.tecsys.domain.project.dto.ProjectCreateRequestDto;
 import com.tecsys.domain.project.dto.ProjectResponseDto;
+import com.tecsys.domain.report.ProjectCoverageRepository;
 import com.tecsys.domain.user.User;
 import com.tecsys.domain.user.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
@@ -18,6 +19,8 @@ public class ProjectService {
 
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
+    private final ProjectHistoryRepository projectHistoryRepository;
+    private final ProjectCoverageRepository projectCoverageRepository;
 
     @Transactional
     public ProjectResponseDto createProject(ProjectCreateRequestDto request, String userEmail) {
@@ -58,8 +61,11 @@ public class ProjectService {
     @Transactional
     public void deleteProject(Long id) {
         Project project = getProjectOrThrow(id);
-        project.setActive(false);
-        projectRepository.save(project);
+
+        projectHistoryRepository.deleteAllByProjectId(id);
+        projectCoverageRepository.deleteAllByProjectId(id);
+
+        projectRepository.delete(project);
     }
 
     private Project getProjectOrThrow(Long id) {
