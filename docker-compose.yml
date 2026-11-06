@@ -1,9 +1,15 @@
 # Alternativa "sobe tudo de uma vez" — os scripts em scripts/ continuam
 # sendo o jeito principal (cada serviço sobe/para sozinho).
 #
-#   docker compose up --build        # db + backend + frontend
+#   docker compose up --build        # db + backend + motor + frontend
 #   docker compose up --build db     # só um serviço
-#   docker compose down              # para tudo (volume tecsys-pgdata preservado)
+#   docker compose down              # para tudo (volumes tecsys-pgdata e tecsys-dem-cache preservados)
+#
+# Chave da OpenTopography (relevo do motor): vem do ambiente ou do arquivo
+# .env na raiz do repositório (gitignored), por exemplo:
+#   OPENTOPOGRAPHY_API_KEY=sua_chave docker compose up --build
+# Sem a chave, o motor sobe, mas o cálculo falha se o relevo da área não
+# estiver no cache (volume tecsys-dem-cache, o mesmo do scripts/run-motor.sh).
 #
 # Banco local (PostGIS 17). Para usar o Supabase no backend, suba o
 # backend pelo script (./scripts/run-backend.sh --db supabase) em vez
@@ -35,11 +41,37 @@ services:
       DB_URL: jdbc:postgresql://db:5432/tecsys
       DB_USER: tecsys
       DB_PASSWORD: tecsys
+      # Dentro do container, localhost é o próprio backend: o motor é
+      # chamado pelo nome do serviço na rede do compose.
+      ENGINE_URL: http://motor:8082/api/calculate
     ports:
       - "8081:8081"
     depends_on:
       db:
         condition: service_healthy
+
+  motor:
+    build: ./MOTOR
+    container_name: tecsys-motor
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/tecsys
+      DB_USER: tecsys
+      DB_PASSWORD: tecsys
+      # Escuta em todas as interfaces do container para o backend alcançar;
+      # no host, a porta só é publicada em 127.0.0.1 (o motor não tem login).
+      MOTOR_BIND_ADDRESS: 0.0.0.0
+      OPENTOPOGRAPHY_API_KEY: ${OPENTOPOGRAPHY_API_KEY:-}
+      DEM_CACHE_DIR: /var/cache/tecsys-dem
+    ports:
+      - "127.0.0.1:8082:8082"
+    volumes:
+      - tecsys-dem-cache:/var/cache/tecsys-dem
+    # O backend cria a tabela project_coverage no primeiro boot (Hibernate).
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_started
 
   frontend:
     build:
@@ -55,3 +87,6 @@ services:
 
 volumes:
   tecsys-pgdata:
+  tecsys-dem-cache:
+    # Nome fixo para compartilhar o cache do relevo com o scripts/run-motor.sh.
+    name: tecsys-dem-cache

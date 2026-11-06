@@ -58,7 +58,9 @@ Flutter web no nginx (`tecsys-frontend`, porta 8080). A URL da API é embutida
 no build: trocou de backend, o script rebuilda sozinho.
 
 Alternativa "sobe tudo": `docker compose up --build` (usa os mesmos
-Dockerfiles; o backend do compose fala com o banco local).
+Dockerfiles; sobe banco local, backend, motor e frontend). A chave da
+OpenTopography vem do ambiente ou do `.env` da raiz:
+`OPENTOPOGRAPHY_API_KEY=sua_chave docker compose up --build`.
 
 ## Onde colocar o dump (só necessário na 1ª subida)
 
