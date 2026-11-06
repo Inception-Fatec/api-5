@@ -3,7 +3,9 @@ package com.tecsys.domain.etl;
 import com.tecsys.core.exception.BusinessRuleException;
 import com.tecsys.domain.etl.dto.EtlJobResponseDto;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.core.task.TaskRejectedException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -23,6 +25,9 @@ import java.util.stream.Stream;
 public class EtlService {
 
     private static final Pattern CODIGO_IBGE = Pattern.compile("^\\d{7}$");
+    private static final String INDICE_UM_ATIVO = "uq_etl_jobs_um_ativo";
+    private static final String MSG_EM_ANDAMENTO =
+            "Já existe um ETL em andamento. Aguarde a conclusão para enviar outro arquivo.";
 
     private final EtlJobRepository jobRepository;
     private final EtlRunner etlRunner;
@@ -32,12 +37,7 @@ public class EtlService {
         List<String> codigos = validarMunicipios(municipios);
         String filename = validarArquivo(file);
 
-        EtlJob job = jobRepository.saveAndFlush(EtlJob.builder()
-                .status(EtlJobStatus.PENDING)
-                .originalFilename(filename)
-                .municipios(String.join(",", codigos))
-                .createdBy(userId)
-                .build());
+        EtlJob job = reservarExecucao(filename, codigos, userId);
 
         Path workDir;
         try {
@@ -51,8 +51,8 @@ public class EtlService {
             etlRunner.run(job.getId(), workDir, codigos, incluirConsumidores);
         } catch (TaskRejectedException e) {
             apagar(workDir);
-            marcarFalha(job, "Fila de ETL cheia");
-            throw new BusinessRuleException("Fila de ETL cheia. Tente novamente em alguns minutos.");
+            marcarFalha(job, MSG_EM_ANDAMENTO);
+            throw new BusinessRuleException(MSG_EM_ANDAMENTO);
         } catch (RuntimeException e) {
             apagar(workDir);
             marcarFalha(job, "Não foi possível iniciar o ETL: " + e.getMessage());
@@ -65,6 +65,23 @@ public class EtlService {
         return jobRepository.findById(id)
                 .map(EtlJobResponseDto::fromEntity)
                 .orElseThrow(() -> new BusinessRuleException("Execução de ETL não encontrada."));
+    }
+
+    private EtlJob reservarExecucao(String filename, List<String> codigos, Long userId) {
+        try {
+            return jobRepository.saveAndFlush(EtlJob.builder()
+                    .status(EtlJobStatus.PENDING)
+                    .originalFilename(filename)
+                    .municipios(String.join(",", codigos))
+                    .createdBy(userId)
+                    .build());
+        } catch (DataIntegrityViolationException e) {
+            String causa = NestedExceptionUtils.getMostSpecificCause(e).getMessage();
+            if (causa != null && causa.contains(INDICE_UM_ATIVO)) {
+                throw new BusinessRuleException(MSG_EM_ANDAMENTO);
+            }
+            throw e;
+        }
     }
 
     private void marcarFalha(EtlJob job, String mensagem) {
