@@ -332,6 +332,12 @@ class _CargaCard extends StatelessWidget {
         if (carga.duracao != null)
           CardInfoRow(
               icon: Icons.timer_outlined, text: 'Duração: ${carga.duracao}'),
+        for (final aviso in carga.avisos)
+          CardInfoRow(
+            icon: Icons.warning_amber_rounded,
+            text: aviso,
+            color: AppColors.warning,
+          ),
         if (carga.status == EtlCargaStatus.erro && carga.errorMessage != null)
           CardInfoRow(
             icon: Icons.error_outline,

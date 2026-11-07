@@ -116,6 +116,10 @@ class CargaDetalhesDialog extends StatelessWidget {
                                   ],
                                 ),
                               ),
+                              for (final aviso in c.avisos) ...[
+                                const SizedBox(height: 16),
+                                _Aviso(texto: aviso),
+                              ],
                               const SizedBox(height: 20),
                               _SecaoCamadas(camadas: c.camadas),
                             ],
@@ -475,6 +479,38 @@ class _SecaoCamadas extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.only(left: 8, right: 16),
         child: Align(alignment: Alignment.centerRight, child: child),
+      ),
+    );
+  }
+}
+
+/// Aviso de carga incompleta (ex.: baixa tensão não carregada).
+class _Aviso extends StatelessWidget {
+  const _Aviso({required this.texto});
+
+  final String texto;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFFCD34D)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.warning_amber_rounded, size: 18, color: Color(0xFFB45309)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              texto,
+              style: const TextStyle(fontSize: 13, height: 1.4, color: Color(0xFF92400E)),
+            ),
+          ),
+        ],
       ),
     );
   }
