@@ -23,9 +23,16 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.csv as pacsv
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
 
-from etl_common import CRS_ALVO, CRS_ORIGEM_BDGD, Metricas, carregar_idempotente, validar_municipios
+from etl_common import (
+    CRS_ALVO,
+    CRS_ORIGEM_BDGD,
+    Metricas,
+    baixar_com_retomada,
+    carregar_idempotente,
+    criar_engine,
+    validar_municipios,
+)
 
 load_dotenv()
 logger = logging.getLogger("preload_ucbt")
@@ -89,7 +96,7 @@ def _bloco_para_gdf(bloco: pa.Table, metricas: Metricas) -> gpd.GeoDataFrame:
 def main(origem: str = CSV_UCBT_PJ_URL, distribuidoras: list[str] | None = None,
          municipios: list[str] | None = None, engine=None) -> dict:
     municipios = validar_municipios(municipios) if municipios else None
-    engine = engine or create_engine(os.getenv("ETL_DB_URL"))
+    engine = engine or criar_engine()
     metricas = Metricas()
     caminho = obter_csv_local(origem)
 

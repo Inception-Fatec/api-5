@@ -32,35 +32,10 @@ def criar_engine(**kwargs):
     return create_engine(url, **kwargs)
 
 
-def baixar_com_retomada(url: str, destino: Path | str, chunk_size: int = 8192) -> None:
-    destino = Path(destino)
-    destino.parent.mkdir(parents=True, exist_ok=True)
-    
-    headers = {}
-    modo = "wb"
-    tamanho_atual = 0
-    
-    if destino.exists():
-        tamanho_atual = destino.stat().st_size
-        if tamanho_atual > 0:
-            headers["Range"] = f"bytes={tamanho_atual}-"
-            modo = "ab"
-            
-    with requests.get(url, headers=headers, stream=True, timeout=60) as resposta:
-        if resposta.status_code == 200 and tamanho_atual > 0:
-            modo = "wb"
-            tamanho_atual = 0
-        elif resposta.status_code not in (200, 206):
-            resposta.raise_for_status()
-            
-        with open(destino, modo) as arquivo:
-            for chunk in resposta.iter_content(chunk_size=chunk_size):
-                if chunk:
-                    arquivo.write(chunk)
 DOWNLOAD_TENTATIVAS = 5
-DOWNLOAD_TIMEOUT = (30, 60) 
+DOWNLOAD_TIMEOUT = (30, 60)
 DOWNLOAD_ESPERA_MAXIMA = 30
-DOWNLOAD_BLOCO = 64 * 1024 
+DOWNLOAD_BLOCO = 64 * 1024
 _STATUS_COM_RETRY = {408, 429}
 _REGEX_CONTENT_RANGE = re.compile(r"bytes\s+(?:(\d+)-(\d+)|\*)/(\d+|\*)")
 
@@ -110,7 +85,7 @@ def baixar_com_retomada(url: str, destino: Path, tentativas: int = DOWNLOAD_TENT
                 if status == 416:
                     _, total = _parse_content_range(resposta.headers.get("Content-Range"))
                     if baixados and total == baixados:
-                        temporario.replace(destino) 
+                        temporario.replace(destino)
                         return
                     temporario.unlink(missing_ok=True)
                     raise _DownloadIncompleto("Servidor recusou o Range; reiniciando o download do zero.")
