@@ -9,9 +9,6 @@ import java.time.Instant;
 import java.util.Collection;
 
 public interface EtlJobRepository extends JpaRepository<EtlJob, Long> {
-
-    boolean existsByStatusIn(Collection<EtlJobStatus> statuses);
-
     @Modifying
     @Query("""
             update EtlJob j
