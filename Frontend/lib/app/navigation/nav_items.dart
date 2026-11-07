@@ -10,7 +10,8 @@ import 'package:flutter/material.dart';
 /// nessa aba também migrou pra ser o estado vazio da lista de
 /// Projetos.
 ///
-/// RN04 (US-34): "Users" só aparece pra quem está logado como ADM --
+/// RN04 (US-34): "Users" e "ETL & Geodados" só aparecem pra quem está
+/// logado como ADM (o backend exige ADM em /users e /etl) --
 /// por isso deixou de ser uma lista 'const' fixa e virou [forRole],
 /// que recebe o role atual (AuthService.instance.role) e monta a
 /// lista certa. "Login"/conta continua sempre por último: o AppShell
@@ -28,7 +29,7 @@ class NavItems {
     return [
       projects,
       if (role == 'ADM') users,
-      etlGeodados,
+      if (role == 'ADM') etlGeodados,
       _account,
     ];
   }
