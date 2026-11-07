@@ -4,6 +4,7 @@
 #   docker compose up --build        # db + backend + motor + frontend
 #   docker compose up --build db     # só um serviço
 #   docker compose down              # para tudo (volumes tecsys-pgdata e tecsys-dem-cache preservados)
+#   docker compose down -v           # CUIDADO: apaga também o cache compartilhado tecsys-dem-cache
 #
 # Chave da OpenTopography (relevo do motor): vem do ambiente ou do arquivo
 # .env na raiz do repositório (gitignored), por exemplo:
@@ -61,17 +62,15 @@ services:
       # no host, a porta só é publicada em 127.0.0.1 (o motor não tem login).
       MOTOR_BIND_ADDRESS: 0.0.0.0
       OPENTOPOGRAPHY_API_KEY: ${OPENTOPOGRAPHY_API_KEY:-}
-      DEM_CACHE_DIR: /var/cache/tecsys-dem
     ports:
       - "127.0.0.1:8082:8082"
     volumes:
       - tecsys-dem-cache:/var/cache/tecsys-dem
-    # O backend cria a tabela project_coverage no primeiro boot (Hibernate).
+    # O motor só consulta o banco sob demanda (chamado pelo backend), que é
+    # quem roda as migrações Flyway (project_coverage) no startup.
     depends_on:
       db:
         condition: service_healthy
-      backend:
-        condition: service_started
 
   frontend:
     build:
