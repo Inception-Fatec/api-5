@@ -35,6 +35,7 @@ services:
       DB_URL: jdbc:postgresql://db:5432/tecsys
       DB_USER: tecsys
       DB_PASSWORD: tecsys
+      API_SECURITY_TOKEN_SECRET: "${API_SECURITY_TOKEN_SECRET:?Defina API_SECURITY_TOKEN_SECRET}"
     ports:
       - "8081:8081"
     depends_on:
