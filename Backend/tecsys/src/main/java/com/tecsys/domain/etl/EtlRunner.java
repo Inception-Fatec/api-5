@@ -3,19 +3,26 @@ package com.tecsys.domain.etl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.time.Instant;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
@@ -28,8 +35,10 @@ public class EtlRunner {
 
     private static final String RESULT_PREFIX = "ETL_RESULT:";
     private static final int LOG_TAIL_LINES = 300;
+    private static final List<String> PARAMS_LIBPQ = List.of("sslmode", "sslrootcert", "sslcert", "sslkey");
 
     private final EtlJobRepository jobRepository;
+    private final DataSourceProperties dataSourceProperties;
 
     @Value("${etl.python-executable:python}")
     private String pythonExecutable;
@@ -108,7 +117,7 @@ public class EtlRunner {
             throw new IOException("Script de ETL não encontrado: " + script + " (propriedade etl.script-path)");
         }
 
-        List<String> comando = new java.util.ArrayList<>(List.of(
+        List<String> comando = new ArrayList<>(List.of(
                 pythonExecutable, script.getFileName().toString(),
                 "--gdb", gdb.toString(),
                 "--municipios", String.join(",", municipios)));
@@ -117,10 +126,11 @@ public class EtlRunner {
         }
 
         ProcessBuilder pb = new ProcessBuilder(comando);
-        pb.directory(script.getParent().toFile()); // pasta modules: imports e .env do Python
+        pb.directory(script.getParent().toFile());
         pb.redirectErrorStream(true);
         pb.environment().put("PYTHONUNBUFFERED", "1");
         pb.environment().put("PYTHONIOENCODING", "utf-8");
+        pb.environment().put("ETL_DB_URL", montarEtlDbUrl());
 
         Process process = pb.start();
 
@@ -155,6 +165,67 @@ public class EtlRunner {
 
         int exitCode = process.waitFor();
         return new ProcessResult(exitCode, resultJson, String.join("\n", tail));
+    }
+
+    private String montarEtlDbUrl() throws IOException {
+        String jdbcUrl = dataSourceProperties.getUrl();
+        if (jdbcUrl == null || !jdbcUrl.startsWith("jdbc:postgresql:")) {
+            throw new IOException("spring.datasource.url ausente ou não é PostgreSQL; "
+                    + "não foi possível configurar o banco do ETL.");
+        }
+
+        URI uri;
+        try {
+            uri = new URI(jdbcUrl.substring("jdbc:".length()));
+        } catch (URISyntaxException e) {
+            throw new IOException("spring.datasource.url em formato inválido.");
+        }
+        String path = uri.getRawPath();
+        if (uri.getHost() == null || path == null || path.length() <= 1) {
+            throw new IOException("spring.datasource.url precisa ter host e nome do banco.");
+        }
+        int port = uri.getPort() == -1 ? 5432 : uri.getPort();
+
+        Map<String, String> params = new LinkedHashMap<>();
+        if (uri.getRawQuery() != null) {
+            for (String par : uri.getRawQuery().split("&")) {
+                int i = par.indexOf('=');
+                if (i > 0) {
+                    params.put(par.substring(0, i), par.substring(i + 1));
+                }
+            }
+        }
+        if (!params.containsKey("sslmode") && "true".equalsIgnoreCase(params.get("ssl"))) {
+            params.put("sslmode", "require");
+        }
+        List<String> query = new ArrayList<>();
+        for (String chave : PARAMS_LIBPQ) {
+            if (params.containsKey(chave)) {
+                query.add(chave + "=" + params.get(chave));
+            }
+        }
+
+        StringBuilder url = new StringBuilder("postgresql+psycopg2://");
+        String user = dataSourceProperties.getUsername();
+        String senha = dataSourceProperties.getPassword();
+        if (user != null && !user.isBlank()) {
+            url.append(codificar(user));
+            if (senha != null) {
+                url.append(':').append(codificar(senha));
+            }
+            url.append('@');
+        }
+        url.append(uri.getHost()).append(':').append(port).append(path);
+        if (!query.isEmpty()) {
+            url.append('?').append(String.join("&", query));
+        }
+
+        log.info("[etl] banco do ETL (herdado do backend): {}:{}{}", uri.getHost(), port, path);
+        return url.toString();
+    }
+
+    private static String codificar(String valor) {
+        return URLEncoder.encode(valor, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
     private void apagarDiretorio(Path dir) {
