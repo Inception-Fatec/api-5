@@ -87,7 +87,7 @@ e o arquivo não é mais necessário. Para recomeçar do zero:
 
 ## Problemas comuns
 
-- **Sessão expirada (403)**: o token JWT dura 2h — faça logout/login de novo no app.
+- **Sessão expirada (401)**: o token JWT dura 2h — o app volta para o login sozinho. 403 é falta de permissão (ex.: rota de ADM).
 - **Cidade não seleciona / salvar não funciona**: quase sempre é a sessão
   expirada acima, não o banco. Relogue antes de investigar mais.
 - **Backend modo supabase não sobe**: o host direto do Supabase é IPv6-only

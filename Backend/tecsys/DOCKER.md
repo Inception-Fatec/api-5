@@ -35,7 +35,7 @@ docker logs -f tecsys-backend
 
 ## Problemas comuns
 
-- Login devolve 403 — sessão expirou (token JWT dura 2h): faça logout/login
+- Chamadas devolvem 401 — sessão expirou (token JWT dura 2h): faça login de novo. 403 é falta de permissão (ex.: tela de ADM).
   de novo no app.
 - `URL must start with 'jdbc'` no log — `.env.supabase` no formato errado;
   confira o prefixo `postgres://`.
