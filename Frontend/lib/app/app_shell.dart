@@ -44,8 +44,8 @@ class AppShell extends StatefulWidget {
   /// Lista de tabs pro role informado — única fonte usada tanto depois
   /// de um login bem-sucedido (LoginScreen._goToAppShell) quanto ao
   /// restaurar uma sessão existente no boot do app (SplashGate), pra
-  /// nunca divergir da lista de NavItems.forRole (RN04 — Users só
-  /// entra pra ADM nos dois casos).
+  /// nunca divergir da lista de NavItems.forRole (RN04 — Users e
+  /// ETL & Geodados só entram pra ADM nos dois casos).
   ///
   /// "Novo Projeto" deixou de ser uma aba própria — virou um botão
   /// dentro de "Projetos" (que abre o popup direto), então não entra
@@ -54,7 +54,7 @@ class AppShell extends StatefulWidget {
     return [
       const ProjectsScreen(),
       if (isAdmin) const UsersScreen(),
-      const EtlGeodadosScreen(),
+      if (isAdmin) const EtlGeodadosScreen(),
     ];
   }
 
