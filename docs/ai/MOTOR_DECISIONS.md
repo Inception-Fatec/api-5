@@ -75,7 +75,8 @@ Accept only `south >= -50`, `north <= 50`, `west >= -180`, `east <= 180`,
 
 ## COG compatibility gate
 
-Status: accepted.
+Status: accepted and validated. The real `S23_00_W046_00` tile was read as
+3600 x 3600 Float32 DEFLATE/predictor 3 by `commons-imaging 1.0.0-alpha5`.
 
 ### Decision
 

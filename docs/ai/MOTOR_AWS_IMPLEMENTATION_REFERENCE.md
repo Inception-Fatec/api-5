@@ -1,6 +1,7 @@
 # Motor terrain source: AWS Copernicus GLO-30 implementation reference
 
-Status: implementation reference for TG-139.
+Status: implemented for TG-139. The COG compatibility gate passed with the real
+`S23_00_W046_00` tile (3600 x 3600, Float32, DEFLATE with predictor 3).
 
 This document is the source of truth for an AI agent or developer changing the motor
 terrain pipeline. Human-facing instructions are in `docs/MOTOR_RELEVO_AWS.md` (pt-BR).
@@ -92,6 +93,7 @@ app:
     cache-dir: ${DEM_CACHE_DIR:cache/dem}
     mirror-dir: ${DEM_MIRROR_DIR:}
     download-attempts: ${DEM_DOWNLOAD_ATTEMPTS:4}
+    retry-backoff-ms: ${DEM_RETRY_BACKOFF_MS:5000}
     aws:
       base-url: ${DEM_AWS_BASE_URL:https://copernicus-dem-30m.s3.amazonaws.com}
 ```
@@ -106,7 +108,8 @@ configuration, scripts, compose, or README instructions.
 - Integration tests: mosaic of two synthetic adjacent 1 degree tiles, using the real
   AWS tile layout.
 - Network test: opt-in with `@Tag("network")`, downloads one real tile and validates
-  that it is readable by `GeoTiffReader`.
+  that it is readable by `GeoTiffReader`. Run with
+  `mvn test -Dtest=DemServiceNetworkTest -DexcludedGroups=`.
 - Fixture: one small real COG (<1 MB) under
   `MOTOR/src/test/resources/dem/aws-copernicus/`, plus `SOURCE.md` with tile name,
   bbox, checksum, generation command, and license.

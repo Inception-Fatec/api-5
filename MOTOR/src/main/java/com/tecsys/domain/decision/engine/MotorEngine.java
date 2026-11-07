@@ -77,8 +77,8 @@ public class MotorEngine {
             }
             DemService.Loaded loaded = demService.load(s - margin, n + margin, w - margin, e + margin);
             terrain = loaded.terrain();
-            log.info("Relevo: {} ({} bloco(s), {}, {} s, cotas {}..{} m)", terrain.source(), loaded.info().blocks(),
-                    loaded.info().fromCache() ? "cache" : "download", round(loaded.info().downloadSeconds(), 1),
+            log.info("Relevo: {} ({} tile(s), {}, {} s, cotas {}..{} m)", terrain.source(), loaded.info().tiles(),
+                    loaded.info().fromCache() ? "cache/mirror" : "download", round(loaded.info().downloadSeconds(), 1),
                     round(terrain.minElevation(), 0), round(terrain.maxElevation(), 0));
         } else {
             log.warn("Relevo desligado (use-terrain=false): cálculo sobre terreno plano.");

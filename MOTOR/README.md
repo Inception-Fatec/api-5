@@ -4,6 +4,8 @@ Responde à pergunta do projeto: **onde instalar o menor número de gateways que
 
 O backend chama `POST /api/calculate` com `{"project_id": N}`. O motor lê os filtros do projeto, calcula, grava o resultado em `project_coverage` e muda o status do projeto: `PROCESSANDO` durante o cálculo, depois `SUCESSO` ou `FALHA`. O formato gravado é o mesmo de antes, então o relatório e o mapa não mudam.
 
+O relevo vem do Copernicus GLO-30 no AWS Open Data. Para a operação do mirror, cache, NAS e licença, veja [`docs/MOTOR_RELEVO_AWS.md`](../docs/MOTOR_RELEVO_AWS.md).
+
 - [Como rodar](#como-rodar)
 - [Como funciona](#como-funciona)
 - [Perfis e parâmetros](#perfis-e-parâmetros)
@@ -18,15 +20,15 @@ O backend chama `POST /api/calculate` com `{"project_id": N}`. O motor lê os fi
 ./scripts/run-motor.sh --db supabase   # contra o Supabase
 ```
 
-A chave da OpenTopography vai em `MOTOR/.env.properties` (ou `.env.supabase`):
+O relevo usa o AWS Open Data e **não precisa de chave de API**. As variáveis de banco ficam em `MOTOR/.env.properties` (ou `.env.supabase`). O mirror local/NAS é opcional:
 
 ```properties
-OPENTOPOGRAPHY_API_KEY=sua_chave
+DEM_MIRROR_DIR=/mnt/tecsys-dem-mirror
 ```
 
-Sem a chave, o motor sobe e calcula as áreas cujo relevo já está no cache. Para as outras, o projeto termina em `FALHA` com a mensagem do motivo.
+Sem mirror, o motor usa o cache e depois o S3 público. Se o relevo não puder ser obtido, o projeto termina em `FALHA` com o motivo.
 
-Testes: `mvn test`. O `MotorApplicationTests` precisa de `DB_URL`, `DB_USER` e `DB_PASSWORD`; os outros rodam sem banco.
+Testes: `mvn test`. O `MotorApplicationTests` precisa de `DB_URL`, `DB_USER` e `DB_PASSWORD`; os outros rodam sem banco. O teste de rede é opt-in: `mvn test -Dtest=DemServiceNetworkTest -DexcludedGroups=`.
 
 ## Como funciona
 
@@ -34,7 +36,7 @@ Testes: `mvn test`. O `MotorApplicationTests` precisa de `DB_URL`, `DB_USER` e `
    - O motor também considera trafos fora da área, mas ao alcance dela (#TG-138). Eles saem marcados com `outside_filters: true`.
    - O filtro de bairro usa a mesma regra do mapa: `ILIKE '%nome%'` (#TG-98).
 2. **Agrupamento.** Pontos no mesmo lugar e com a mesma altura têm a mesma cobertura e viram um único "local". Em SJC, 31 mil pontos viram 18,7 mil locais.
-3. **Relevo.** Usa o COP30 (30 m), lido em float32, ou seja, em metros de verdade. O terreno é amostrado por interpolação bilinear.
+3. **Relevo.** Usa o Copernicus GLO-30 (30 m), lido em float32, ou seja, em metros de verdade. O terreno é amostrado por interpolação bilinear.
 4. **Visada.** Para cada candidato, o motor marca quais pontos ele enxerga. O padrão é o viewshed por raios (`RayViewshed`): cerca de 4 mil raios por gateway, acumulando o maior ângulo de elevação do terreno, com curvatura da Terra. O custo cresce com a área, não com o número de pares. Os candidatos são processados em paralelo.
 5. **Otimização.** É uma cobertura de conjuntos (`SetCover`):
    1. guloso (quem cobre mais pontos novos);
@@ -51,7 +53,7 @@ Testes: `mvn test`. O `MotorApplicationTests` precisa de `DB_URL`, `DB_USER` e `
 | `engine/LineOfSight`, `RayViewshed` | visada par a par e viewshed por raios |
 | `engine/CoverageBuilder`, `CoverageMatrix` | matriz esparsa de cobertura, em paralelo |
 | `engine/SetCover` | guloso, redundância, busca local, HiGHS, LNS, lagrangiano |
-| `terrain/DemService`, `GeoTiffReader` | download, cache, mosaico e leitura float32 do relevo |
+| `terrain/DemService`, `GeoTiffReader` | download AWS, cache, mirror, mosaico e leitura float32 do relevo |
 | `DecisionRepository` | consultas ao PostGIS |
 
 ## Perfis e parâmetros
@@ -90,18 +92,15 @@ O `gateway_range_m` do resumo é o raio de busca usado. No perfil `tecsys` ele �
 
 ## Relevo e cache
 
-- O relevo vem da OpenTopography (`/API/globaldem`, COP30), em blocos de 0,25°, porque o servidor corta downloads grandes. Cada bloco é validado antes de entrar no cache.
-- A API grátis permite **50 chamadas por 24 h**. Por isso os blocos ficam em cache e cada área só é baixada uma vez.
+- O relevo vem do **Copernicus DEM GLO-30 público no AWS Open Data**, em tiles COG de 1° x 1°, sem chave e sem cota diária.
+- A ordem de busca é **cache → mirror → S3**. Cada tile é validado antes de entrar no cache.
   - Pelo `run-motor.sh`, o cache fica no volume Docker `tecsys-dem-cache`.
   - Fora do Docker, fica em `cache/dem` (`DEM_CACHE_DIR`).
-- O perfil `tecsys` precisa de relevo numa margem de ~19 km em volta da área. Caçapava usa 25 blocos e SJC usa 42.
-- O formato do cache (`indice.json` + `dem_<hash>.tif`) é o mesmo do motor de referência em Python. Blocos já baixados podem ser copiados para o volume:
-
-  ```bash
-  docker run --rm -v tecsys-dem-cache:/c -v /caminho/do/cache:/src alpine cp -a /src/. /c/
-  ```
-
-- Se o relevo não puder ser obtido (sem chave, cota esgotada, servidor fora), o projeto termina em **`FALHA`** com o motivo no log. O motor anterior caía em terreno plano sem avisar.
+  - O cache novo fica em `<DEM_CACHE_DIR>/aws-copernicus/<tile>/<tile>.tif`.
+- O mirror local/NAS é opcional (`DEM_MIRROR_DIR`), montado read-only. Use `./scripts/sync-dem-mirror.sh` para semeá-lo. O cache antigo da OpenTopography é preservado, mas ignorado.
+- O perfil `tecsys` precisa de relevo numa margem de ~19 km em volta da área.
+- Se o relevo não puder ser obtido (S3 fora, tile ausente no cache/mirror), o projeto termina em **`FALHA`** com o motivo no log. O motor anterior caía em terreno plano sem avisar.
+- O domínio suportado é latitude -50° a +50°, longitude -180° a +180°, sem antimeridiano.
 
 ## O que mudou em relação ao motor anterior
 
@@ -109,6 +108,7 @@ O `gateway_range_m` do resumo é o raio de busca usado. No perfil `tecsys` ele �
 |---|---|
 | #TG-132: o GeoTIFF era lido como imagem RGB de 8 bits (714 m virava 126), o que criava morros falsos e de 3,4 a 21 vezes mais gateways | leitura float32 com `getRasterData` |
 | #TG-97: sem chave, ou com a cota esgotada, calculava em terreno plano e marcava `SUCESSO`: declarava ~99,9% de cobertura quando a real ficava entre 43% e 69% | falha com mensagem clara |
+| #TG-139: OpenTopography exigia chave e tinha cota diária | Copernicus GLO-30 no AWS Open Data, sem chave e sem cota, com mirror local opcional |
 | Visada com 5 amostras e pixel mais próximo: morros entre as amostras passavam despercebidos | perfil a cada 30 m, bilinear, com curvatura da Terra |
 | O guloso parava na primeira solução | busca local + solver exato (ótimo provado ou limite inferior) |
 | Alcance fixo de 4 km no código | orçamento de enlace e horizonte de rádio, tudo parametrizável |

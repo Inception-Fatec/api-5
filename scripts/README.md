@@ -48,7 +48,19 @@ Spring Boot (`tecsys-backend`, porta 8081). Rebuilda a imagem do código atual.
 
 Motor de decisão (`tecsys-motor`, porta 8082, só em 127.0.0.1 — não tem
 autenticação; quem chama é o backend). Mesmo esquema de banco do backend
-(`--db supabase` lê `Backend/tecsys/.env.supabase`). Utiliziza os mesmos campos no .env com a adição da cheve da chave do OpenTopography pela variável de ambiente `OPENTOPOGRAPHY_API_KEY`.
+(`--db supabase` lê `MOTOR/.env.supabase`). O relevo usa o Copernicus GLO-30
+no AWS Open Data, sem chave de API. O mirror local/NAS é opcional e definido
+por `DEM_MIRROR_DIR` no arquivo de ambiente; o script monta o diretório
+read-only. Para semear o mirror, use `./scripts/sync-dem-mirror.sh`.
+
+```bash
+./scripts/sync-dem-mirror.sh --mirror-dir DIR --bbox S,N,W,E
+./scripts/sync-dem-mirror.sh --mirror-dir DIR --tiles TILE[,TILE...]
+```
+
+Baixa tiles do Copernicus GLO-30 do AWS Open Data para o mirror local/NAS,
+sem AWS CLI e sem credenciais. Atualiza `manifest.sha256`. Ver
+[`docs/MOTOR_RELEVO_AWS.md`](../docs/MOTOR_RELEVO_AWS.md).
 
 ```bash
 ./scripts/run-frontend.sh [--api-host HOST] [--api-port PORT] [--stop]
