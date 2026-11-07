@@ -130,7 +130,7 @@ public class DemService {
             try {
                 return new Tile(GeoTiffReader.read(cache), true);
             } catch (IOException ex) {
-                log.warn("Cache de relevo inválido para {}; baixando de novo: {}", tile, ex.getMessage());
+                log.warn("Cache de relevo inválido para {}; baixando de novo: {}", tile, message(ex));
                 Files.deleteIfExists(cache);
             }
         }
@@ -141,7 +141,7 @@ public class DemService {
                 copyToCache(mirror, cache);
                 return new Tile(GeoTiffReader.read(cache), true);
             } catch (IOException ex) {
-                log.warn("Mirror de relevo inválido para {}; tentando o S3: {}", tile, ex.getMessage());
+                log.warn("Mirror de relevo inválido para {}; tentando o S3: {}", tile, message(ex));
                 Files.deleteIfExists(cache);
             }
         }
@@ -190,7 +190,7 @@ public class DemService {
                 break;
             } catch (Exception ex) {
                 last = ex;
-                log.warn("Falha ao baixar relevo {} (tentativa {}/{}): {}", tile, attempt + 1, downloadAttempts, ex.getMessage());
+                log.warn("Falha ao baixar relevo {} (tentativa {}/{}): {}", tile, attempt + 1, downloadAttempts, message(ex));
                 if (ex instanceof InterruptedException) {
                     Thread.currentThread().interrupt();
                     break;
@@ -202,7 +202,7 @@ public class DemService {
         }
         if (last != null) {
             throw new IOException("Não foi possível obter o relevo Copernicus GLO-30 do tile " + tile
-                    + " em " + url + ": " + last.getMessage(), last);
+                    + " em " + url + ": " + message(last), last);
         }
         return target;
     }
@@ -226,7 +226,7 @@ public class DemService {
             GeoTiffReader.read(part);
         } catch (IOException ex) {
             Files.deleteIfExists(part);
-            throw new IOException("Arquivo de relevo inválido para o tile " + tile + ": " + ex.getMessage(), ex);
+            throw new IOException("Arquivo de relevo inválido para o tile " + tile + ": " + message(ex), ex);
         }
         Files.move(part, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
     }
@@ -269,6 +269,19 @@ public class DemService {
             }
         }
         return new GridTerrain(z, h, w, lon0, lat0, dx, dy, "Copernicus GLO-30:mosaico " + blocks.size() + " tiles");
+    }
+
+    private static String message(Throwable ex) {
+        String msg = ex.getMessage();
+        if (msg != null && !msg.isBlank()) return msg;
+        Throwable cause = ex.getCause();
+        if (cause != null && cause != ex) {
+            String causeMsg = cause.getMessage();
+            if (causeMsg != null && !causeMsg.isBlank()) {
+                return ex.getClass().getSimpleName() + ": " + causeMsg;
+            }
+        }
+        return ex.getClass().getSimpleName();
     }
 
     private static String stripTrailingSlash(String value) {

@@ -272,6 +272,18 @@ class DemServiceTest {
     }
 
     @Test
+    void erroDeConexaoFalhaComMensagemNaoNula() throws Exception {
+        Path cache = tmp.resolve("cache");
+        DemService s = service(cache, null, "http://127.0.0.1:1", 1);
+
+        IOException ex = assertThrows(IOException.class, () -> s.load(-22.70, -22.65, -45.60, -45.55));
+
+        assertTrue(ex.getMessage().contains(TILE), ex.getMessage());
+        assertTrue(ex.getMessage().contains("ConnectException"), ex.getMessage());
+        assertFalse(ex.getMessage().endsWith("null"), ex.getMessage());
+    }
+
+    @Test
     void corpoQueNaoETiffFalhaSemCachear() throws Exception {
         Path cache = tmp.resolve("cache");
         try (StubServer server = new StubServer(0, 200, "nao e tiff".getBytes(StandardCharsets.UTF_8))) {
