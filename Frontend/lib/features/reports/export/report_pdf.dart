@@ -8,8 +8,9 @@ import 'package:tecsys_app/features/reports/ui/report_efficiency.dart';
 import 'package:tecsys_app/features/reports/ui/report_formatters.dart';
 import 'package:tecsys_app/features/reports/ui/report_texts.dart';
 
-/// A fonte padrão do PDF (Helvetica) cobre Latin-1 (acentos do português)
-/// mas não travessão/marcador; troca esses caracteres por equivalentes.
+/// A fonte padrão do PDF (Helvetica) cobre Latin-1 (acentos do português,
+/// então os textos fixos daqui vão acentuados) mas não travessão/marcador;
+/// troca esses caracteres por equivalentes.
 String pdfSafe(String text) => text
     .replaceAll('—', '-')
     .replaceAll('–', '-')
@@ -75,11 +76,11 @@ Future<Uint8List> buildReportPdf({
     margin: const pw.EdgeInsets.all(36),
     footer: (ctx) => pw.Align(
       alignment: pw.Alignment.centerRight,
-      child: pw.Text('Pagina ${ctx.pageNumber} de ${ctx.pagesCount}',
+      child: pw.Text('Página ${ctx.pageNumber} de ${ctx.pagesCount}',
           style: const pw.TextStyle(fontSize: 8, color: muted)),
     ),
     build: (ctx) => [
-      pw.Text('RELATORIO DE COBERTURA',
+      pw.Text('RELATÓRIO DE COBERTURA',
           style: pw.TextStyle(
               fontSize: 9, fontWeight: pw.FontWeight.bold, color: accent)),
       pw.SizedBox(height: 2),
@@ -106,7 +107,7 @@ Future<Uint8List> buildReportPdf({
         ),
         pw.SizedBox(height: 3),
         pw.Text(
-            'Roxo: area atendida (relevo considerado). Marcadores: gateways propostos. '
+            'Roxo: área atendida (relevo considerado). Marcadores: gateways propostos. '
             'Vermelho: pontos sem cobertura. Mapa base: OpenStreetMap contributors.',
             style: const pw.TextStyle(fontSize: 8, color: muted)),
       ],
@@ -123,7 +124,8 @@ Future<Uint8List> buildReportPdf({
         heading('Quantos gateways valem a pena'),
         for (final m in milestones)
           kv('Meta de ${formatInt(m.target.round())}%',
-              '${formatInt(m.gatewayCount)} gateways'),
+              '${formatInt(m.gatewayCount)} '
+              '${m.gatewayCount == 1 ? 'gateway' : 'gateways'}'),
         if (steps.isNotEmpty) ...[
           pw.SizedBox(height: 6),
           pw.Table(
@@ -159,15 +161,15 @@ Future<Uint8List> buildReportPdf({
           ),
         ],
       ],
-      heading('Parametros do estudo'),
+      heading('Parâmetros do estudo'),
       pw.Text(pdfSafe(reportIntro(s)), style: const pw.TextStyle(fontSize: 10)),
       pw.SizedBox(height: 4),
       if (params.isEmpty)
-        pw.Text('Os parametros usados neste calculo nao foram informados pelo servidor.',
+        pw.Text('Os parâmetros usados neste cálculo não foram informados pelo servidor.',
             style: const pw.TextStyle(fontSize: 9, color: muted))
       else
         for (final p in params) kv(p.label, p.value),
-      heading('Dados do calculo'),
+      heading('Dados do cálculo'),
       for (final r in dataRows(s)) kv(r.label, r.value),
       heading('Gateways propostos (${formatInt(report.gateways.length)})'),
       if (report.gateways.isEmpty)

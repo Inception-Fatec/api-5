@@ -27,7 +27,7 @@ class ContagemPontos {
   String get textoCandidatos =>
       '${numero(candidatos)} ${candidatos == 1 ? 'local para gateway' : 'locais para gateway'}';
 
-  /// "31.084 pontos a cobrir · 11.081 candidatos"
+  /// "31.084 pontos a cobrir · 11.081 locais para gateway"
   String get texto => '$textoPontos · $textoCandidatos';
 
   @override
