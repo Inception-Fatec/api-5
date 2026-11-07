@@ -3,9 +3,6 @@
 Este documento explica como o motor obtém o relevo depois da migração da
 OpenTopography para o Copernicus DEM GLO-30 público no AWS Open Data.
 
-Para o contexto técnico usado por agentes de IA, veja
-[`docs/ai/MOTOR_AWS_IMPLEMENTATION_REFERENCE.md`](ai/MOTOR_AWS_IMPLEMENTATION_REFERENCE.md).
-
 ## Resumo
 
 - Fonte: `https://copernicus-dem-30m.s3.amazonaws.com`
@@ -13,7 +10,8 @@ Para o contexto técnico usado por agentes de IA, veja
 - Dados: Copernicus DEM GLO-30, DSM de 30 m, release 2021, tiles COG de 1° x 1°.
 - Cache local: volume Docker `tecsys-dem-cache` ou `DEM_CACHE_DIR`.
 - Mirror opcional: diretório local/NAS em `DEM_MIRROR_DIR`, montado read-only.
-- Ordem de busca: **cache → mirror → S3**.
+- Ordem de busca: **cache → mirror → catálogo → S3**. Tile que não está no
+  catálogo da AWS é só mar e vira 0 m sem consultar o S3 (ver "Oceano").
 - Se o relevo não puder ser obtido, o projeto termina em `FALHA`. Não existe
   queda silenciosa para terreno plano.
 
@@ -172,12 +170,41 @@ Fora disso, o cálculo falha com mensagem clara. O motivo é que os tiles
 Copernicus mudam de resolução acima de 50° e o mosaico atual assume tamanho de
 pixel constante. Todas as áreas atuais do projeto estão dentro do domínio.
 
+## Oceano
+
+O bucket só tem tiles com terra. Um tile 100% oceano não existe, e o S3 responde
+404 para ele. Exemplo real: `Copernicus_DSM_COG_10_S24_00_W041_00_DEM`, no mar
+ao largo do RJ.
+
+Para não confundir mar com erro, o motor leva o catálogo oficial do bucket
+(`https://copernicus-dem-30m.s3.amazonaws.com/tileList.txt`, 26.450 tiles),
+compactado em `MOTOR/src/main/resources/dem/copernicus-glo30-tilelist.txt.gz`.
+Depois de cache e mirror, a regra é:
+
+| Situação | Resultado |
+|---|---|
+| Tile **fora** do catálogo | Mar: grade de 0 m com a mesma geometria de um tile real. **Não chama o S3** e não grava no cache. |
+| Tile **no** catálogo e S3 responde 404 | Erro, **sem nova tentativa**. O bucket mudou e o catálogo precisa ser atualizado. |
+| Ponto ou candidato dentro de um tile de mar | O cálculo **falha**: coordenada errada no banco. |
+
+A visada pode passar por cima do mar normalmente, o que importa em projetos de
+litoral, onde a margem de ~19 km entra no oceano.
+
+Para atualizar o catálogo, se a AWS publicar uma versão nova:
+
+```bash
+curl -s https://copernicus-dem-30m.s3.amazonaws.com/tileList.txt | tr -d '\r' | sort -u \
+  | gzip -9 -n > MOTOR/src/main/resources/dem/copernicus-glo30-tilelist.txt.gz
+```
+
 ## Falhas
 
 - Caixa fora do domínio: falha antes de qualquer acesso à rede.
 - Cache corrompido: o arquivo é removido e baixado de novo.
 - Mirror ausente ou corrompido: aviso e tentativa pelo S3.
 - S3 com erro após as tentativas: falha com o nome do tile, HTTP e URL.
+- 404 de tile do catálogo: falha na hora, sem nova tentativa.
+- Ponto ou candidato em tile de mar: falha com o id e a coordenada.
 - Conteúdo que não é TIFF float32: falha e não grava no cache.
 - Sem relevo e `MOTOR_USE_TERRAIN=true`: projeto em `FALHA`.
 

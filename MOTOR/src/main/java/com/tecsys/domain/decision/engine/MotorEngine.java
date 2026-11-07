@@ -21,6 +21,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Orquestra o cálculo: dados → relevo → matriz de cobertura → otimização → resultado.
@@ -76,6 +77,7 @@ public class MotorEngine {
                 w = Math.min(w, c.longitude()); e = Math.max(e, c.longitude());
             }
             DemService.Loaded loaded = demService.load(s - margin, n + margin, w - margin, e + margin);
+            guardOceanTiles(points, cands, loaded.info().oceanTiles());
             terrain = loaded.terrain();
             log.info("Relevo: {} ({} tile(s), {}, {} s, cotas {}..{} m)", terrain.source(), loaded.info().tiles(),
                     loaded.info().fromCache() ? "cache/mirror" : "download", round(loaded.info().downloadSeconds(), 1),
@@ -86,6 +88,30 @@ public class MotorEngine {
         }
         timer.mark("relevo");
         return compute(points, cands, p, radius, terrain, properties.effectiveThreads(), timer);
+    }
+
+    /**
+     * Tile fora do catálogo da AWS é mar (0 m) e serve para a visada passar por cima do oceano.
+     * Mas um ponto ou candidato dentro dele indica coordenada errada: o cálculo falha.
+     */
+    static void guardOceanTiles(List<CoveragePoint> points, List<GatewayCandidate> cands, List<String> oceanTiles)
+            throws IOException {
+        if (oceanTiles.isEmpty()) return;
+        Set<String> ocean = Set.copyOf(oceanTiles);
+        for (CoveragePoint pt : points) {
+            String tile = DemService.tileName((int) Math.floor(pt.latitude()), (int) Math.floor(pt.longitude()));
+            if (ocean.contains(tile)) {
+                throw new IOException("Ponto " + pt.id() + " (" + pt.latitude() + ", " + pt.longitude()
+                        + ") está no tile " + tile + ", que é só mar no Copernicus: confira as coordenadas.");
+            }
+        }
+        for (GatewayCandidate c : cands) {
+            String tile = DemService.tileName((int) Math.floor(c.latitude()), (int) Math.floor(c.longitude()));
+            if (ocean.contains(tile)) {
+                throw new IOException("Candidato " + c.id() + " (" + c.latitude() + ", " + c.longitude()
+                        + ") está no tile " + tile + ", que é só mar no Copernicus: confira as coordenadas.");
+            }
+        }
     }
 
     // ------------------------------------------------------------------ cálculo

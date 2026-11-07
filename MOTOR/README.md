@@ -93,13 +93,14 @@ O `gateway_range_m` do resumo é o raio de busca usado. No perfil `tecsys` ele �
 ## Relevo e cache
 
 - O relevo vem do **Copernicus DEM GLO-30 público no AWS Open Data**, em tiles COG de 1° x 1°, sem chave e sem cota diária.
-- A ordem de busca é **cache → mirror → S3**. Cada tile é validado antes de entrar no cache.
+- A ordem de busca é **cache → mirror → catálogo → S3**. Cada tile é validado antes de entrar no cache.
+  - Tile fora do catálogo da AWS (`tileList.txt`) é só mar: vira 0 m sem consultar o S3. Detalhes em [`docs/MOTOR_RELEVO_AWS.md`](../docs/MOTOR_RELEVO_AWS.md#oceano).
   - Pelo `run-motor.sh`, o cache fica no volume Docker `tecsys-dem-cache`.
   - Fora do Docker, fica em `cache/dem` (`DEM_CACHE_DIR`).
   - O cache novo fica em `<DEM_CACHE_DIR>/aws-copernicus/<tile>/<tile>.tif`.
 - O mirror local/NAS é opcional (`DEM_MIRROR_DIR`), montado read-only. Use `./scripts/sync-dem-mirror.sh` para semeá-lo. O cache antigo da OpenTopography é preservado, mas ignorado.
 - O perfil `tecsys` precisa de relevo numa margem de ~19 km em volta da área.
-- Se o relevo não puder ser obtido (S3 fora, tile ausente no cache/mirror), o projeto termina em **`FALHA`** com o motivo no log. O motor anterior caía em terreno plano sem avisar.
+- Se o relevo não puder ser obtido (S3 fora, tile do catálogo ausente no cache/mirror), o projeto termina em **`FALHA`** com o motivo no log. Ponto ou candidato em tile de mar também falha. O motor anterior caía em terreno plano sem avisar.
 - O domínio suportado é latitude -50° a +50°, longitude -180° a +180°, sem antimeridiano.
 
 ## O que mudou em relação ao motor anterior

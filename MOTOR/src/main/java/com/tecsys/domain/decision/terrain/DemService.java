@@ -20,13 +20,17 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Relevo Copernicus DEM GLO-30 do AWS Open Data, com cache em disco e mirror local opcional.
  *
- * <p>Os tiles são quadrados de 1°, baixados sem chave de API. A ordem de busca é cache, mirror e
- * S3. Um tile obtido do mirror é copiado para o cache antes da leitura. Se o relevo não puder ser
- * obtido, o cálculo falha; nunca há queda silenciosa para terreno plano.
+ * <p>Os tiles são quadrados de 1°, baixados sem chave de API. A ordem de busca é cache, mirror,
+ * catálogo e S3. Um tile obtido do mirror é copiado para o cache antes da leitura. Tile fora do
+ * {@link TileCatalog} é só mar: vira 0 m sem consultar o S3. Tile do catálogo que não pode ser
+ * obtido faz o cálculo falhar (404 falha na hora, sem nova tentativa); nunca há queda silenciosa
+ * para terreno plano.
  */
 @Service
 public class DemService {
@@ -35,6 +39,11 @@ public class DemService {
     private static final String CACHE_SUBDIR = "aws-copernicus";
     private static final String DEFAULT_BASE_URL = "https://copernicus-dem-30m.s3.amazonaws.com";
     private static final double MAX_LAT = 50.0;
+    /** Tiles do GLO-30 entre -50° e +50° de latitude: 3600×3600 pontos, 1" de passo (PixelIsPoint). */
+    static final int TILE_SIZE = 3600;
+    private static final double TILE_STEP = 1.0 / TILE_SIZE;
+    private static final Pattern TILE_NAME =
+            Pattern.compile("Copernicus_DSM_COG_10_([NS])(\\d{2})_00_([EW])(\\d{3})_00_DEM");
 
     private final HttpClient httpClient;
     private final Path cacheDir;
@@ -63,13 +72,22 @@ public class DemService {
                 .build();
     }
 
-    public record TerrainInfo(double[] box, int tiles, boolean fromCache, double downloadSeconds) {
+    /** {@code oceanTiles}: tiles fora do catálogo da AWS, usados como mar (0 m). */
+    public record TerrainInfo(double[] box, int tiles, boolean fromCache, double downloadSeconds,
+                              List<String> oceanTiles) {
     }
 
     public record Loaded(Terrain terrain, TerrainInfo info) {
     }
 
-    private record Tile(GridTerrain terrain, boolean fromLocal) {
+    private record Tile(GridTerrain terrain, boolean fromLocal, boolean ocean) {
+    }
+
+    /** 404 do S3: não adianta tentar de novo. */
+    private static final class TileNotFoundException extends IOException {
+        TileNotFoundException(String message) {
+            super(message);
+        }
     }
 
     /** Relevo que cobre a caixa (graus). Sincronizado: o cache é compartilhado entre cálculos. */
@@ -78,14 +96,17 @@ public class DemService {
         long t0 = System.nanoTime();
         boolean allLocal = true;
         List<GridTerrain> tiles = new ArrayList<>();
+        List<String> ocean = new ArrayList<>();
         for (String tile : tilesFor(south, north, west, east)) {
             Tile loaded = loadTile(tile);
             allLocal &= loaded.fromLocal();
+            if (loaded.ocean()) ocean.add(tile);
             tiles.add(loaded.terrain());
         }
         double seconds = (System.nanoTime() - t0) / 1e9;
         Terrain terrain = tiles.size() == 1 ? tiles.get(0) : mosaic(tiles);
-        return new Loaded(terrain, new TerrainInfo(new double[]{south, north, west, east}, tiles.size(), allLocal, seconds));
+        return new Loaded(terrain, new TerrainInfo(new double[]{south, north, west, east}, tiles.size(), allLocal,
+                seconds, List.copyOf(ocean)));
     }
 
     static List<String> tilesFor(double south, double north, double west, double east) {
@@ -102,7 +123,7 @@ public class DemService {
         return tiles;
     }
 
-    static String tileName(int lat, int lon) {
+    public static String tileName(int lat, int lon) {
         return String.format(Locale.US, "Copernicus_DSM_COG_10_%s%02d_00_%s%03d_00_DEM",
                 lat >= 0 ? "N" : "S", Math.abs(lat), lon >= 0 ? "E" : "W", Math.abs(lon));
     }
@@ -128,7 +149,7 @@ public class DemService {
         Path cache = cachePath(tile);
         if (Files.isRegularFile(cache)) {
             try {
-                return new Tile(GeoTiffReader.read(cache), true);
+                return new Tile(GeoTiffReader.read(cache), true, false);
             } catch (IOException ex) {
                 log.warn("Cache de relevo inválido para {}; baixando de novo: {}", tile, message(ex));
                 Files.deleteIfExists(cache);
@@ -139,15 +160,32 @@ public class DemService {
         if (mirror != null) {
             try {
                 copyToCache(mirror, cache);
-                return new Tile(GeoTiffReader.read(cache), true);
+                return new Tile(GeoTiffReader.read(cache), true, false);
             } catch (IOException ex) {
                 log.warn("Mirror de relevo inválido para {}; tentando o S3: {}", tile, message(ex));
                 Files.deleteIfExists(cache);
             }
         }
 
+        if (!TileCatalog.contains(tile)) {
+            log.info("Tile {} fora do catálogo do Copernicus (só mar): usando 0 m sem consultar o S3.", tile);
+            return new Tile(oceanTile(tile), true, true);
+        }
+
         Path downloaded = download(tile);
-        return new Tile(GeoTiffReader.read(downloaded), false);
+        return new Tile(GeoTiffReader.read(downloaded), false, false);
+    }
+
+    /** Tile de mar com a mesma grade de um tile real (PixelIsPoint, canto em graus inteiros). */
+    static GridTerrain oceanTile(String tile) {
+        Matcher m = TILE_NAME.matcher(tile);
+        if (!m.matches()) {
+            throw new IllegalArgumentException("Nome de tile inválido: " + tile);
+        }
+        int lat = Integer.parseInt(m.group(2)) * ("S".equals(m.group(1)) ? -1 : 1);
+        int lon = Integer.parseInt(m.group(4)) * ("W".equals(m.group(3)) ? -1 : 1);
+        float[] z = new float[TILE_SIZE * TILE_SIZE];
+        return new GridTerrain(z, TILE_SIZE, TILE_SIZE, lon, lat + 1, TILE_STEP, TILE_STEP, "Copernicus GLO-30:oceano " + tile);
     }
 
     private Path mirrorPath(String tile) {
@@ -195,6 +233,9 @@ public class DemService {
                     Thread.currentThread().interrupt();
                     break;
                 }
+                if (ex instanceof TileNotFoundException) {
+                    break; // tile do catálogo que sumiu do S3: tentar de novo não resolve
+                }
                 if (attempt + 1 < downloadAttempts) {
                     sleepQuietly(retryBackoffMs * (attempt + 1));
                 }
@@ -219,8 +260,11 @@ public class DemService {
         if (resp.statusCode() != 200) {
             String snippet = readSnippet(part);
             Files.deleteIfExists(part);
-            throw new IOException("HTTP " + resp.statusCode() + " para " + url
-                    + (snippet.isEmpty() ? "" : ": " + snippet));
+            String msg = "HTTP " + resp.statusCode() + " para " + url + (snippet.isEmpty() ? "" : ": " + snippet);
+            if (resp.statusCode() == 404) {
+                throw new TileNotFoundException(msg);
+            }
+            throw new IOException(msg);
         }
         try {
             GeoTiffReader.read(part);

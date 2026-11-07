@@ -23,6 +23,7 @@ class DemServiceTest {
 
     private static final double PX = 0.25 / 4;
     private static final String TILE = "Copernicus_DSM_COG_10_S23_00_W046_00_DEM";
+    private static final String OCEAN_TILE = "Copernicus_DSM_COG_10_S24_00_W041_00_DEM";
     private static final String FIXTURE = "/dem/aws-copernicus/S23_00_W046_00_campos_cog.tif";
 
     @TempDir
@@ -258,17 +259,83 @@ class DemServiceTest {
     }
 
     @Test
-    void erro404FalhaComMensagemDoTile() throws Exception {
+    void erro404DeTileDoCatalogoFalhaSemTentarDeNovo() throws Exception {
+        assertTrue(TileCatalog.contains(TILE), "o 404 só é erro para tile que existe no catálogo");
         Path cache = tmp.resolve("cache");
         try (StubServer server = new StubServer(0, 404, "not found".getBytes(StandardCharsets.UTF_8))) {
-            DemService s = service(cache, null, server.baseUrl(), 1);
+            DemService s = service(cache, null, server.baseUrl(), 3);
 
             IOException ex = assertThrows(IOException.class, () -> s.load(-22.70, -22.65, -45.60, -45.55));
 
             assertTrue(ex.getMessage().contains(TILE));
             assertTrue(ex.getMessage().contains("404"));
+            assertEquals(1, server.calls.get(), "404 não deve ser tentado de novo");
             assertFalse(Files.exists(cache.resolve("aws-copernicus").resolve(TILE).resolve(TILE + ".tif")));
         }
+    }
+
+    @Test
+    void tileForaDoCatalogoViraOceanoSemRede() throws Exception {
+        // S24_W041: mar ao largo do RJ; não existe no bucket (o S3 responde 404).
+        Path cache = tmp.resolve("cache");
+        try (StubServer server = new StubServer(0, 404, "not found".getBytes(StandardCharsets.UTF_8))) {
+            DemService s = service(cache, null, server.baseUrl(), 3);
+
+            DemService.Loaded loaded = s.load(-23.90, -23.80, -40.90, -40.80);
+
+            assertEquals(0, server.calls.get(), "tile de oceano não consulta o S3");
+            assertEquals(List.of(OCEAN_TILE), loaded.info().oceanTiles());
+            assertEquals(0.0, loaded.terrain().sampleNearest(-23.85, -40.85));
+            assertEquals(0.0, loaded.terrain().sample(-23.85, -40.85));
+            assertTrue(loaded.info().fromCache());
+            assertFalse(Files.exists(cache.resolve("aws-copernicus").resolve(OCEAN_TILE)));
+        }
+    }
+
+    @Test
+    void tileDeOceanoTemAMesmaGradeDeUmTileReal() {
+        // Tile real S24_W046 (lido do S3): 3600x3600, PixelIsPoint, canto em (-46, -23), passo 1".
+        GridTerrain mar = DemService.oceanTile(OCEAN_TILE);
+
+        assertEquals(DemService.TILE_SIZE, mar.width());
+        assertEquals(DemService.TILE_SIZE, mar.height());
+        assertEquals(-41.0, mar.lon0(), 1e-12);
+        assertEquals(-23.0, mar.lat0(), 1e-12);
+        assertEquals(1.0 / 3600, mar.dx(), 1e-15);
+        assertEquals(1.0 / 3600, mar.dy(), 1e-15);
+        assertEquals(0.0, mar.minElevation());
+        assertEquals(0.0, mar.maxElevation());
+    }
+
+    @Test
+    void mosaicoJuntaTileRealComTileDeOceano() {
+        // Vizinhos de 1°: S24_W042 (fingindo terra a 50 m) e S24_W041 (mar).
+        int n = DemService.TILE_SIZE;
+        float[] z = new float[n * n];
+        java.util.Arrays.fill(z, 50f);
+        GridTerrain terra = new GridTerrain(z, n, n, -42.0, -23.0, 1.0 / n, 1.0 / n, "terra");
+        GridTerrain mar = DemService.oceanTile(OCEAN_TILE);
+
+        GridTerrain m = DemService.mosaic(List.of(terra, mar));
+
+        assertEquals(2 * DemService.TILE_SIZE, m.width());
+        assertEquals(50.0, m.sampleNearest(-23.5, -41.5));
+        assertEquals(0.0, m.sampleNearest(-23.5, -40.5));
+    }
+
+    @Test
+    void catalogoConheceTilesDoBrasilEMarcaOceano() {
+        assertEquals(26_450, TileCatalog.size());
+        assertTrue(TileCatalog.contains("Copernicus_DSM_COG_10_S23_00_W046_00_DEM"));
+        assertTrue(TileCatalog.contains("Copernicus_DSM_COG_10_S24_00_W046_00_DEM"));
+        assertTrue(TileCatalog.contains("Copernicus_DSM_COG_10_S21_00_W041_00_DEM"));
+        assertFalse(TileCatalog.contains(OCEAN_TILE));
+        assertFalse(TileCatalog.contains("Copernicus_DSM_COG_10_S21_00_W040_00_DEM"));
+    }
+
+    @Test
+    void nomeDeTileInvalidoNaoViraOceano() {
+        assertThrows(IllegalArgumentException.class, () -> DemService.oceanTile("qualquer_coisa"));
     }
 
     @Test
