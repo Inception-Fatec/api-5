@@ -3,6 +3,7 @@ package com.tecsys.domain.etl;
 import com.tecsys.core.exception.BusinessRuleException;
 import com.tecsys.domain.etl.dto.EtlJobResponseDto;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -10,6 +11,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -30,20 +32,32 @@ public class EtlService {
         List<String> codigos = validarMunicipios(municipios);
         String filename = validarArquivo(file);
 
-        if (jobRepository.existsByStatusIn(List.of(EtlJobStatus.PENDING, EtlJobStatus.RUNNING))) {
-            throw new BusinessRuleException("Já existe um ETL em andamento. Aguarde a conclusão para enviar outro arquivo.");
-        }
-
-        Path workDir = salvarUpload(file);
-
-        EtlJob job = jobRepository.save(EtlJob.builder()
+        EtlJob job = jobRepository.saveAndFlush(EtlJob.builder()
                 .status(EtlJobStatus.PENDING)
                 .originalFilename(filename)
                 .municipios(String.join(",", codigos))
                 .createdBy(userId)
                 .build());
 
-        etlRunner.run(job.getId(), workDir, codigos, incluirConsumidores);
+        Path workDir;
+        try {
+            workDir = salvarUpload(file);
+        } catch (RuntimeException e) {
+            marcarFalha(job, e.getMessage());
+            throw e;
+        }
+
+        try {
+            etlRunner.run(job.getId(), workDir, codigos, incluirConsumidores);
+        } catch (TaskRejectedException e) {
+            apagar(workDir);
+            marcarFalha(job, "Fila de ETL cheia");
+            throw new BusinessRuleException("Fila de ETL cheia. Tente novamente em alguns minutos.");
+        } catch (RuntimeException e) {
+            apagar(workDir);
+            marcarFalha(job, "Não foi possível iniciar o ETL: " + e.getMessage());
+            throw new BusinessRuleException("Não foi possível iniciar o ETL. Tente novamente.");
+        }
         return EtlJobResponseDto.fromEntity(job);
     }
 
@@ -51,6 +65,13 @@ public class EtlService {
         return jobRepository.findById(id)
                 .map(EtlJobResponseDto::fromEntity)
                 .orElseThrow(() -> new BusinessRuleException("Execução de ETL não encontrada."));
+    }
+
+    private void marcarFalha(EtlJob job, String mensagem) {
+        job.setStatus(EtlJobStatus.FAILED);
+        job.setErrorMessage(mensagem);
+        job.setFinishedAt(Instant.now());
+        jobRepository.save(job);
     }
 
     private List<String> validarMunicipios(List<String> municipios) {

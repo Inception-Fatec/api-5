@@ -22,7 +22,6 @@ import geopandas as gpd
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.csv as pacsv
-import requests
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 
@@ -41,19 +40,12 @@ NUMERICAS = {"CAR_INST", "POINT_X", "POINT_Y"}
 
 
 def obter_csv_local(origem: str) -> Path:
-    """URL (baixa para o cache) ou caminho local; descompacta .zip se preciso."""
     if origem.startswith(("http://", "https://")):
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         destino = CACHE_DIR / origem.rsplit("/", 1)[-1]
         if not destino.exists():
             logger.info("Baixando %s", origem)
-            temporario = destino.with_name(destino.name + ".part")
-            with requests.get(origem, stream=True, timeout=60) as resposta:
-                resposta.raise_for_status()
-                with open(temporario, "wb") as arquivo:
-                    for bloco in resposta.iter_content(1024 * 1024):
-                        arquivo.write(bloco)
-            temporario.rename(destino)
+            baixar_com_retomada(origem, destino)
     else:
         destino = Path(origem)
         if not destino.exists():
@@ -130,7 +122,7 @@ def main(origem: str = CSV_UCBT_PJ_URL, distribuidoras: list[str] | None = None,
             continue
 
         gdf = _bloco_para_gdf(filtrado, metricas)
-        with engine.begin() as conn:  # um commit por bloco: a pré-carga pode ser retomada
+        with engine.begin() as conn:
             carregar_idempotente(conn, gdf, "ucbt_raw", ["dist", "cod_id_encr"], metricas)
         logger.info("bloco %s: %s registros ativos processados", i, filtrado.num_rows)
 
