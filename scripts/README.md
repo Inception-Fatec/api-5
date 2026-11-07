@@ -77,6 +77,29 @@ Após o primeiro restore os dados ficam no volume Docker (`tecsys-pgdata`)
 e o arquivo não é mais necessário. Para recomeçar do zero:
 `docker volume rm tecsys-pgdata` (container parado) e suba de novo.
 
+## Baixa tensão no upload de geodatabase (preload_ucbt)
+
+O upload de `.gdb` pela tela **ETL & Geodados** carrega a rede e os
+consumidores de média/alta tensão, mas **não** os de baixa tensão. Os
+consumidores BT vêm do arquivo nacional da ANEEL (`ucbt_pj.zip`, ~1,3 GB),
+que é carregado à parte, uma vez por distribuidora, na tabela `ucbt_raw`.
+Na carga do `.gdb`, o ETL liga esses consumidores aos transformadores.
+
+Se a `ucbt_raw` não tiver a distribuidora, a carga termina em **Concluído**
+com o aviso "Baixa tensão não carregada" no card e nos detalhes. Para
+resolver, rode o preload e envie o `.gdb` de novo:
+
+```bash
+cd modules
+pip install -r requirements.txt          # 1ª vez
+# ETL_DB_URL no modules/.env (ver .env.example); para o banco local:
+# ETL_DB_URL=postgresql+psycopg2://tecsys:tecsys@localhost:5433/tecsys
+python preload_ucbt.py --distribuidoras 391   # código DIST da distribuidora
+```
+
+O download fica em cache (`cache_aneel/`), então rodar para outra
+distribuidora não baixa o arquivo de novo.
+
 ## Pré-requisitos
 
 - Docker instalado, com o usuário no grupo `docker`
