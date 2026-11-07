@@ -115,7 +115,9 @@ class _UsersScreenState extends State<UsersScreen> {
     try {
       await UserApiService.instance.deleteUser(member.id);
       if (!mounted) return;
-      setState(() => _members.removeWhere((m) => m.id == member.id));
+      // Busca de novo para o UserStore (cache compartilhado) não guardar
+      // o usuário excluído.
+      await _loadUsers(force: true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
