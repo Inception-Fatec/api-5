@@ -43,6 +43,7 @@ if [[ "$DB_MODE" == "local" ]]; then
   DB_URL="jdbc:postgresql://tecsys-postgis:5432/tecsys"
   DB_USER="tecsys"
   DB_PASSWORD="tecsys"
+  ETL_DB_URL="postgresql+psycopg2://tecsys:tecsys@tecsys-postgis:5432/tecsys"
 elif [[ "$DB_MODE" == "supabase" ]]; then
   [[ -f "$ENV_FILE" ]] || { echo "ERRO: crie $ENV_FILE a partir do .env.supabase.example e preencha SUPABASE_DB_URL."; exit 1; }
   # shellcheck disable=SC1090
@@ -60,12 +61,15 @@ elif [[ "$DB_MODE" == "supabase" ]]; then
   CREDS="${REST%%@*}"; HOSTDB="${REST#*@}"
   DB_USER="${CREDS%%:*}"; DB_PASSWORD="${CREDS#*:}"
   DB_URL="jdbc:postgresql://${HOSTDB}"
+  # O ETL (Python) usa a mesma conexão no formato do SQLAlchemy.
+  ETL_DB_URL="postgresql+psycopg2://${REST}"
 else
   echo "ERRO: --db aceita apenas 'local' ou 'supabase'."; exit 1
 fi
 
 echo "Build da imagem $IMAGE (pode demorar na 1ª vez)..."
-docker build -q -t "$IMAGE" "$ROOT/Backend/tecsys" >/dev/null
+# O contexto "modules" leva os scripts Python do ETL para a imagem (#TG-103).
+docker build -q -t "$IMAGE" --build-context modules="$ROOT/modules" "$ROOT/Backend/tecsys" >/dev/null
 
 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 # Modo supabase: o host direto do Supabase só tem IPv6, que não existe
@@ -76,6 +80,7 @@ if [[ "$DB_MODE" == "supabase" ]]; then
   docker run -d --name "$CONTAINER" --network host \
     -e API_SECURITY_TOKEN_SECRET="$API_SECURITY_TOKEN_SECRET" \
     -e DB_URL="$DB_URL" -e DB_USER="$DB_USER" -e DB_PASSWORD="$DB_PASSWORD" \
+    -e ETL_DB_URL="$ETL_DB_URL" -v tecsys-aneel-cache:/var/cache/tecsys-aneel \
     -e ENGINE_URL="http://127.0.0.1:8082/api/calculate" \
     "$IMAGE" >/dev/null
 else
@@ -86,6 +91,8 @@ else
     -e DB_URL="$DB_URL" \
     -e DB_USER="$DB_USER" \
     -e DB_PASSWORD="$DB_PASSWORD" \
+    -e ETL_DB_URL="$ETL_DB_URL" \
+    -v tecsys-aneel-cache:/var/cache/tecsys-aneel \
     -e ENGINE_URL="http://tecsys-motor:8082/api/calculate" \
     -p "$PORT:8081" "$IMAGE" >/dev/null
 fi
