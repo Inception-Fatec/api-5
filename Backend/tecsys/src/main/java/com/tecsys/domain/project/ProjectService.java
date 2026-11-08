@@ -74,6 +74,7 @@ public class ProjectService {
                 project.getDistCode(),
                 project.getStatus(),
                 project.getCreatedBy().getId(),
+                project.getCreatedBy().getName(),
                 project.getCreatedAt(),
                 project.isActive()
         );

@@ -60,6 +60,7 @@ class EtlCarga {
     this.executadoEm,
     this.errorMessage,
     this.camadas = const <EtlCamada>[],
+    this.avisos = const <String>[],
   });
 
   final String id;
@@ -73,6 +74,10 @@ class EtlCarga {
   /// Motivo da falha informado pelo backend (só quando o status é FAILED).
   final String? errorMessage;
   final List<EtlCamada> camadas;
+
+  /// Avisos da carga que terminou com sucesso mas ficou incompleta
+  /// (ex.: baixa tensão não carregada). Vêm de summary.avisos.
+  final List<String> avisos;
 
   /// Total de registros gravados no banco (soma de todas as tabelas).
   int get totalGravados => camadas.fold<int>(0, (soma, c) => soma + c.gravados);
@@ -134,6 +139,7 @@ class EtlCarga {
       executadoEm: _formatarData(primeiro(json, const ['executadoEm', 'executado_em', 'timestamp', 'createdAt'])),
       errorMessage: primeiro(json, const ['errorMessage', 'error_message'])?.toString(),
       camadas: camadas,
+      avisos: _avisosDe(summary),
     );
   }
 
@@ -144,6 +150,18 @@ class EtlCarga {
         .whereType<Map>()
         .map((m) => EtlCarga.fromJson(Map<String, dynamic>.from(m)))
         .toList();
+  }
+
+  /// summary.avisos (todas as etapas) ou, em cargas antigas, o de cada bloco.
+  static List<String> _avisosDe(Map<String, dynamic> summary) {
+    List<String> lista(Object? v) =>
+        v is List ? v.map((e) => e.toString()).where((e) => e.isNotEmpty).toList() : <String>[];
+    final List<String> geral = lista(summary['avisos']);
+    if (geral.isNotEmpty) return geral;
+    return <String>[
+      ...lista(_mapa(summary['geodatabase'])['avisos']),
+      ...lista(_mapa(summary['consumidores'])['avisos']),
+    ];
   }
 
   static Map<String, dynamic> _mapa(Object? v) =>

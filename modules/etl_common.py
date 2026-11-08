@@ -290,10 +290,22 @@ def prefixar(df, prefixo, colunas=COLUNAS_CODIGO):
     return df
 
 
-def vincular_baixa_tensao(conn, dist: str, prefixo: str, municipios: list[str], metricas: Metricas) -> int:
+AVISO_SEM_BAIXA_TENSAO = (
+    "Baixa tensão não carregada: não há consumidores BT da distribuidora {dist} "
+    "nesses municípios na tabela ucbt_raw. Rode antes o preload_ucbt.py "
+    "(python preload_ucbt.py --distribuidoras {dist}) e envie o arquivo de novo."
+)
+
+
+def vincular_baixa_tensao(conn, dist: str, prefixo: str, municipios: list[str], metricas: Metricas) -> str | None:
+    """Liga os consumidores de baixa tensão (ucbt_raw, carregada pelo
+    preload_ucbt.py) aos transformadores da carga. Devolve um aviso quando
+    não há baixa tensão da distribuidora para vincular, ou None."""
+    aviso = AVISO_SEM_BAIXA_TENSAO.format(dist=dist)
     if conn.execute(text("SELECT to_regclass('ucbt_raw') IS NOT NULL")).scalar() is not True:
         logger.warning("Tabela ucbt_raw não existe — baixa tensão não vinculada.")
-        return 0
+        metricas.add("ucbt", raw_disponiveis=0, inseridos=0)
+        return aviso
 
     resultado = conn.execute(
         text(
@@ -319,4 +331,7 @@ def vincular_baixa_tensao(conn, dist: str, prefixo: str, municipios: list[str], 
     ).scalar()
     metricas.add("ucbt", raw_disponiveis=disponiveis, inseridos=resultado.rowcount)
     metricas.add("ucbt", sem_transformador_ou_ja_existentes=disponiveis - resultado.rowcount)
-    return resultado.rowcount
+    if disponiveis == 0:
+        logger.warning("ucbt_raw sem consumidores da distribuidora %s nesses municípios — baixa tensão não vinculada.", dist)
+        return aviso
+    return None

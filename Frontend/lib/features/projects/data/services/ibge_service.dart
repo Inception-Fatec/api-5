@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'package:tecsys_app/core/utils/text_normalizer.dart';
+import 'package:tecsys_app/features/projects/data/services/distribuidoras_service.dart';
 
 class Municipio {
   final int codigoIbge;
@@ -28,6 +29,11 @@ class Municipio {
 /// cache uma vez só, e filtramos localmente a cada busca — rápido e
 /// evita bater na API repetidamente.
 class IbgeService {
+  IbgeService({DistribuidorasService? distribuidoras})
+      : _distribuidoras = distribuidoras ?? DistribuidorasService();
+
+  final DistribuidorasService _distribuidoras;
+
   static const _url =
       'https://servicodados.ibge.gov.br/api/v1/localidades/municipios';
 
@@ -69,15 +75,39 @@ class IbgeService {
     return _cache!;
   }
 
-  /// Cidades que já têm dados carregados hoje (lista fixa): São José
-  /// dos Campos e Caçapava, ambas de SP.
-  Future<List<Municipio>> buscarCidadesComDados() async {
-    final sjc = await buscarPorNome('São José dos Campos');
-    final cacapava = await buscarPorNome('Caçapava');
-    return [
-      ...sjc.where((m) => m.uf == 'SP').take(1),
-      ...cacapava.where((m) => m.uf == 'SP').take(1),
-    ];
+  /// Cidades que têm dados da distribuidora [distCode] no banco, com
+  /// nome e UF do IBGE, em ordem alfabética. Código que o IBGE não
+  /// conhece aparece com o próprio código no lugar do nome.
+  Future<List<Municipio>> buscarCidadesComDados(String distCode) async {
+    final codigos = await _distribuidoras.codigosMunicipios(distCode);
+    if (codigos.isEmpty) return [];
+    final porCodigo = {for (final m in await _carregarTodos()) m.codigoIbge: m};
+    final cidades = codigos
+        .map((c) =>
+            porCodigo[c] ?? Municipio(codigoIbge: c, nome: '$c', uf: ''))
+        .toList()
+      ..sort((a, b) => normalizarTexto(a.nome.toLowerCase())
+          .compareTo(normalizarTexto(b.nome.toLowerCase())));
+    return cidades;
+  }
+
+  /// Carrega a lista do IBGE para [nomeMunicipio] funcionar. Falha em
+  /// silêncio: sem a lista, o nome cai para o código.
+  Future<void> precarregar() async {
+    try {
+      await _carregarTodos();
+    } catch (_) {}
+  }
+
+  /// Nome do município pelo código IBGE (texto), se a lista já foi
+  /// carregada; senão devolve o próprio código.
+  static String nomeMunicipio(String codigo) {
+    final id = int.tryParse(codigo);
+    if (id == null || _cache == null) return codigo;
+    for (final m in _cache!) {
+      if (m.codigoIbge == id) return m.nome;
+    }
+    return codigo;
   }
 
   Future<List<Municipio>> buscarPorNome(String query) async {

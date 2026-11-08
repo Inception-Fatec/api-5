@@ -32,6 +32,9 @@ def main(argv=None) -> int:
         logging.exception("ETL falhou")
         return 1
 
+    # Avisos de todas as etapas num lugar só, para a tela de ETL mostrar.
+    resumo["avisos"] = [a for bloco in resumo.values() if isinstance(bloco, dict) for a in bloco.get("avisos", [])]
+
     print("ETL_RESULT:" + json.dumps(resumo, ensure_ascii=False, default=str), flush=True)
     return 0
 

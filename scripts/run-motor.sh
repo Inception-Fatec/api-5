@@ -6,15 +6,14 @@
 #   ./scripts/run-motor.sh --db supabase   # contra o Supabase (lê MOTOR/.env.supabase)
 #   ./scripts/run-motor.sh --stop          # para e remove o container
 #
-# Relevo: os blocos baixados da OpenTopography ficam no volume Docker
-# tecsys-dem-cache, que sobrevive ao container (a API grátis permite só
-# 50 chamadas por dia). Para semear o cache com blocos já baixados
-# (mesmo formato do motor de referência em Python: indice.json + dem_*.tif):
-#   docker run --rm -v tecsys-dem-cache:/c -v /caminho/do/cache:/src alpine cp -a /src/. /c/
+# Relevo: os tiles do Copernicus GLO-30 baixados do AWS Open Data ficam no
+# volume Docker tecsys-dem-cache, que sobrevive ao container. Não há chave
+# de API. Para usar um mirror local/NAS, defina DEM_MIRROR_DIR no arquivo
+# de ambiente; o script monta esse diretório read-only no container.
 #
-# Parâmetros do motor: qualquer linha MOTOR_*=valor do arquivo de ambiente
-# (ex.: MOTOR_PROFILE=tecsys, MOTOR_EXTRA_LOSS_DB=10) é repassada ao
-# container. Ver MOTOR/README.md.
+# Parâmetros do motor: qualquer linha MOTOR_*=valor ou DEM_*=valor do
+# arquivo de ambiente (ex.: MOTOR_PROFILE=tecsys, DEM_DOWNLOAD_ATTEMPTS=4)
+# é repassada ao container. Ver MOTOR/README.md.
 #
 # Configurações:
 #   Lidas EXCLUSIVAMENTE de arquivos dentro de MOTOR/:
@@ -55,15 +54,10 @@ if [[ "$DB_MODE" == "local" ]]; then
   DB_URL="jdbc:postgresql://tecsys-postgis:5432/tecsys"
   DB_USER="tecsys"
   DB_PASSWORD="tecsys"
-  
-  # Lê a chave do arquivo local do motor
-  OPENTOPO_KEY="$(get_motor_env "OPENTOPOGRAPHY_API_KEY" "$MOTOR_ENV_LOCAL")"
 
 elif [[ "$DB_MODE" == "supabase" ]]; then
   [[ -f "$MOTOR_ENV_SUPABASE" ]] || { echo "ERRO: crie $MOTOR_ENV_SUPABASE com as credenciais e preencha SUPABASE_DB_URL."; exit 1; }
 
-  # Lê a chave e a URL do Supabase direto de MOTOR/.env.supabase
-  OPENTOPO_KEY="$(get_motor_env "OPENTOPOGRAPHY_API_KEY" "$MOTOR_ENV_SUPABASE")"
   SUPABASE_DB_URL="$(get_motor_env "SUPABASE_DB_URL" "$MOTOR_ENV_SUPABASE")"
 
   if [[ -z "$SUPABASE_DB_URL" ]]; then
@@ -71,7 +65,6 @@ elif [[ "$DB_MODE" == "supabase" ]]; then
     exit 1
   fi
 
-  # Conversão de postgres(ql):// para JDBC
   if [[ "$SUPABASE_DB_URL" == postgres://* ]]; then
     REST="${SUPABASE_DB_URL#postgres://}"
   elif [[ "$SUPABASE_DB_URL" == postgresql://* ]]; then
@@ -80,7 +73,7 @@ elif [[ "$DB_MODE" == "supabase" ]]; then
     echo "ERRO: SUPABASE_DB_URL precisa começar com postgres:// ou postgresql://"
     exit 1
   fi
-  
+
   CREDS="${REST%%@*}"; HOSTDB="${REST#*@}"
   DB_USER="${CREDS%%:*}"; DB_PASSWORD="${CREDS#*:}"
   DB_URL="jdbc:postgresql://${HOSTDB}"
@@ -89,19 +82,25 @@ else
   echo "ERRO: --db aceita apenas 'local' ou 'supabase'."; exit 1
 fi
 
-if [[ -z "$OPENTOPO_KEY" ]]; then
-  echo "AVISO: OPENTOPOGRAPHY_API_KEY não definida no arquivo do ambiente selecionado em MOTOR/."
-  echo "       O motor sobe, mas o cálculo falha se o relevo da área não estiver no cache."
-fi
-
-# Repassa os parâmetros do motor (MOTOR_*) do arquivo de ambiente selecionado
 ENV_FILE="$MOTOR_ENV_LOCAL"
 [[ "$DB_MODE" == "supabase" ]] && ENV_FILE="$MOTOR_ENV_SUPABASE"
 MOTOR_ARGS=()
 if [[ -f "$ENV_FILE" ]]; then
   while IFS= read -r line; do
     MOTOR_ARGS+=(-e "$line")
-  done < <(grep -E '^MOTOR_[A-Z0-9_]+=' "$ENV_FILE" | grep -vE '^MOTOR_(PORT|BIND_ADDRESS)=' | tr -d '\r"')
+  done < <(grep -E '^(MOTOR|DEM)_[A-Z0-9_]+=' "$ENV_FILE" | grep -vE '^(MOTOR_(PORT|BIND_ADDRESS)|DEM_(CACHE_DIR|MIRROR_DIR))=' | tr -d '\r"')
+fi
+
+MIRROR_HOST_DIR="$(get_motor_env "DEM_MIRROR_DIR" "$ENV_FILE")"
+MIRROR_ARGS=()
+if [[ -n "$MIRROR_HOST_DIR" ]]; then
+  [[ "$MIRROR_HOST_DIR" == /* ]] || MIRROR_HOST_DIR="$ROOT/$MIRROR_HOST_DIR"
+  MIRROR_HOST_DIR="$(realpath -m "$MIRROR_HOST_DIR")"
+  if [[ -d "$MIRROR_HOST_DIR" ]]; then
+    MIRROR_ARGS=(-v "${MIRROR_HOST_DIR}:/var/cache/tecsys-dem-mirror:ro" -e DEM_MIRROR_DIR=/var/cache/tecsys-dem-mirror)
+  else
+    echo "AVISO: DEM_MIRROR_DIR=$MIRROR_HOST_DIR não existe ou não é diretório; seguindo sem mirror."
+  fi
 fi
 DEM_VOLUME=(-v tecsys-dem-cache:/var/cache/tecsys-dem)
 
@@ -113,16 +112,16 @@ docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 if [[ "$DB_MODE" == "supabase" ]]; then
   docker run -d --name "$CONTAINER" --network host \
     -e DB_URL="$DB_URL" -e DB_USER="$DB_USER" -e DB_PASSWORD="$DB_PASSWORD" \
-    -e MOTOR_PORT="$PORT" -e OPENTOPOGRAPHY_API_KEY="$OPENTOPO_KEY" \
-    "${DEM_VOLUME[@]}" ${MOTOR_ARGS[@]+"${MOTOR_ARGS[@]}"} \
+    -e MOTOR_PORT="$PORT" \
+    "${DEM_VOLUME[@]}" ${MIRROR_ARGS[@]+"${MIRROR_ARGS[@]}"} ${MOTOR_ARGS[@]+"${MOTOR_ARGS[@]}"} \
     "$IMAGE" >/dev/null
 else
   docker network create tecsys-net >/dev/null 2>&1 || true
   docker run -d --name "$CONTAINER" \
     --network tecsys-net \
     -e DB_URL="$DB_URL" -e DB_USER="$DB_USER" -e DB_PASSWORD="$DB_PASSWORD" \
-    -e MOTOR_BIND_ADDRESS=0.0.0.0 -e OPENTOPOGRAPHY_API_KEY="$OPENTOPO_KEY" \
-    "${DEM_VOLUME[@]}" ${MOTOR_ARGS[@]+"${MOTOR_ARGS[@]}"} \
+    -e MOTOR_BIND_ADDRESS=0.0.0.0 \
+    "${DEM_VOLUME[@]}" ${MIRROR_ARGS[@]+"${MIRROR_ARGS[@]}"} ${MOTOR_ARGS[@]+"${MOTOR_ARGS[@]}"} \
     -p "127.0.0.1:$PORT:8082" "$IMAGE" >/dev/null
 fi
 

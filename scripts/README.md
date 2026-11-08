@@ -48,7 +48,19 @@ Spring Boot (`tecsys-backend`, porta 8081). Rebuilda a imagem do código atual.
 
 Motor de decisão (`tecsys-motor`, porta 8082, só em 127.0.0.1 — não tem
 autenticação; quem chama é o backend). Mesmo esquema de banco do backend
-(`--db supabase` lê `Backend/tecsys/.env.supabase`). Utiliziza os mesmos campos no .env com a adição da cheve da chave do OpenTopography pela variável de ambiente `OPENTOPOGRAPHY_API_KEY`.
+(`--db supabase` lê `MOTOR/.env.supabase`). O relevo usa o Copernicus GLO-30
+no AWS Open Data, sem chave de API. O mirror local/NAS é opcional e definido
+por `DEM_MIRROR_DIR` no arquivo de ambiente; o script monta o diretório
+read-only. Para semear o mirror, use `./scripts/sync-dem-mirror.sh`.
+
+```bash
+./scripts/sync-dem-mirror.sh --mirror-dir DIR --bbox S,N,W,E
+./scripts/sync-dem-mirror.sh --mirror-dir DIR --tiles TILE[,TILE...]
+```
+
+Baixa tiles do Copernicus GLO-30 do AWS Open Data para o mirror local/NAS,
+sem AWS CLI e sem credenciais. Atualiza `manifest.sha256`. Ver
+[`docs/MOTOR_RELEVO_AWS.md`](../docs/MOTOR_RELEVO_AWS.md).
 
 ```bash
 ./scripts/run-frontend.sh [--api-host HOST] [--api-port PORT] [--stop]
@@ -58,7 +70,9 @@ Flutter web no nginx (`tecsys-frontend`, porta 8080). A URL da API é embutida
 no build: trocou de backend, o script rebuilda sozinho.
 
 Alternativa "sobe tudo": `docker compose up --build` (usa os mesmos
-Dockerfiles; o backend do compose fala com o banco local).
+Dockerfiles; sobe banco local, backend, motor e frontend). O segredo do JWT
+vem do ambiente ou do `.env` da raiz: `API_SECURITY_TOKEN_SECRET=...` (gere com
+`openssl rand -hex 32`). O motor não precisa de chave: o relevo vem da AWS.
 
 ## Onde colocar o dump (só necessário na 1ª subida)
 
@@ -77,6 +91,29 @@ Após o primeiro restore os dados ficam no volume Docker (`tecsys-pgdata`)
 e o arquivo não é mais necessário. Para recomeçar do zero:
 `docker volume rm tecsys-pgdata` (container parado) e suba de novo.
 
+## Baixa tensão no upload de geodatabase (preload_ucbt)
+
+O upload de `.gdb` pela tela **ETL & Geodados** carrega a rede e os
+consumidores de média/alta tensão, mas **não** os de baixa tensão. Os
+consumidores BT vêm do arquivo nacional da ANEEL (`ucbt_pj.zip`, ~1,3 GB),
+que é carregado à parte, uma vez por distribuidora, na tabela `ucbt_raw`.
+Na carga do `.gdb`, o ETL liga esses consumidores aos transformadores.
+
+Se a `ucbt_raw` não tiver a distribuidora, a carga termina em **Concluído**
+com o aviso "Baixa tensão não carregada" no card e nos detalhes. Para
+resolver, rode o preload e envie o `.gdb` de novo:
+
+```bash
+cd modules
+pip install -r requirements.txt          # 1ª vez
+# ETL_DB_URL no modules/.env (ver .env.example); para o banco local:
+# ETL_DB_URL=postgresql+psycopg2://tecsys:tecsys@localhost:5433/tecsys
+python preload_ucbt.py --distribuidoras 391   # código DIST da distribuidora
+```
+
+O download fica em cache (`cache_aneel/`), então rodar para outra
+distribuidora não baixa o arquivo de novo.
+
 ## Pré-requisitos
 
 - Docker instalado, com o usuário no grupo `docker`
@@ -87,7 +124,7 @@ e o arquivo não é mais necessário. Para recomeçar do zero:
 
 ## Problemas comuns
 
-- **Sessão expirada (403)**: o token JWT dura 2h — faça logout/login de novo no app.
+- **Sessão expirada (401)**: o token JWT dura 2h — o app volta para o login sozinho. 403 é falta de permissão (ex.: rota de ADM).
 - **Cidade não seleciona / salvar não funciona**: quase sempre é a sessão
   expirada acima, não o banco. Relogue antes de investigar mais.
 - **Backend modo supabase não sobe**: o host direto do Supabase é IPv6-only
