@@ -6,11 +6,11 @@
 #   docker compose down              # para tudo (volumes tecsys-pgdata e tecsys-dem-cache preservados)
 #   docker compose down -v           # CUIDADO: apaga também o cache compartilhado tecsys-dem-cache
 #
-# Chave da OpenTopography (relevo do motor): vem do ambiente ou do arquivo
-# .env na raiz do repositório (gitignored), por exemplo:
-#   OPENTOPOGRAPHY_API_KEY=sua_chave docker compose up --build
-# Sem a chave, o motor sobe, mas o cálculo falha se o relevo da área não
-# estiver no cache (volume tecsys-dem-cache, o mesmo do scripts/run-motor.sh).
+# Segredo do JWT (obrigatório, #TG-94): vem do ambiente ou do arquivo .env na
+# raiz do repositório (gitignored), por exemplo:
+#   API_SECURITY_TOKEN_SECRET=<saída de: openssl rand -hex 32>
+# Relevo do motor: Copernicus GLO-30 baixado da AWS, sem chave (#TG-139). Os
+# tiles ficam no volume tecsys-dem-cache, o mesmo do scripts/run-motor.sh.
 #
 # Banco local (PostGIS 17). Para usar o Supabase no backend, suba o
 # backend pelo script (./scripts/run-backend.sh --db supabase) em vez
@@ -42,6 +42,7 @@ services:
       DB_URL: jdbc:postgresql://db:5432/tecsys
       DB_USER: tecsys
       DB_PASSWORD: tecsys
+      API_SECURITY_TOKEN_SECRET: "${API_SECURITY_TOKEN_SECRET:?Defina API_SECURITY_TOKEN_SECRET}"
       # Dentro do container, localhost é o próprio backend: o motor é
       # chamado pelo nome do serviço na rede do compose.
       ENGINE_URL: http://motor:8082/api/calculate
@@ -61,7 +62,6 @@ services:
       # Escuta em todas as interfaces do container para o backend alcançar;
       # no host, a porta só é publicada em 127.0.0.1 (o motor não tem login).
       MOTOR_BIND_ADDRESS: 0.0.0.0
-      OPENTOPOGRAPHY_API_KEY: ${OPENTOPOGRAPHY_API_KEY:-}
     ports:
       - "127.0.0.1:8082:8082"
     volumes:

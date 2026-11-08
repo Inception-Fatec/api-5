@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:tecsys_app/core/theme/app_theme.dart';
 import 'package:tecsys_app/core/widgets/page_body.dart';
 import 'package:tecsys_app/features/projects/data/models/project_model.dart';
+import 'package:tecsys_app/features/projects/data/services/distribuidoras_service.dart';
 import 'package:tecsys_app/features/projects/state/projects_list_controller.dart';
 import 'package:tecsys_app/features/map/ui/screens/points_map_screen.dart';
 import 'package:tecsys_app/features/projects/ui/widgets/new_project/new_project_dialog.dart';
@@ -29,6 +30,16 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   void initState() {
     super.initState();
     _controller = ProjectsListController()..carregarInicial();
+    _carregarNomesDistribuidoras();
+  }
+
+  /// Nomes das distribuidoras para os cards; sem eles, o card mostra o
+  /// código.
+  Future<void> _carregarNomesDistribuidoras() async {
+    try {
+      await DistribuidorasService().listar();
+      if (mounted) setState(() {});
+    } catch (_) {}
   }
 
   @override

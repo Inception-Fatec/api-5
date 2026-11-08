@@ -41,14 +41,14 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public List<UserResponseDto> listAllUsers() {
-        return userRepository.findAll().stream()
+        return userRepository.findAllByIsActiveTrue().stream()
                 .map(UserResponseDto::fromEntity)
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public Page<UserResponseDto> listAllUsersPaginated(Pageable pageable) {
-        return userRepository.findAll(pageable)
+        return userRepository.findAllByIsActiveTrue(pageable)
                 .map(UserResponseDto::fromEntity);
     }
 

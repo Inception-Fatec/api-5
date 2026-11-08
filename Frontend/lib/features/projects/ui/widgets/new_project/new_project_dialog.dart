@@ -35,7 +35,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
   void initState() {
     super.initState();
     _nomeController.text = widget.nomeInicial ?? '';
-    _controller.carregarCidades();
+    _controller.carregar();
   }
 
   @override
@@ -48,6 +48,40 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
   void _confirmar() {
     final resultado = _controller.confirmar(_nomeController.text);
     if (resultado != null) Navigator.of(context).pop(resultado);
+  }
+
+  /// Uma distribuidora: campo só de leitura. Várias: lista para escolher.
+  Widget _campoDistribuidora() {
+    final lista = _controller.distribuidoras;
+    if (lista.length <= 1) {
+      return Container(
+        width: double.infinity,
+        padding: NewProjectDialogStyles.fieldPadding,
+        decoration: NewProjectDialogStyles.readonlyFieldDecoration,
+        child: Text(
+          _controller.distribuidoraLabel.isEmpty
+              ? '—'
+              : _controller.distribuidoraLabel,
+          style: AppTextStyles.input,
+        ),
+      );
+    }
+    return DropdownButtonFormField<String>(
+      initialValue: _controller.distCode,
+      isExpanded: true,
+      style: AppTextStyles.input,
+      decoration: AppDecorations.filledInput(
+        contentPadding: NewProjectDialogStyles.fieldPadding,
+        borderRadius: AppRadius.sm,
+      ),
+      items: [
+        for (final d in lista)
+          DropdownMenuItem(value: d.codigo, child: Text(d.rotulo)),
+      ],
+      onChanged: (codigo) {
+        if (codigo != null) _controller.escolherDistribuidora(codigo);
+      },
+    );
   }
 
   @override
@@ -93,15 +127,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                   ),
                   const SizedBox(height: AppSpacing.md),
                   const FieldLabel('Empresa / Distribuidora'),
-                  Container(
-                    width: double.infinity,
-                    padding: NewProjectDialogStyles.fieldPadding,
-                    decoration: NewProjectDialogStyles.readonlyFieldDecoration,
-                    child: Text(
-                      _controller.distribuidoraLabel,
-                      style: AppTextStyles.input,
-                    ),
-                  ),
+                  _campoDistribuidora(),
                   const SizedBox(height: AppSpacing.md),
                   const FieldLabel('Cidade(s)'),
                   NewProjectCitiesField(controller: _controller),
