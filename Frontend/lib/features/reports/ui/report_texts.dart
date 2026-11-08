@@ -1,4 +1,5 @@
 import 'package:tecsys_app/core/utils/distributors.dart';
+import 'package:tecsys_app/features/projects/data/services/ibge_service.dart';
 import 'package:tecsys_app/features/reports/data/models/coverage_report.dart';
 import 'package:tecsys_app/features/reports/ui/report_efficiency.dart';
 import 'package:tecsys_app/features/reports/ui/report_formatters.dart';
@@ -6,13 +7,6 @@ import 'package:tecsys_app/features/reports/ui/styles/report_styles.dart';
 
 /// Textos do relatório, montados a partir dos dados (sem widgets, para
 /// poderem ser testados direto).
-
-/// Municípios com dados carregados hoje (mesmos códigos IBGE de
-/// `MapRegions`). Código desconhecido aparece como o próprio código.
-const Map<String, String> _municipios = {
-  '3549904': 'São José dos Campos',
-  '3508504': 'Caçapava',
-};
 
 const Map<String, String> _niveis = {
   'ALTO': 'Alta',
@@ -65,7 +59,7 @@ List<ReportParam> filterEntries(ReportFilters? f) {
           joinList(f.distCodes.map(nomeDistribuidora).toList())),
     if (f.munCodes.isNotEmpty)
       ReportParam('Municípios',
-          joinList(f.munCodes.map((c) => _municipios[c] ?? c).toList())),
+          joinList(f.munCodes.map(IbgeService.nomeMunicipio).toList())),
     if (f.targetLevels.isNotEmpty)
       ReportParam('Tensão dos pontos',
           joinList(f.targetLevels.map((l) => _niveis[l] ?? l).toList())),

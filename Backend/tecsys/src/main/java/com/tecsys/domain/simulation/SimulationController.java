@@ -2,7 +2,6 @@ package com.tecsys.domain.simulation;
 
 import com.tecsys.domain.project.dto.ProjectResponseDto;
 import com.tecsys.domain.simulation.dto.SimulationRunRequestDto;
-import com.tecsys.domain.simulation.dto.SimulationWebhookDto;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -25,14 +24,5 @@ public class SimulationController {
 
         ProjectResponseDto response = simulationService.startSimulation(request, principal.getName());
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
-    }
-
-    @PostMapping("/webhook/{projectId}")
-    public ResponseEntity<Void> engineWebhook(
-            @PathVariable Long projectId,
-            @RequestBody @Valid SimulationWebhookDto webhookDto) {
-
-        simulationService.processWebhook(projectId, webhookDto.status());
-        return ResponseEntity.noContent().build();
     }
 }

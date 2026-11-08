@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:tecsys_app/features/auth/ui/screens/splash_gate.dart';
-import 'package:tecsys_app/features/etl_geodados/etl_geodados_screen.dart';
 import 'package:tecsys_app/core/theme/app_theme.dart';
 import 'package:tecsys_app/features/auth/ui/session_expiry.dart';
 
@@ -26,10 +25,9 @@ class TecsysApp extends StatelessWidget {
         child: child,
       ),
       // SplashGate decide entre restaurar a sessão salva ou mostrar o login.
+      // Sem rotas nomeadas: a aba ETL & Geodados só abre pelo AppShell, que
+      // a mostra apenas para ADM (uma rota '/etl' abria a tela pela URL).
       home: const SplashGate(),
-      routes: {
-        '/etl': (context) => const EtlGeodadosScreen(),
-      },
     );
   }
 }
