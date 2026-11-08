@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import 'etl_theme.dart';
 import 'models/etl_carga.dart';
+import 'widgets/seletor_municipio.dart';
 import 'widgets/etl_buttons.dart';
 
 /// Modal "Detalhes da carga" (aberto ao clicar num card da lista).
@@ -240,6 +241,22 @@ class _Cabecalho extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (carga.municipios.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.location_on_outlined, size: 14, color: EtlColors.slate400),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          MunicipioService.rotulosDe(carga.municipios),
+                          style: etlText(12, color: EtlColors.slate500, lineHeight: 16),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),

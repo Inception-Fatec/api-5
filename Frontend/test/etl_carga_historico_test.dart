@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tecsys_app/features/etl_geodados/models/etl_carga.dart';
 import 'package:tecsys_app/features/etl_geodados/services/arquivo_local.dart';
 import 'package:tecsys_app/features/etl_geodados/services/etl_service.dart';
+import 'package:tecsys_app/features/etl_geodados/widgets/seletor_municipio.dart';
 
 /// Arquivo em memória que conta quantos bytes foram lidos.
 class ArquivoFalso implements ArquivoLocal {
@@ -57,6 +58,17 @@ void main() {
       expect(cargas[0].tamanhoFormatado, '554.0 MB');
       expect(cargas[0].logTail, 'linha 1\nlinha 2');
       expect(cargas[1].logTail, isNull);
+    });
+
+    test('lê os códigos IBGE dos municípios da carga', () {
+      final carga = EtlCarga.fromJson({
+        'id': 3,
+        'status': 'SUCCESS',
+        'municipios': ['3205309', '3205200'],
+      });
+      expect(carga.municipios, ['3205309', '3205200']);
+      // Sem a lista do IBGE carregada, mostra o próprio código.
+      expect(MunicipioService.rotulosDe(carga.municipios), '3205309, 3205200');
     });
 
     test('carga antiga sem tamanho não mostra "0 B" no resumo', () {
