@@ -27,6 +27,55 @@ class _EtlGeodadosScreenState extends State<EtlGeodadosScreen> {
   Timer? _timer;
   bool _consultando = false;
   int _falhasSeguidas = 0;
+  bool _carregandoHistorico = true;
+  String? _erroHistorico;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarHistorico();
+  }
+
+  /// Busca as últimas cargas gravadas no backend: o histórico não some mais
+  /// ao recarregar a página, e cargas ainda em andamento voltam a ser
+  /// acompanhadas (#TG-141).
+  Future<void> _carregarHistorico() async {
+    setState(() {
+      _carregandoHistorico = true;
+      _erroHistorico = null;
+    });
+    try {
+      final List<EtlCarga> historico = await EtlService.listarCargas();
+      if (!mounted) return;
+      setState(() {
+        // Cargas enviadas enquanto o histórico carregava ficam no topo.
+        final Set<String> ids = historico.map((c) => c.id).toSet();
+        final List<EtlCarga> novas =
+            _cargas.where((c) => !ids.contains(c.id)).toList();
+        _cargas
+          ..clear()
+          ..addAll(novas)
+          ..addAll(historico);
+        _carregandoHistorico = false;
+      });
+      if (_cargas.any((c) => c.status == EtlCargaStatus.processando)) {
+        _iniciarPolling();
+      }
+    } on EtlUploadException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _carregandoHistorico = false;
+        _erroHistorico = e.mensagem;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _carregandoHistorico = false;
+        _erroHistorico =
+            'Não foi possível carregar o histórico. Verifique a conexão com o servidor.';
+      });
+    }
+  }
 
   Future<void> _abrirUpload() async {
     final nova = await UploadModalDialog.show(context);
@@ -145,6 +194,9 @@ class _EtlGeodadosScreenState extends State<EtlGeodadosScreen> {
                           const SizedBox(height: AppSpacing.lg),
                           _CargaList(
                             cargas: _cargas,
+                            carregando: _carregandoHistorico,
+                            erro: _erroHistorico,
+                            onRecarregar: _carregarHistorico,
                             onOpen: _abrirDetalhes,
                             onUpload: _abrirUpload,
                           ),
@@ -226,11 +278,17 @@ class _PageHeader extends StatelessWidget {
 class _CargaList extends StatelessWidget {
   const _CargaList({
     required this.cargas,
+    required this.carregando,
+    required this.erro,
+    required this.onRecarregar,
     required this.onOpen,
     required this.onUpload,
   });
 
   final List<EtlCarga> cargas;
+  final bool carregando;
+  final String? erro;
+  final VoidCallback onRecarregar;
   final ValueChanged<EtlCarga> onOpen;
   final VoidCallback onUpload;
 
@@ -242,9 +300,15 @@ class _CargaList extends StatelessWidget {
         Row(
           children: [
             const Expanded(
-              child: Text('Cargas desta sessão',
+              child: Text('Histórico de cargas',
                   style: AppTextStyles.sectionLabel),
             ),
+            IconButton(
+              tooltip: 'Atualizar',
+              onPressed: carregando ? null : onRecarregar,
+              icon: const Icon(Icons.refresh, size: 20),
+            ),
+            const SizedBox(width: AppSpacing.xs),
             Container(
               padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
@@ -257,7 +321,16 @@ class _CargaList extends StatelessWidget {
           ],
         ),
         const SizedBox(height: AppSpacing.md),
-        if (cargas.isEmpty)
+        if (erro != null) ...[
+          Text(erro!, style: AppTextStyles.bodySmallError),
+          const SizedBox(height: AppSpacing.md),
+        ],
+        if (carregando && cargas.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(AppSpacing.xl),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (cargas.isEmpty)
           _EmptyState(onUpload: onUpload)
         else
           for (final carga in cargas) ...[
@@ -282,7 +355,7 @@ class _EmptyState extends StatelessWidget {
       decoration: AppDecorations.outlinedCard,
       child: Column(
         children: [
-          const Text('Nenhuma carga nesta sessão',
+          const Text('Nenhuma carga enviada ainda',
               style: AppTextStyles.sectionLabel, textAlign: TextAlign.center),
           const SizedBox(height: AppSpacing.xs),
           const Text(

@@ -4,11 +4,11 @@ import 'dart:ui' show ImageFilter;
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 
 import 'etl_theme.dart';
 import 'models/etl_carga.dart';
+import 'services/arquivo_local.dart';
 import 'services/etl_service.dart';
 import 'widgets/etl_buttons.dart';
 import 'widgets/seletor_municipio.dart';
@@ -70,15 +70,22 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
   _Fase _fase = _Fase.vazio;
   String? _nome;
   String? _caminho;
-  Uint8List? _arquivoBytes;
+  ArquivoLocal? _arquivoNavegador;
   double _progresso = 0;
   String? _erro;
   List<Municipio> _municipios = <Municipio>[];
 
   bool get _ocupado => _fase == _Fase.enviando;
 
-  /// Na web o arquivo vem em bytes; nas demais plataformas, pelo caminho.
-  bool get _temArquivo => _caminho != null || _arquivoBytes != null;
+  @override
+  void initState() {
+    super.initState();
+    if (envioPeloNavegador) prepararArquivosSoltos();
+  }
+
+  /// Na web o arquivo é uma referência do navegador (sem ler os bytes para
+  /// a memória); nas demais plataformas, o caminho no disco (#TG-141).
+  bool get _temArquivo => _caminho != null || _arquivoNavegador != null;
 
   void _fechar() {
     if (_ocupado) return;
@@ -88,23 +95,24 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
   Future<void> _escolherArquivo() async {
     if (_ocupado) return;
     try {
+      if (envioPeloNavegador) {
+        final ArquivoLocal? arquivo = await escolherZipNoNavegador();
+        if (arquivo == null || !mounted) return;
+        await _selecionarArquivo(nome: arquivo.nome, arquivo: arquivo);
+        return;
+      }
       final FilePickerResult? resultado = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: const ['zip'],
         allowMultiple: false,
-        withData: kIsWeb,
       );
       if (resultado == null || resultado.files.isEmpty) return;
       final file = resultado.files.first;
-      if (file.path == null && file.bytes == null) {
+      if (file.path == null) {
         throw const EtlUploadException(
             'Não foi possível ler o arquivo selecionado.');
       }
-      await _selecionarArquivo(
-        nome: file.name,
-        caminho: file.path,
-        bytes: file.bytes,
-      );
+      await _selecionarArquivo(nome: file.name, caminho: file.path);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -116,11 +124,12 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
 
   Future<void> _selecionarSolto(DropItem item) async {
     if (_ocupado) return;
-    // Na web o "path" do arquivo solto é uma URL blob: o conteúdo só sai pelos bytes.
-    if (kIsWeb) {
-      final Uint8List bytes;
+    // Na web o "path" do arquivo solto é uma URL blob: pega o arquivo por ela,
+    // sem copiar o conteúdo para a memória do app.
+    if (envioPeloNavegador) {
+      final ArquivoLocal arquivo;
       try {
-        bytes = await item.readAsBytes();
+        arquivo = await arquivoDeUrlBlob(item.path, item.name);
       } catch (e) {
         if (!mounted) return;
         setState(() {
@@ -130,7 +139,7 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
         return;
       }
       if (!mounted) return;
-      await _selecionarArquivo(nome: item.name, bytes: bytes);
+      await _selecionarArquivo(nome: item.name, arquivo: arquivo);
       return;
     }
     final String nome = item.path.split(RegExp(r'[/\\]')).last;
@@ -140,7 +149,7 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
   Future<void> _selecionarArquivo({
     required String nome,
     String? caminho,
-    Uint8List? bytes,
+    ArquivoLocal? arquivo,
   }) async {
     if (_ocupado) return;
 
@@ -155,8 +164,8 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
 
     String? problema;
     try {
-      problema = bytes != null
-          ? EtlService.validarEstruturaZipBytes(bytes)
+      problema = arquivo != null
+          ? await EtlService.validarEstruturaZipArquivo(arquivo)
           : await EtlService.validarEstruturaZip(caminho!);
     } catch (e) {
       problema = 'Não foi possível ler o arquivo: $e';
@@ -174,7 +183,7 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
     setState(() {
       _nome = nome;
       _caminho = caminho;
-      _arquivoBytes = bytes;
+      _arquivoNavegador = arquivo;
       _progresso = 1;
       _erro = null;
       _fase = _Fase.pronto;
@@ -183,10 +192,10 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
 
   Future<void> _enviar() async {
     final String? caminho = _caminho;
-    final Uint8List? arquivoBytes = _arquivoBytes;
+    final ArquivoLocal? arquivoNavegador = _arquivoNavegador;
     final String? nome = _nome;
     final List<Municipio> municipios = _municipios;
-    if ((caminho == null && arquivoBytes == null) ||
+    if (!_temArquivo ||
         nome == null ||
         municipios.isEmpty ||
         _ocupado) {
@@ -202,7 +211,7 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
     try {
       final EtlCarga carga = await EtlService.enviarZip(
         caminho: caminho,
-        arquivoBytes: arquivoBytes,
+        arquivoNavegador: arquivoNavegador,
         nomeArquivo: nome,
         municipios: municipios.map((m) => m.codigo).toList(),
         onProgress: (p) {

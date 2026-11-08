@@ -30,6 +30,12 @@ public class EtlController {
         return ResponseEntity.accepted().body(response);
     }
 
+    @GetMapping("/jobs")
+    @PreAuthorize("hasRole('ADM')")
+    public ResponseEntity<List<EtlJobResponseDto>> listJobs() {
+        return ResponseEntity.ok(etlService.listarJobs());
+    }
+
     @GetMapping("/jobs/{id}")
     @PreAuthorize("hasRole('ADM')")
     public ResponseEntity<EtlJobResponseDto> getJob(@PathVariable Long id) {

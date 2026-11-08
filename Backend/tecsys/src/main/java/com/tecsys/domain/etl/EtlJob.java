@@ -38,6 +38,9 @@ public class EtlJob {
     @Column(name = "error_message", columnDefinition = "TEXT")
     private String errorMessage;
 
+    @Column(name = "file_size_bytes")
+    private Long fileSizeBytes;
+
     @Column(name = "created_by")
     private Long createdBy;
 

@@ -61,6 +61,7 @@ class EtlCarga {
     this.errorMessage,
     this.camadas = const <EtlCamada>[],
     this.avisos = const <String>[],
+    this.logTail,
   });
 
   final String id;
@@ -79,6 +80,9 @@ class EtlCarga {
   /// (ex.: baixa tensão não carregada). Vêm de summary.avisos.
   final List<String> avisos;
 
+  /// Últimas linhas do log do processamento (para entender uma falha).
+  final String? logTail;
+
   /// Total de registros gravados no banco (soma de todas as tabelas).
   int get totalGravados => camadas.fold<int>(0, (soma, c) => soma + c.gravados);
 
@@ -92,7 +96,9 @@ class EtlCarga {
 
   /// Ex.: "42.8 MB • 3 Camadas PostGIS".
   String get resumo {
-    final partes = <String>[tamanhoFormatado];
+    // O tamanho só é conhecido na carga enviada nesta sessão; no histórico
+    // vindo do backend ele não existe e não deve aparecer como "0 B".
+    final partes = <String>[if (tamanhoBytes > 0) tamanhoFormatado];
     if (totalCamadas > 0) {
       partes.add('$totalCamadas ${totalCamadas == 1 ? 'Camada' : 'Camadas'} PostGIS');
     }
@@ -130,7 +136,7 @@ class EtlCarga {
               ?.toString() ??
           nomeFallback ??
           'arquivo.zip',
-      tamanhoBytes: _asInt(primeiro(json, const ['tamanhoBytes', 'tamanho_bytes', 'tamanho', 'size', 'sizeBytes'])) ??
+      tamanhoBytes: _asInt(primeiro(json, const ['tamanhoBytes', 'tamanho_bytes', 'fileSizeBytes', 'tamanho', 'size', 'sizeBytes'])) ??
           tamanhoFallback ??
           0,
       totalCamadas: totalCamadas,
@@ -140,7 +146,13 @@ class EtlCarga {
       errorMessage: primeiro(json, const ['errorMessage', 'error_message'])?.toString(),
       camadas: camadas,
       avisos: _avisosDe(summary),
+      logTail: _textoOuNulo(primeiro(json, const ['logTail', 'log_tail'])),
     );
+  }
+
+  static String? _textoOuNulo(Object? v) {
+    final String s = (v ?? '').toString().trim();
+    return s.isEmpty ? null : s;
   }
 
   /// Converte qualquer resposta de lista em `List<EtlCarga>` com segurança de tipos.

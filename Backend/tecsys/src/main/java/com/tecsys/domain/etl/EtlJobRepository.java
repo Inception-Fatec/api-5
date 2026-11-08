@@ -7,8 +7,11 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.Collection;
+import java.util.List;
 
 public interface EtlJobRepository extends JpaRepository<EtlJob, Long> {
+    List<EtlJob> findTop30ByOrderByCreatedAtDescIdDesc();
+
     @Modifying
     @Query("""
             update EtlJob j
