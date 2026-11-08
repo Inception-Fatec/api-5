@@ -34,7 +34,7 @@ app:
     gateway-height-m: ${MOTOR_GATEWAY_HEIGHT_M:}     # tecsys: 6
     sensor-height-m: ${MOTOR_SENSOR_HEIGHT_M:}       # tecsys: 5
     line-of-sight: ${MOTOR_LINE_OF_SIGHT:}           # RAYS | PROFILE | TEAM
-    los-step-m: ${MOTOR_LOS_STEP_M:}                 # tecsys: 30 (resolução do COP30)
+    los-step-m: ${MOTOR_LOS_STEP_M:}                 # tecsys: 30 (resolução do Copernicus GLO-30)
     team-samples: ${MOTOR_TEAM_SAMPLES:}
     obstruction-tolerance-m: ${MOTOR_OBSTRUCTION_TOLERANCE_M:}
     earth-curvature: ${MOTOR_EARTH_CURVATURE:}
@@ -48,8 +48,8 @@ app:
 
   terrain:
     cache-dir: ${DEM_CACHE_DIR:cache/dem}
+    mirror-dir: ${DEM_MIRROR_DIR:}
     download-attempts: ${DEM_DOWNLOAD_ATTEMPTS:4}
-    opentopography:
-      globaldem-url: ${OPENTOPOGRAPHY_GLOBALDEM_URL:https://portal.opentopography.org/API/globaldem}
-      api-key: ${OPENTOPOGRAPHY_API_KEY:}
-      dataset: ${OPENTOPOGRAPHY_DATASET:COP30}
+    retry-backoff-ms: ${DEM_RETRY_BACKOFF_MS:5000}
+    aws:
+      base-url: ${DEM_AWS_BASE_URL:https://copernicus-dem-30m.s3.amazonaws.com}

@@ -12,12 +12,12 @@ FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
 COPY --from=build /app/target/tecsys-motor-*.jar app.jar
 EXPOSE 8082
-# Relevo baixado da OpenTopography (a API grátis permite 50 chamadas/dia): monte um volume aqui
+# Relevo Copernicus GLO-30 (AWS Open Data, sem chave): monte um volume aqui
 # para não baixar de novo a cada container. Ver scripts/run-motor.sh.
 ENV DEM_CACHE_DIR=/var/cache/tecsys-dem
 RUN mkdir -p /var/cache/tecsys-dem
 VOLUME /var/cache/tecsys-dem
-# Banco e chave do relevo vêm por variáveis de ambiente (DB_URL, DB_USER,
-# DB_PASSWORD, OPENTOPOGRAPHY_API_KEY, MOTOR_BIND_ADDRESS) — ver
-# scripts/run-motor.sh. Não embarcar .env na imagem.
+# Banco e ajustes do relevo vêm por variáveis de ambiente (DB_URL, DB_USER,
+# DB_PASSWORD, DEM_MIRROR_DIR, MOTOR_BIND_ADDRESS) — ver scripts/run-motor.sh.
+# Não embarcar .env na imagem.
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "app.jar"]

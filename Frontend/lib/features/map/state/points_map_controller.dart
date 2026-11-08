@@ -170,7 +170,7 @@ class PointsMapController extends ChangeNotifier {
 
   Future<void> carregarCidadesDisponiveis() async {
     try {
-      final cidades = await _ibge.buscarCidadesComDados();
+      final cidades = await _ibge.buscarCidadesComDados(distCode);
       if (_disposed) return;
       _cidadesDisponiveis = cidades;
       notifyListeners();

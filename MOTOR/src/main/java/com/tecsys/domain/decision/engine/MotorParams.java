@@ -28,7 +28,7 @@ public record MotorParams(
         double sensorHeightM,
 
         LosMode lineOfSight,
-        double losStepM,             // passo do perfil de visada (resolução do COP30)
+        double losStepM,             // passo do perfil de visada (resolução do Copernicus GLO-30)
         int teamSamples,             // nº de amostras no modo TEAM
         double obstructionToleranceM,
         boolean earthCurvature,

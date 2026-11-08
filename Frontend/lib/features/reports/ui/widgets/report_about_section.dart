@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import 'package:tecsys_app/core/theme/app_theme.dart';
 import 'package:tecsys_app/features/reports/data/models/coverage_report.dart';
-import 'package:tecsys_app/features/reports/ui/report_formatters.dart';
 import 'package:tecsys_app/features/reports/ui/report_texts.dart';
 import 'package:tecsys_app/features/reports/ui/styles/report_styles.dart';
 import 'package:tecsys_app/features/reports/ui/widgets/report_section.dart';

@@ -1,5 +1,6 @@
 package com.tecsys.config;
 
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,6 +20,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.servlet.HandlerExceptionResolver;
 
+import java.time.Instant;
 import java.util.List;
 
 @Configuration
@@ -49,6 +51,17 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(customizer -> customizer
+                        // Sem token, token inválido ou vencido: 401 (o front desloga).
+                        // 403 fica só para quem está logado mas não tem permissão.
+                        .authenticationEntryPoint((request, response, authException) -> {
+                            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                            response.setContentType("application/json;charset=UTF-8");
+                            response.getWriter().write(
+                                    "{\"timestamp\": \"" + Instant.now() + "\", \"status\": 401, "
+                                    + "\"error\": \"Unauthorized\", "
+                                    + "\"message\": \"Sessão expirada ou inválida. Faça login novamente.\", "
+                                    + "\"path\": \"" + request.getRequestURI() + "\"}");
+                        })
                         .accessDeniedHandler((request, response, accessDeniedException) ->
                                 exceptionResolver.resolveException(request, response, null, accessDeniedException)
                         )

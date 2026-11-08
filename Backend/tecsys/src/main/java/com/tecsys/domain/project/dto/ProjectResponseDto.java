@@ -10,7 +10,9 @@ public record ProjectResponseDto(
         String name,
         @JsonProperty("dist_code") String distCode,
         ProjectStatus status,
+
         @JsonProperty("created_by_id") Long createdById,
+        @JsonProperty("created_by_name") String createdByName,
 
         @JsonProperty("created_at")
         @JsonFormat(pattern = "dd/MM/yyyy HH:mm:ss", timezone = "America/Sao_Paulo")

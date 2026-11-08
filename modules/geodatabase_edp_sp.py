@@ -8,12 +8,13 @@ import pandas as pd
 import pyogrio
 import requests
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from etl_common import (
     CRS_ALVO,
     Metricas,
     carregar_idempotente,
+    criar_engine,
     decidir_prefixo,
     normalizar_geometria,
     prefixar,
@@ -232,7 +233,7 @@ def main(municipios: list[str], caminho_gdb, engine=None) -> dict:
     if not caminho_gdb.is_dir() or caminho_gdb.suffix.lower() != ".gdb":
         raise ValueError(f"Geodatabase inválida (esperada uma pasta .gdb): {caminho_gdb}")
 
-    engine = engine or create_engine(os.getenv("ETL_DB_URL"))
+    engine = engine or criar_engine()
     metricas = Metricas()
     dist = descobrir_distribuidora(caminho_gdb)
     logger.info("Distribuidora do .gdb: %s", dist)
