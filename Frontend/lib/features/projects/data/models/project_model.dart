@@ -6,6 +6,9 @@ class Project {
   final String distCode;
   final String status;
   final int createdById;
+
+  /// Nome de quem criou (`created_by_name`); vazio em respostas antigas.
+  final String createdByName;
   final DateTime createdAt;
 
   /// Falso quando o projeto foi excluído (soft delete) no backend.
@@ -17,6 +20,7 @@ class Project {
     required this.distCode,
     required this.status,
     required this.createdById,
+    this.createdByName = '',
     required this.createdAt,
     this.ativo = true,
   });
@@ -28,6 +32,7 @@ class Project {
       distCode: json['dist_code'] as String? ?? '',
       status: json['status'] as String? ?? 'CRIADO',
       createdById: json['created_by_id'] as int? ?? 0,
+      createdByName: (json['created_by_name'] as String? ?? '').trim(),
       createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
           DateTime.now(),
       // Ausente em respostas antigas: conta como ativo.
@@ -35,7 +40,9 @@ class Project {
     );
   }
 
-  String get criadoPorLabel => 'Usuário #$createdById';
+  /// Nome do criador vindo do backend; "Usuário #id" só se não vier.
+  String get criadoPorLabel =>
+      createdByName.isNotEmpty ? createdByName : 'Usuário #$createdById';
 
   String get dataFormatada =>
       '${createdAt.day.toString().padLeft(2, '0')}/${createdAt.month.toString().padLeft(2, '0')}/${createdAt.year}';

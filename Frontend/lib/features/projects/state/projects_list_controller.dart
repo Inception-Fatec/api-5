@@ -6,21 +6,17 @@ import 'package:tecsys_app/core/utils/distributors.dart';
 import 'package:tecsys_app/core/utils/text_normalizer.dart';
 import 'package:tecsys_app/features/projects/data/models/project_model.dart';
 import 'package:tecsys_app/features/projects/state/project_store.dart';
-import 'package:tecsys_app/features/auth/data/services/auth_service.dart';
-import 'package:tecsys_app/features/users/state/user_store.dart';
 
 /// Estado da tela "Meus Projetos": a lista de verdade vive no
 /// [ProjectsStore] (compartilhado com a tela de Novo Projeto); aqui
 /// ficam a busca, as métricas e os helpers de exibição.
 class ProjectsListController extends ChangeNotifier {
-  ProjectsListController({ProjectsStore? store, UserStore? userStore})
-      : _store = store ?? ProjectsStore.instance,
-        _userStore = userStore ?? UserStore.instance {
+  ProjectsListController({ProjectsStore? store})
+      : _store = store ?? ProjectsStore.instance {
     _store.addListener(notifyListeners);
   }
 
   final ProjectsStore _store;
-  final UserStore _userStore;
 
   String _busca = '';
   String? _statusFiltro;
@@ -41,8 +37,6 @@ class ProjectsListController extends ChangeNotifier {
   /// atualização automática.
   void carregarInicial() {
     _store.carregar();
-    // /users é só de ADM: para o usuário comum a chamada só voltaria 403.
-    if (AuthService.instance.role == 'ADM') _userStore.carregar();
     iniciarAtualizacaoAutomatica();
   }
 
@@ -100,10 +94,6 @@ class ProjectsListController extends ChangeNotifier {
 
   /// Exclui de verdade; deixa o erro estourar pra quem chamou avisar.
   Future<void> excluir(int id) => _store.excluir(id);
-
-  /// Nome do criador, ou "Usuário #id" se o usuário não foi carregado.
-  String nomeCriador(int userId) =>
-      _userStore.nomeDoUsuario(userId) ?? 'Usuário #$userId';
 
   @override
   void dispose() {
