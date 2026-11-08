@@ -286,8 +286,10 @@ def main(municipios: list[str], caminho_gdb, engine=None) -> dict:
             )
             metricas.log(tabela)
 
-        vincular_baixa_tensao(conn, dist, prefixo, municipios, metricas)
+        aviso_bt = vincular_baixa_tensao(conn, dist, prefixo, municipios, metricas)
         metricas.log("ucbt")
 
     logger.info("Carga da geodatabase concluída.")
-    return {"status": "concluido", "distribuidora": dist, "prefixo": prefixo, **metricas.resumo()}
+    avisos = [aviso_bt] if aviso_bt else []
+    return {"status": "concluido", "distribuidora": dist, "prefixo": prefixo, "avisos": avisos,
+            **metricas.resumo()}
