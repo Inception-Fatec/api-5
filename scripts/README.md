@@ -30,8 +30,9 @@ Para rebuildar/reiniciar só uma parte, sem mexer no resto:
 ./scripts/run-db.sh [--dump CAMINHO] [--stop]
 ```
 
-PostGIS 17 (`tecsys-postgis`). Restaura o `bdgd.dump` automaticamente só se
-o banco estiver vazio. Conexão: `postgres://tecsys:tecsys@localhost:5433/tecsys`.
+PostGIS 17 (`tecsys-postgis`). Se o banco estiver vazio, cria as tabelas pelas
+migrations do Flyway e carrega os dados da rede do `bdgd.dump` (ver "Onde
+colocar o dump"). Conexão: `postgres://tecsys:tecsys@localhost:5433/tecsys`.
 
 ```bash
 ./scripts/run-backend.sh [--db local|supabase] [--stop]
@@ -73,6 +74,13 @@ Alternativa "sobe tudo": `docker compose up --build` (usa os mesmos
 Dockerfiles; sobe banco local, backend, motor e frontend). O segredo do JWT
 vem do ambiente ou do `.env` da raiz: `API_SECURITY_TOKEN_SECRET=...` (gere com
 `openssl rand -hex 32`). O motor não precisa de chave: o relevo vem da AWS.
+O banco do compose nasce vazio; para carregar a rede do `bdgd.dump` nele:
+
+```bash
+docker compose up -d db
+./scripts/run-db.sh          # migrations + dados da rede no banco do compose
+docker compose up --build -d
+```
 
 ## Onde colocar o dump (só necessário na 1ª subida)
 
@@ -85,6 +93,23 @@ do arquivo `bdgd.dump`. Resolução nesta ordem: `--dump CAMINHO` →
 api-5/db/bdgd.dump
 # ou aponte direto:
 ./scripts/run-db.sh --dump ~/meus-arquivos/bdgd.dump
+```
+
+Como o banco é montado (banco vazio):
+
+1. **Tabelas:** o script roda as migrations do Flyway (`Backend/tecsys/src/main/resources/db/migration`)
+   num container `flyway/flyway` na mesma versão do backend. Assim o backend encontra o
+   banco já em dia ("Schema is up to date") e o admin (`admin@tecsys.com.br`) vem da V9.
+2. **Dados:** carrega do dump só os dados das tabelas da rede (`sub`, `untrat`, `untrmt`,
+   `ssdat`, `ssdmt`, `ssdbt`, `ucat_pj`, `ucmt_pj`, `ucbt`); `users` e `spatial_ref_sys`
+   ficam de fora.
+
+Antes, o dump era restaurado inteiro, com a tabela `users` e sem o histórico do Flyway, e o
+backend caía com `Migration V2__create_users.sql failed: relation "users" already exists`
+(#TG-142). Se o seu volume é desse jeito, o script avisa; recrie com:
+
+```bash
+./scripts/run-db.sh --stop && docker volume rm tecsys-pgdata && ./scripts/run-db.sh
 ```
 
 Após o primeiro restore os dados ficam no volume Docker (`tecsys-pgdata`)
