@@ -70,7 +70,9 @@ Flutter web no nginx (`tecsys-frontend`, porta 8080). A URL da API é embutida
 no build: trocou de backend, o script rebuilda sozinho.
 
 Alternativa "sobe tudo": `docker compose up --build` (usa os mesmos
-Dockerfiles; o backend do compose fala com o banco local).
+Dockerfiles; sobe banco local, backend, motor e frontend). O segredo do JWT
+vem do ambiente ou do `.env` da raiz: `API_SECURITY_TOKEN_SECRET=...` (gere com
+`openssl rand -hex 32`). O motor não precisa de chave: o relevo vem da AWS.
 
 ## Onde colocar o dump (só necessário na 1ª subida)
 
