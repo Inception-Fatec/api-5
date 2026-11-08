@@ -9,7 +9,6 @@ import java.time.Instant;
 import java.util.Collection;
 
 public interface EtlJobRepository extends JpaRepository<EtlJob, Long> {
-
     @Modifying
     @Query("""
             update EtlJob j
