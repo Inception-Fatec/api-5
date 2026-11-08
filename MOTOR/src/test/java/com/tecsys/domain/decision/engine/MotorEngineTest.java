@@ -8,10 +8,13 @@ import com.tecsys.domain.decision.terrain.FlatTerrain;
 import com.tecsys.domain.decision.terrain.GridTerrain;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MotorEngineTest {
@@ -95,5 +98,23 @@ class MotorEngineTest {
         assertEquals("leste", r.gateways().get(0).candidate().id());
         assertEquals(100.0, r.coveragePercentage());
         assertTrue(r.visiblePairs() == 10, "o candidato a oeste não enxerga nenhum ponto: " + r.visiblePairs());
+    }
+
+    @Test
+    void pontoOuCandidatoEmTileDeOceanoFalha() {
+        String mar = "Copernicus_DSM_COG_10_S24_00_W041_00_DEM";
+        List<CoveragePoint> pontosEmTerra = List.of(point("p1", -23.5, -45.5));
+        List<GatewayCandidate> candEmTerra = List.of(cand("c1", -23.5, -45.4, true));
+
+        assertDoesNotThrow(() -> MotorEngine.guardOceanTiles(pontosEmTerra, candEmTerra, List.of(mar)));
+        assertDoesNotThrow(() -> MotorEngine.guardOceanTiles(List.of(point("p2", -23.5, -40.5)), candEmTerra, List.of()));
+
+        IOException ponto = assertThrows(IOException.class, () -> MotorEngine.guardOceanTiles(
+                List.of(point("p2", -23.5, -40.5)), candEmTerra, List.of(mar)));
+        assertTrue(ponto.getMessage().contains("p2") && ponto.getMessage().contains(mar), ponto.getMessage());
+
+        IOException candidato = assertThrows(IOException.class, () -> MotorEngine.guardOceanTiles(
+                pontosEmTerra, List.of(cand("c2", -23.9, -40.1, false)), List.of(mar)));
+        assertTrue(candidato.getMessage().contains("c2") && candidato.getMessage().contains(mar), candidato.getMessage());
     }
 }
