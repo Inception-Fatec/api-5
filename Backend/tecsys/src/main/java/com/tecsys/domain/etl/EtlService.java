@@ -37,7 +37,7 @@ public class EtlService {
         List<String> codigos = validarMunicipios(municipios);
         String filename = validarArquivo(file);
 
-        EtlJob job = reservarExecucao(filename, codigos, userId);
+        EtlJob job = reservarExecucao(filename, file.getSize(), codigos, userId);
 
         Path workDir;
         try {
@@ -67,11 +67,24 @@ public class EtlService {
                 .orElseThrow(() -> new BusinessRuleException("Execução de ETL não encontrada."));
     }
 
-    private EtlJob reservarExecucao(String filename, List<String> codigos, Long userId) {
+    /**
+     * Últimas cargas (de qualquer ADM), mais novas primeiro (#TG-141). O log
+     * só vai junto nas que falharam, para a lista não ficar pesada.
+     */
+    public List<EtlJobResponseDto> listarJobs() {
+        return jobRepository.findTop30ByOrderByCreatedAtDescIdDesc().stream()
+                .map(job -> job.getStatus() == EtlJobStatus.FAILED
+                        ? EtlJobResponseDto.fromEntity(job)
+                        : EtlJobResponseDto.semLog(job))
+                .toList();
+    }
+
+    private EtlJob reservarExecucao(String filename, long tamanho, List<String> codigos, Long userId) {
         try {
             return jobRepository.saveAndFlush(EtlJob.builder()
                     .status(EtlJobStatus.PENDING)
                     .originalFilename(filename)
+                    .fileSizeBytes(tamanho)
                     .municipios(String.join(",", codigos))
                     .createdBy(userId)
                     .build());

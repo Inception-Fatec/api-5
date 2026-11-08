@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import 'etl_theme.dart';
 import 'models/etl_carga.dart';
+import 'widgets/seletor_municipio.dart';
 import 'widgets/etl_buttons.dart';
 
 /// Modal "Detalhes da carga" (aberto ao clicar num card da lista).
@@ -89,7 +90,7 @@ class CargaDetalhesDialog extends StatelessWidget {
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.stretch,
                                   children: [
-                                    Expanded(child: _Metrica(rotulo: 'Tamanho do Arquivo', valor: c.tamanhoFormatado)),
+                                    Expanded(child: _Metrica(rotulo: 'Tamanho do Arquivo', valor: c.tamanhoBytes > 0 ? c.tamanhoFormatado : '—')),
                                     const SizedBox(width: 12),
                                     Expanded(
                                       child: _Metrica(
@@ -116,6 +117,10 @@ class CargaDetalhesDialog extends StatelessWidget {
                                   ],
                                 ),
                               ),
+                              if (c.status == EtlCargaStatus.erro) ...[
+                                const SizedBox(height: 16),
+                                _Falha(mensagem: c.errorMessage, log: c.logTail),
+                              ],
                               for (final aviso in c.avisos) ...[
                                 const SizedBox(height: 16),
                                 _Aviso(texto: aviso),
@@ -236,6 +241,22 @@ class _Cabecalho extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (carga.municipios.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.location_on_outlined, size: 14, color: EtlColors.slate400),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          MunicipioService.rotulosDe(carga.municipios),
+                          style: etlText(12, color: EtlColors.slate500, lineHeight: 16),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -512,6 +533,73 @@ class _Aviso extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Motivo da falha e as últimas linhas do log do processamento (#TG-141),
+/// para o ADM entender o erro sem precisar abrir o servidor.
+class _Falha extends StatelessWidget {
+  const _Falha({this.mensagem, this.log});
+
+  final String? mensagem;
+  final String? log;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFEF2F2),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFFCA5A5)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.error_outline, size: 18, color: Color(0xFFB91C1C)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SelectableText(
+                  mensagem ?? 'O servidor não informou o motivo da falha.',
+                  style: const TextStyle(fontSize: 13, height: 1.4, color: Color(0xFF991B1B)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (log != null) ...[
+          const SizedBox(height: 12),
+          const Text(
+            'Log do processamento (últimas linhas)',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: EtlColors.slate900),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            constraints: const BoxConstraints(maxHeight: 240),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: SingleChildScrollView(
+              reverse: true,
+              child: SelectableText(
+                log!,
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 11.5,
+                  height: 1.45,
+                  color: Color(0xFFE2E8F0),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
