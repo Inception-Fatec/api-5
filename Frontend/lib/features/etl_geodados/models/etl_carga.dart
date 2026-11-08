@@ -62,6 +62,7 @@ class EtlCarga {
     this.camadas = const <EtlCamada>[],
     this.avisos = const <String>[],
     this.logTail,
+    this.municipios = const <String>[],
   });
 
   final String id;
@@ -82,6 +83,9 @@ class EtlCarga {
 
   /// Últimas linhas do log do processamento (para entender uma falha).
   final String? logTail;
+
+  /// Códigos IBGE dos municípios processados nesta carga.
+  final List<String> municipios;
 
   /// Total de registros gravados no banco (soma de todas as tabelas).
   int get totalGravados => camadas.fold<int>(0, (soma, c) => soma + c.gravados);
@@ -147,7 +151,13 @@ class EtlCarga {
       camadas: camadas,
       avisos: _avisosDe(summary),
       logTail: _textoOuNulo(primeiro(json, const ['logTail', 'log_tail'])),
+      municipios: _codigos(json['municipios']),
     );
+  }
+
+  static List<String> _codigos(Object? v) {
+    final Iterable<Object?> itens = v is List ? v : (v is String ? v.split(',') : const <Object?>[]);
+    return itens.map((e) => (e ?? '').toString().trim()).where((e) => e.isNotEmpty).toList();
   }
 
   static String? _textoOuNulo(Object? v) {

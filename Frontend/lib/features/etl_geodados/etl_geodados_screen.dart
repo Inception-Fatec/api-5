@@ -13,6 +13,7 @@ import 'carga_detalhes_dialog.dart';
 import 'models/etl_carga.dart';
 import 'services/etl_service.dart';
 import 'upload_modal_dialog.dart';
+import 'widgets/seletor_municipio.dart';
 
 /// Tela de execuções ETL e cargas espaciais.
 class EtlGeodadosScreen extends StatefulWidget {
@@ -34,6 +35,16 @@ class _EtlGeodadosScreenState extends State<EtlGeodadosScreen> {
   void initState() {
     super.initState();
     _carregarHistorico();
+    _carregarNomesMunicipios();
+  }
+
+  /// Baixa (uma vez) a lista do IBGE para os cards mostrarem o nome das
+  /// cidades em vez do código. Se falhar, os cards mostram o código.
+  Future<void> _carregarNomesMunicipios() async {
+    try {
+      await MunicipioService.listar();
+      if (mounted) setState(() {});
+    } catch (_) {}
   }
 
   /// Busca as últimas cargas gravadas no backend: o histórico não some mais
@@ -405,6 +416,11 @@ class _CargaCard extends StatelessWidget {
         if (carga.duracao != null)
           CardInfoRow(
               icon: Icons.timer_outlined, text: 'Duração: ${carga.duracao}'),
+        if (carga.municipios.isNotEmpty)
+          CardInfoRow(
+            icon: Icons.location_on_outlined,
+            text: MunicipioService.rotulosDe(carga.municipios),
+          ),
         for (final aviso in carga.avisos)
           CardInfoRow(
             icon: Icons.warning_amber_rounded,
