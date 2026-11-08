@@ -16,8 +16,10 @@ from etl_common import (
     carregar_idempotente,
     criar_engine,
     decidir_prefixo,
+    etapa,
     normalizar_geometria,
     prefixar,
+    resolver_gdb,
     validar_municipios,
     vincular_baixa_tensao,
 )
@@ -229,16 +231,16 @@ def garantir_integridade(camadas: dict, metricas: Metricas) -> None:
 def main(municipios: list[str], caminho_gdb, engine=None) -> dict:
     municipios = validar_municipios(municipios)
 
-    caminho_gdb = Path(caminho_gdb)
-    if not caminho_gdb.is_dir() or caminho_gdb.suffix.lower() != ".gdb":
-        raise ValueError(f"Geodatabase inválida (esperada uma pasta .gdb): {caminho_gdb}")
+    caminho_gdb = resolver_gdb(caminho_gdb)
 
     engine = engine or criar_engine()
     metricas = Metricas()
     dist = descobrir_distribuidora(caminho_gdb)
     logger.info("Distribuidora do .gdb: %s", dist)
+    etapa("Baixando os limites dos municípios (IBGE)")
     area = carregar_area_recorte(municipios)
 
+    etapa("Lendo e recortando a rede da geodatabase")
     camadas = {}
     for nivel in CAMADAS_PAI + CAMADAS_FOLHA:
         logger.info("Lendo %s da geodatabase...", nivel["tabela"])
@@ -260,6 +262,7 @@ def main(municipios: list[str], caminho_gdb, engine=None) -> dict:
 
     garantir_integridade(camadas, metricas)
 
+    etapa("Gravando a rede no banco")
     with engine.begin() as conn:
         prefixo = decidir_prefixo(conn, dist)
         logger.info("Distribuidora %s: prefixo de códigos = %r", dist, prefixo)
@@ -286,6 +289,7 @@ def main(municipios: list[str], caminho_gdb, engine=None) -> dict:
             )
             metricas.log(tabela)
 
+        etapa("Vinculando a baixa tensão")
         aviso_bt = vincular_baixa_tensao(conn, dist, prefixo, municipios, metricas)
         metricas.log("ucbt")
 

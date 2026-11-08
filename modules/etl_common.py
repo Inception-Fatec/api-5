@@ -3,6 +3,7 @@ import os
 import re
 import time
 import uuid
+import zipfile
 from pathlib import Path
 
 import geopandas as gpd
@@ -15,6 +16,34 @@ CRS_ALVO = "EPSG:4674"
 CRS_ORIGEM_BDGD = "EPSG:4674"
 
 logger = logging.getLogger("etl")
+
+def resolver_gdb(caminho):
+    """Pasta .gdb ou .zip que a contém. No .zip devolve o caminho /vsizip/ (texto):
+    o GDAL lê a .gdb direto do arquivo compactado, sem descompactar (#TG-143).
+    É texto e não Path porque o GDAL exige "/vsizip//caminho/absoluto" e o Path
+    colapsaria a barra dupla."""
+    caminho = Path(caminho)
+    if caminho.suffix.lower() == ".zip" and caminho.is_file():
+        with zipfile.ZipFile(caminho) as z:
+            for nome in z.namelist():
+                partes = nome.replace("\\", "/").split("/")
+                for i, parte in enumerate(partes):
+                    if parte.lower().endswith(".gdb"):
+                        return "/vsizip/" + str(caminho.resolve()) + "/" + "/".join(partes[: i + 1])
+        raise ValueError("Nenhuma pasta .gdb encontrada dentro do zip.")
+    if caminho.is_dir() and caminho.suffix.lower() == ".gdb":
+        return caminho
+    raise ValueError(f"Geodatabase inválida (esperada uma pasta .gdb ou um .zip): {caminho}")
+
+
+# Linha que o backend lê no stdout para mostrar a etapa atual da carga (#TG-143).
+PREFIXO_ETAPA = "ETL_ETAPA:"
+
+
+def etapa(texto: str) -> None:
+    """Anuncia a etapa atual da carga (o card da tela ETL mostra este texto)."""
+    print(PREFIXO_ETAPA + texto, flush=True)
+    logger.info("Etapa: %s", texto)
 
 _REGEX_IBGE = re.compile(r"^\d{7}$")
 

@@ -88,14 +88,36 @@ class _EtlGeodadosScreenState extends State<EtlGeodadosScreen> {
     }
   }
 
-  Future<void> _abrirUpload() async {
-    final nova = await UploadModalDialog.show(context);
+  Future<void> _abrirUpload() => _abrirModal(null);
+
+  /// Abre o upload (novo) ou retoma a escolha de municípios de uma carga
+  /// que ficou "Aguardando escolha" (#TG-143).
+  Future<void> _abrirModal(EtlCarga? aguardando) async {
+    final nova = await UploadModalDialog.show(context, aguardando: aguardando);
     if (nova == null || !mounted) return;
-    setState(() => _cargas.insert(0, nova));
-    _mostrarToast(
-        'Arquivo ${nova.nomeArquivo} enviado. O processamento foi iniciado.');
-    _iniciarPolling();
+    setState(() {
+      final int i = _cargas.indexWhere((c) => c.id == nova.id);
+      if (i >= 0) {
+        _cargas[i] = nova;
+      } else {
+        _cargas.insert(0, nova);
+      }
+    });
+    switch (nova.status) {
+      case EtlCargaStatus.aguardandoEscolha:
+        _mostrarToast('Arquivo ${nova.nomeArquivo} aguardando a escolha dos municípios. '
+            'Clique no card para continuar.');
+      case EtlCargaStatus.cancelado:
+        _mostrarToast('Arquivo ${nova.nomeArquivo} descartado.', icone: Icons.delete_outline);
+      default:
+        _mostrarToast('Carga de ${nova.nomeArquivo} iniciada.');
+        _iniciarPolling();
+    }
   }
+
+  void _abrirCard(EtlCarga carga) => carga.status == EtlCargaStatus.aguardandoEscolha
+      ? _abrirModal(carga)
+      : _abrirDetalhes(carga);
 
   @override
   void dispose() {
@@ -208,7 +230,7 @@ class _EtlGeodadosScreenState extends State<EtlGeodadosScreen> {
                             carregando: _carregandoHistorico,
                             erro: _erroHistorico,
                             onRecarregar: _carregarHistorico,
-                            onOpen: _abrirDetalhes,
+                            onOpen: _abrirCard,
                             onUpload: _abrirUpload,
                           ),
                         ],
@@ -398,6 +420,8 @@ class _CargaCard extends StatelessWidget {
       EtlCargaStatus.concluido => (AppColors.success, AppColors.primarySoft),
       EtlCargaStatus.processando => (AppColors.primary, AppColors.primarySoft),
       EtlCargaStatus.erro => (AppColors.error, AppColors.warningBg),
+      EtlCargaStatus.aguardandoEscolha => (AppColors.warning, AppColors.warningBg),
+      EtlCargaStatus.cancelado => (AppColors.textSecondary, AppColors.chipBg),
     };
     return ListCard(
       leading: const CardAvatar(
@@ -413,6 +437,18 @@ class _CargaCard extends StatelessWidget {
       infoRows: [
         if (carga.executadoEm != null)
           CardInfoRow(icon: Icons.schedule_outlined, text: carga.executadoEm!),
+        if (carga.status == EtlCargaStatus.processando)
+          CardInfoRow(
+            icon: Icons.sync,
+            text: 'Etapa: ${carga.etapa ?? 'na fila'}',
+            color: AppColors.primary,
+          ),
+        if (carga.status == EtlCargaStatus.aguardandoEscolha)
+          const CardInfoRow(
+            icon: Icons.touch_app_outlined,
+            text: 'Clique para escolher os municípios e iniciar a carga.',
+            color: AppColors.warning,
+          ),
         if (carga.duracao != null)
           CardInfoRow(
               icon: Icons.timer_outlined, text: 'Duração: ${carga.duracao}'),
@@ -427,7 +463,9 @@ class _CargaCard extends StatelessWidget {
             text: aviso,
             color: AppColors.warning,
           ),
-        if (carga.status == EtlCargaStatus.erro && carga.errorMessage != null)
+        if ((carga.status == EtlCargaStatus.erro ||
+                carga.status == EtlCargaStatus.cancelado) &&
+            carga.errorMessage != null)
           CardInfoRow(
             icon: Icons.error_outline,
             text: carga.errorMessage!,
