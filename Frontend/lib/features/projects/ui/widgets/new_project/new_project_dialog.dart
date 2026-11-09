@@ -50,26 +50,14 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
     if (resultado != null) Navigator.of(context).pop(resultado);
   }
 
-  /// Uma distribuidora: campo só de leitura. Várias: lista para escolher.
+  /// Lista para escolher a distribuidora; nenhuma vem escolhida (#TG-147).
   Widget _campoDistribuidora() {
     final lista = _controller.distribuidoras;
-    if (lista.length <= 1) {
-      return Container(
-        width: double.infinity,
-        padding: NewProjectDialogStyles.fieldPadding,
-        decoration: NewProjectDialogStyles.readonlyFieldDecoration,
-        child: Text(
-          _controller.distribuidoraLabel.isEmpty
-              ? '—'
-              : _controller.distribuidoraLabel,
-          style: AppTextStyles.input,
-        ),
-      );
-    }
     return DropdownButtonFormField<String>(
       initialValue: _controller.distCode,
       isExpanded: true,
       style: AppTextStyles.input,
+      hint: const Text('Selecione a distribuidora', style: AppTextStyles.bodyMuted),
       decoration: AppDecorations.filledInput(
         contentPadding: NewProjectDialogStyles.fieldPadding,
         borderRadius: AppRadius.sm,
@@ -78,9 +66,11 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
         for (final d in lista)
           DropdownMenuItem(value: d.codigo, child: Text(d.rotulo)),
       ],
-      onChanged: (codigo) {
-        if (codigo != null) _controller.escolherDistribuidora(codigo);
-      },
+      onChanged: lista.isEmpty
+          ? null
+          : (codigo) {
+              if (codigo != null) _controller.escolherDistribuidora(codigo);
+            },
     );
   }
 

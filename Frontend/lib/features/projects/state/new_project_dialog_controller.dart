@@ -26,6 +26,7 @@ class NewProjectDialogController extends ChangeNotifier {
   final Set<Municipio> _cidadesSelecionadas = {};
   String? _erro;
   bool _carregando = true;
+  String _busca = '';
 
   /// Distribuidoras com dados no banco (vazia até carregar).
   List<Distribuidora> get distribuidoras => _distribuidoras;
@@ -33,8 +34,27 @@ class NewProjectDialogController extends ChangeNotifier {
   /// Distribuidora escolhida; null se não há nenhuma com dados.
   String? get distCode => _distCode;
 
-  /// Null enquanto carrega ou se o carregamento falhou.
+  /// Null antes de escolher a distribuidora, enquanto carrega ou se falhou.
   List<Municipio>? get cidadesDisponiveis => _cidadesDisponiveis;
+
+  /// Texto da busca de cidades.
+  String get busca => _busca;
+
+  /// Cidades disponíveis que batem com a busca (sem diferenciar acento e
+  /// maiúsculas), em ordem alfabética.
+  List<Municipio> get cidadesFiltradas {
+    final termo = _normalizar(_busca.trim());
+    final lista = (_cidadesDisponiveis ?? const <Municipio>[])
+        .where((m) => termo.isEmpty || _normalizar(m.rotulo).contains(termo))
+        .toList()
+      ..sort((a, b) => _normalizar(a.rotulo).compareTo(_normalizar(b.rotulo)));
+    return lista;
+  }
+
+  void buscar(String texto) {
+    _busca = texto;
+    notifyListeners();
+  }
   Set<Municipio> get cidadesSelecionadas => _cidadesSelecionadas;
   String? get erro => _erro;
   bool get carregando => _carregando;
@@ -42,8 +62,8 @@ class NewProjectDialogController extends ChangeNotifier {
   String get distribuidoraLabel =>
       _distCode == null ? '' : rotuloDistribuidora(_distCode!);
 
-  /// Carrega as distribuidoras com dados e as cidades da primeira (a que
-  /// tem mais subestações).
+  /// Carrega as distribuidoras com dados. Nenhuma vem escolhida (#TG-147):
+  /// as cidades aparecem depois que o usuário escolhe a distribuidora.
   Future<void> carregar() async {
     try {
       final lista = await _distribuidorasService.listar();
@@ -56,15 +76,12 @@ class NewProjectDialogController extends ChangeNotifier {
         notifyListeners();
         return;
       }
-      _distCode = lista.first.codigo;
     } catch (_) {
       if (_disposed) return;
       _erro = 'Não foi possível carregar as distribuidoras agora.';
-      _carregando = false;
-      notifyListeners();
-      return;
     }
-    await _carregarCidades();
+    _carregando = false;
+    notifyListeners();
   }
 
   /// Troca a distribuidora: desmarca as cidades e carrega as dela.
@@ -73,6 +90,7 @@ class NewProjectDialogController extends ChangeNotifier {
     _distCode = codigo;
     _cidadesDisponiveis = null;
     _cidadesSelecionadas.clear();
+    _busca = '';
     _erro = null;
     _carregando = true;
     notifyListeners();
@@ -86,8 +104,6 @@ class NewProjectDialogController extends ChangeNotifier {
       // Ignora a resposta se a distribuidora mudou no meio da carga.
       if (_disposed || codigo != _distCode) return;
       _cidadesDisponiveis = cidades;
-      // A primeira cidade já vem marcada.
-      if (cidades.isNotEmpty) _cidadesSelecionadas.add(cidades.first);
     } catch (_) {
       if (_disposed || codigo != _distCode) return;
       _erro = 'Não foi possível carregar as cidades agora.';
@@ -115,7 +131,9 @@ class NewProjectDialogController extends ChangeNotifier {
       return null;
     }
     if (_distCode == null) {
-      _erro = 'Nenhuma distribuidora com dados para criar o projeto.';
+      _erro = _distribuidoras.isEmpty
+          ? 'Nenhuma distribuidora com dados para criar o projeto.'
+          : 'Escolhe a distribuidora.';
       notifyListeners();
       return null;
     }
@@ -130,6 +148,19 @@ class NewProjectDialogController extends ChangeNotifier {
       distribuidoraLabel: distribuidoraLabel,
       municipios: _cidadesSelecionadas.toList(),
     );
+  }
+
+  static const String _comAcento = 'áàâãäéèêëíìîïóòôõöúùûüç';
+  static const String _semAcento = 'aaaaaeeeeiiiiooooouuuuc';
+
+  static String _normalizar(String s) {
+    final b = StringBuffer();
+    for (final r in s.toLowerCase().runes) {
+      final c = String.fromCharCode(r);
+      final i = _comAcento.indexOf(c);
+      b.write(i >= 0 ? _semAcento[i] : c);
+    }
+    return b.toString();
   }
 
   @override
