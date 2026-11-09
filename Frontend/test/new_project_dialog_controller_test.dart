@@ -31,7 +31,7 @@ const _sjc = Municipio(codigoIbge: 3549904, nome: 'São José dos Campos', uf: '
 const _vitoria = Municipio(codigoIbge: 3205309, nome: 'Vitória', uf: 'ES');
 
 void main() {
-  test('usa a distribuidora e as cidades que vieram do banco', () async {
+  test('nada vem escolhido: distribuidora e cidades só depois da escolha (#TG-147)', () async {
     final c = NewProjectDialogController(
       distribuidorasService: _DistribuidorasFalsas(
           const [Distribuidora(codigo: '380', nome: 'EDP Espírito Santo')]),
@@ -39,10 +39,20 @@ void main() {
     );
     await c.carregar();
 
-    expect(c.distCode, '380');
+    expect(c.carregando, isFalse);
+    expect(c.distCode, isNull);
+    expect(c.cidadesDisponiveis, isNull);
+    expect(c.confirmar('Teste ES'), isNull);
+    expect(c.erro, 'Escolhe a distribuidora.');
+
+    await c.escolherDistribuidora('380');
     expect(c.distribuidoraLabel, 'EDP Espírito Santo (380)');
     expect(c.cidadesDisponiveis, [_vitoria]);
-    expect(c.cidadesSelecionadas, {_vitoria});
+    expect(c.cidadesSelecionadas, isEmpty);
+    expect(c.confirmar('Teste ES'), isNull);
+    expect(c.erro, 'Escolhe ao menos uma cidade.');
+
+    c.marcarCidade(_vitoria, marcada: true);
 
     final r = c.confirmar('Teste ES');
     expect(r?.distCode, '380');
@@ -58,12 +68,30 @@ void main() {
       ibgeService: _IbgeFalso({'391': [_sjc], '380': [_vitoria]}),
     );
     await c.carregar();
+    await c.escolherDistribuidora('391');
+    c.marcarCidade(_sjc, marcada: true);
     expect(c.cidadesSelecionadas, {_sjc});
 
     await c.escolherDistribuidora('380');
     expect(c.distCode, '380');
     expect(c.cidadesDisponiveis, [_vitoria]);
-    expect(c.cidadesSelecionadas, {_vitoria});
+    expect(c.cidadesSelecionadas, isEmpty);
+  });
+
+  test('busca filtra as cidades pelo nome, sem acento e maiúsculas', () async {
+    const serra = Municipio(codigoIbge: 3205002, nome: 'Serra', uf: 'ES');
+    final c = NewProjectDialogController(
+      distribuidorasService: _DistribuidorasFalsas(
+          const [Distribuidora(codigo: '380', nome: 'EDP Espírito Santo')]),
+      ibgeService: _IbgeFalso({'380': [serra, _vitoria]}),
+    );
+    await c.carregar();
+    await c.escolherDistribuidora('380');
+
+    c.buscar('VITO');
+    expect(c.cidadesFiltradas, [_vitoria]);
+    c.buscar('');
+    expect(c.cidadesFiltradas, [serra, _vitoria]);
   });
 
   test('sem distribuidora no banco avisa e não deixa confirmar', () async {
