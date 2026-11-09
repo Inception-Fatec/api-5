@@ -23,7 +23,7 @@ public class EtlController {
     @PreAuthorize("hasRole('ADM')")
     public ResponseEntity<EtlJobResponseDto> uploadGdb(
             @RequestPart("file") MultipartFile file,
-            @RequestParam("municipios") List<String> municipios,
+            @RequestParam(value = "municipios", required = false) List<String> municipios,
             @RequestParam(value = "incluirConsumidores", defaultValue = "true") boolean incluirConsumidores,
             @AuthenticationPrincipal User currentUser) {
         EtlJobResponseDto response = etlService.startGdbUpload(file, municipios, incluirConsumidores, currentUser.getId());
@@ -35,6 +35,22 @@ public class EtlController {
     public ResponseEntity<List<EtlJobResponseDto>> listJobs() {
         return ResponseEntity.ok(etlService.listarJobs());
     }
+
+    /** Etapa 2 do upload pela tela (#TG-143): escolhe os municípios e inicia a carga. */
+    @PostMapping("/jobs/{id}/iniciar")
+    @PreAuthorize("hasRole('ADM')")
+    public ResponseEntity<EtlJobResponseDto> iniciar(@PathVariable Long id, @RequestBody IniciarCargaRequest body) {
+        boolean consumidores = body.incluirConsumidores() == null || body.incluirConsumidores();
+        return ResponseEntity.accepted().body(etlService.iniciarCarga(id, body.municipios(), consumidores));
+    }
+
+    @PostMapping("/jobs/{id}/cancelar")
+    @PreAuthorize("hasRole('ADM')")
+    public ResponseEntity<EtlJobResponseDto> cancelar(@PathVariable Long id) {
+        return ResponseEntity.ok(etlService.cancelar(id));
+    }
+
+    public record IniciarCargaRequest(List<String> municipios, Boolean incluirConsumidores) {}
 
     @GetMapping("/jobs/{id}")
     @PreAuthorize("hasRole('ADM')")

@@ -154,13 +154,14 @@ class EtlService {
     return false;
   }
 
-  /// POST multipart para o endpoint de upload-gdb do backend.
+  /// POST multipart para o endpoint de upload-gdb do backend. Sem municípios:
+  /// o backend descompacta, lê a .gdb e devolve a carga "aguardando escolha"
+  /// com a distribuidora e os municípios do arquivo (#TG-143).
   static Future<EtlCarga> enviarZip({
     String? caminho,
     Uint8List? arquivoBytes,
     ArquivoLocal? arquivoNavegador,
     required String nomeArquivo,
-    required List<String> municipios, // códigos IBGE de 7 dígitos
     required void Function(double progresso) onProgress,
   }) async {
     final Uri uri = Uri.parse('${ApiConfig.baseUrl}$uploadPath');
@@ -172,10 +173,7 @@ class EtlService {
       final RespostaEnvio r = await enviarPeloNavegador(
         arquivo: arquivoNavegador,
         uri: uri,
-        campos: <String, String>{
-          'municipios': municipios.join(','),
-          'incluirConsumidores': 'true',
-        },
+        campos: const <String, String>{},
         token: AuthService.instance.token,
         onProgress: onProgress,
       );
@@ -202,10 +200,6 @@ class EtlService {
             filename: nomeArquivo)
         : await http.MultipartFile.fromPath('file', caminho!,
             filename: nomeArquivo));
-
-    // Municípios escolhidos pelo usuário (o backend só aceita códigos IBGE, separados por vírgula).
-    request.fields['municipios'] = municipios.join(',');
-    request.fields['incluirConsumidores'] = 'true';
 
     final int tamanho = arquivoBytes?.length ?? await File(caminho!).length();
 
@@ -251,6 +245,37 @@ class EtlService {
   }
 
   /// GET /api/v1/etl/jobs/{id}: devolve a carga com o status atual do processamento.
+  /// Etapa 2 (#TG-143): manda os municípios escolhidos e a carga começa.
+  static Future<EtlCarga> iniciarCarga(EtlCarga carga, List<String> municipios) =>
+      _postJob(carga, 'iniciar', <String, Object>{
+        'municipios': municipios,
+        'incluirConsumidores': true,
+      });
+
+  /// Descarta um upload que aguardava a escolha dos municípios.
+  static Future<EtlCarga> cancelarCarga(EtlCarga carga) => _postJob(carga, 'cancelar', null);
+
+  static Future<EtlCarga> _postJob(EtlCarga carga, String acao, Map<String, Object>? corpo) async {
+    final String? token = AuthService.instance.token;
+    final http.Response resposta;
+    try {
+      resposta = await http
+          .post(
+            Uri.parse('${ApiConfig.baseUrl}$jobsPath/${carga.id}/$acao'),
+            headers: <String, String>{
+              'Content-Type': 'application/json',
+              if (token != null) 'Authorization': 'Bearer $token',
+            },
+            body: corpo == null ? null : jsonEncode(corpo),
+          )
+          .timeout(const Duration(seconds: 60));
+    } catch (_) {
+      throw const EtlUploadException(_falhaConexao);
+    }
+    return _cargaDaResposta(resposta.statusCode, _tentarJson(resposta),
+        nomeArquivo: carga.nomeArquivo, tamanho: carga.tamanhoBytes);
+  }
+
   static Future<EtlCarga> consultarCarga(EtlCarga atual) async {
     final String? token = AuthService.instance.token;
     final http.Response resposta = await http.get(

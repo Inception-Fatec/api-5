@@ -11,18 +11,24 @@ import 'models/etl_carga.dart';
 import 'services/arquivo_local.dart';
 import 'services/etl_service.dart';
 import 'widgets/etl_buttons.dart';
-import 'widgets/seletor_municipio.dart';
+import 'widgets/escolha_municipios.dart';
 
-enum _Fase { vazio, pronto, enviando, erro }
+enum _Fase { vazio, pronto, enviando, escolhendo, iniciando, erro }
 
 /// Modal "Upload Geodatabase (.zip)".
 ///
 /// Uso: `final EtlCarga? nova = await UploadModalDialog.show(context);`
 /// Devolve a carga criada pelo backend, ou `null` se foi cancelado.
+///
+/// Fluxo em dois passos (#TG-143): envia o .zip, o backend lê a .gdb e
+/// devolve os municípios do arquivo; o ADM escolhe e inicia a carga. Com
+/// [aguardando], o modal abre direto no passo 2 de uma carga já enviada.
 class UploadModalDialog extends StatefulWidget {
-  const UploadModalDialog({super.key});
+  const UploadModalDialog({super.key, this.aguardando});
 
-  static Future<EtlCarga?> show(BuildContext context) {
+  final EtlCarga? aguardando;
+
+  static Future<EtlCarga?> show(BuildContext context, {EtlCarga? aguardando}) {
     return showGeneralDialog<EtlCarga>(
       context: context,
       barrierDismissible: false,
@@ -50,7 +56,7 @@ class UploadModalDialog extends StatefulWidget {
                 child: FadeTransition(
                   opacity:
                       CurvedAnimation(parent: animation, curve: Curves.easeOut),
-                  child: const UploadModalDialog(),
+                  child: UploadModalDialog(aguardando: aguardando),
                 ),
               ),
             ),
@@ -73,27 +79,58 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
   ArquivoLocal? _arquivoNavegador;
   double _progresso = 0;
   String? _erro;
-  List<Municipio> _municipios = <Municipio>[];
 
-  bool get _ocupado => _fase == _Fase.enviando;
+  /// Carga devolvida pela inspeção (aguardando a escolha dos municípios).
+  EtlCarga? _carga;
+  Set<String> _escolhidos = <String>{};
+
+  bool get _ocupado => _fase == _Fase.enviando || _fase == _Fase.iniciando;
+
+  /// Etapa 2: o arquivo já foi lido pelo backend e falta escolher as cidades.
+  bool get _naEscolha => _carga?.inspecao != null;
 
   @override
   void initState() {
     super.initState();
     if (envioPeloNavegador) prepararArquivosSoltos();
+    final EtlCarga? aguardando = widget.aguardando;
+    if (aguardando != null) {
+      _carga = aguardando;
+      _nome = aguardando.nomeArquivo;
+      _fase = _Fase.escolhendo;
+    }
   }
 
   /// Na web o arquivo é uma referência do navegador (sem ler os bytes para
   /// a memória); nas demais plataformas, o caminho no disco (#TG-141).
   bool get _temArquivo => _caminho != null || _arquivoNavegador != null;
 
+  /// Fechar na etapa de escolha mantém o upload no histórico como
+  /// "Aguardando escolha" (dá para retomar pelo card); "Descartar" apaga.
   void _fechar() {
     if (_ocupado) return;
-    Navigator.of(context).pop();
+    Navigator.of(context).pop(_carga);
+  }
+
+  Future<void> _descartar() async {
+    final EtlCarga? carga = _carga;
+    if (carga == null || _ocupado) return;
+    setState(() => _fase = _Fase.iniciando);
+    try {
+      final EtlCarga cancelada = await EtlService.cancelarCarga(carga);
+      if (!mounted) return;
+      Navigator.of(context).pop(cancelada);
+    } on EtlUploadException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _fase = _Fase.erro;
+        _erro = e.mensagem;
+      });
+    }
   }
 
   Future<void> _escolherArquivo() async {
-    if (_ocupado) return;
+    if (_ocupado || _naEscolha) return;
     try {
       if (envioPeloNavegador) {
         final ArquivoLocal? arquivo = await escolherZipNoNavegador();
@@ -123,7 +160,7 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
   }
 
   Future<void> _selecionarSolto(DropItem item) async {
-    if (_ocupado) return;
+    if (_ocupado || _naEscolha) return;
     // Na web o "path" do arquivo solto é uma URL blob: pega o arquivo por ela,
     // sem copiar o conteúdo para a memória do app.
     if (envioPeloNavegador) {
@@ -190,17 +227,10 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
     });
   }
 
+  /// Etapa 1: envia o arquivo; o backend descompacta e lê a .gdb.
   Future<void> _enviar() async {
-    final String? caminho = _caminho;
-    final ArquivoLocal? arquivoNavegador = _arquivoNavegador;
     final String? nome = _nome;
-    final List<Municipio> municipios = _municipios;
-    if (!_temArquivo ||
-        nome == null ||
-        municipios.isEmpty ||
-        _ocupado) {
-      return;
-    }
+    if (!_temArquivo || nome == null || _ocupado) return;
 
     setState(() {
       _fase = _Fase.enviando;
@@ -210,16 +240,24 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
 
     try {
       final EtlCarga carga = await EtlService.enviarZip(
-        caminho: caminho,
-        arquivoNavegador: arquivoNavegador,
+        caminho: _caminho,
+        arquivoNavegador: _arquivoNavegador,
         nomeArquivo: nome,
-        municipios: municipios.map((m) => m.codigo).toList(),
         onProgress: (p) {
           if (mounted) setState(() => _progresso = p);
         },
       );
       if (!mounted) return;
-      Navigator.of(context).pop(carga);
+      if (carga.inspecao == null) {
+        // Backend antigo (carga direta): nada a escolher.
+        Navigator.of(context).pop(carga);
+        return;
+      }
+      setState(() {
+        _carga = carga;
+        _escolhidos = <String>{};
+        _fase = _Fase.escolhendo;
+      });
     } on EtlUploadException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -235,10 +273,33 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
     }
   }
 
+  /// Etapa 2: inicia a carga só com os municípios escolhidos.
+  Future<void> _iniciarCarga() async {
+    final EtlCarga? carga = _carga;
+    if (carga == null || _escolhidos.isEmpty || _ocupado) return;
+    setState(() {
+      _fase = _Fase.iniciando;
+      _erro = null;
+    });
+    try {
+      final EtlCarga iniciada = await EtlService.iniciarCarga(carga, _escolhidos.toList());
+      if (!mounted) return;
+      Navigator.of(context).pop(iniciada);
+    } on EtlUploadException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _fase = _Fase.erro;
+        _erro = e.mensagem;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool temArquivo = _nome != null;
-    final bool podeEnviar = _temArquivo && _municipios.isNotEmpty && !_ocupado;
+    final bool naEscolha = _naEscolha;
+    final bool podeEnviar = _temArquivo && !_ocupado && !naEscolha;
+    final bool podeIniciar = naEscolha && _escolhidos.isNotEmpty && !_ocupado;
 
     return CallbackShortcuts(
       bindings: {const SingleActivator(LogicalKeyboardKey.escape): _fechar},
@@ -269,37 +330,48 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _Cabecalho(onFechar: _ocupado ? null : _fechar),
+                      _Cabecalho(
+                        onFechar: _ocupado ? null : _fechar,
+                        subtitulo: naEscolha
+                            ? 'Passo 2 de 2: escolha os municípios a carregar'
+                            : 'Passo 1 de 2: envie o .zip; o sistema lê os municípios do arquivo',
+                      ),
                       Flexible(
                         child: SingleChildScrollView(
                           padding: const EdgeInsets.all(24),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              const _CaixaDiretrizes(),
-                              const SizedBox(height: 20),
-                              _DropZone(
-                                enabled: !_ocupado,
-                                onTap: _escolherArquivo,
-                                onDrop: _selecionarSolto,
-                              ),
-                              if (temArquivo) ...[
-                                const SizedBox(height: 16),
-                                _CardArquivo(
-                                  nome: _nome!,
-                                  onSubstituir:
-                                      _ocupado ? null : _escolherArquivo,
+                              if (!naEscolha) ...[
+                                const _CaixaDiretrizes(),
+                                const SizedBox(height: 20),
+                                _DropZone(
+                                  enabled: !_ocupado,
+                                  onTap: _escolherArquivo,
+                                  onDrop: _selecionarSolto,
                                 ),
                               ],
-                              const SizedBox(height: 16),
-                              SeletorMunicipio(
-                                key: const ValueKey('seletor-municipio'),
-                                enabled: !_ocupado,
-                                onChanged: (lista) =>
-                                    setState(() => _municipios = lista),
-                              ),
-                              if (_fase == _Fase.pronto ||
-                                  _fase == _Fase.enviando) ...[
+                              if (temArquivo) ...[
+                                if (!naEscolha) const SizedBox(height: 16),
+                                _CardArquivo(
+                                  nome: _nome!,
+                                  onSubstituir: _ocupado || naEscolha
+                                      ? null
+                                      : _escolherArquivo,
+                                ),
+                              ],
+                              if (naEscolha) ...[
+                                const SizedBox(height: 16),
+                                EscolhaMunicipios(
+                                  inspecao: _carga!.inspecao!,
+                                  enabled: !_ocupado,
+                                  onChanged: (s) =>
+                                      setState(() => _escolhidos = s),
+                                ),
+                              ],
+                              if (!naEscolha &&
+                                  (_fase == _Fase.pronto ||
+                                      _fase == _Fase.enviando)) ...[
                                 const SizedBox(height: 16),
                                 _CardProgresso(
                                   enviando: _fase == _Fase.enviando,
@@ -312,10 +384,9 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
                                 _CaixaErro(
                                   mensagem:
                                       _erro ?? 'Falha no envio do arquivo.',
-                                  onTentar:
-                                      _temArquivo && _municipios.isNotEmpty
-                                          ? _enviar
-                                          : _escolherArquivo,
+                                  onTentar: naEscolha
+                                      ? (_escolhidos.isNotEmpty ? _iniciarCarga : null)
+                                      : (_temArquivo ? _enviar : _escolherArquivo),
                                 ),
                               ],
                             ],
@@ -333,21 +404,35 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            EtlOutlineButton(
-                                label: 'Cancelar',
-                                onPressed: _ocupado ? null : _fechar),
+                            if (naEscolha)
+                              EtlOutlineButton(
+                                  label: 'Descartar arquivo',
+                                  onPressed: _ocupado ? null : _descartar)
+                            else
+                              EtlOutlineButton(
+                                  label: 'Cancelar',
+                                  onPressed: _ocupado ? null : _fechar),
                             const SizedBox(width: 12),
                             EtlPrimaryButton(
-                              label:
-                                  _ocupado ? 'Enviando...' : 'Iniciar Upload',
-                              icon: Icons.cloud_upload_outlined,
+                              label: naEscolha
+                                  ? (_fase == _Fase.iniciando
+                                      ? 'Iniciando...'
+                                      : 'Iniciar carga${_escolhidos.isEmpty ? '' : ' (${_escolhidos.length})'}')
+                                  : (_fase == _Fase.enviando
+                                      ? (_progresso >= 1 ? 'Analisando...' : 'Enviando...')
+                                      : 'Enviar e analisar'),
+                              icon: naEscolha
+                                  ? Icons.play_arrow_rounded
+                                  : Icons.cloud_upload_outlined,
                               iconSize: 16,
                               fontSize: 12,
                               gap: 6,
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 20, vertical: 10),
                               shadowColor: EtlColors.teal600Shadow20,
-                              onPressed: podeEnviar ? _enviar : null,
+                              onPressed: naEscolha
+                                  ? (podeIniciar ? _iniciarCarga : null)
+                                  : (podeEnviar ? _enviar : null),
                             ),
                           ],
                         ),
@@ -367,9 +452,10 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
 // ─────────────────────────────── Cabeçalho ───────────────────────────────
 
 class _Cabecalho extends StatelessWidget {
-  const _Cabecalho({required this.onFechar});
+  const _Cabecalho({required this.onFechar, required this.subtitulo});
 
   final VoidCallback? onFechar;
+  final String subtitulo;
 
   @override
   Widget build(BuildContext context) {
@@ -407,7 +493,7 @@ class _Cabecalho extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Envie o arquivo espelhado para extração, transformação e carga (ETL)',
+                  subtitulo,
                   style: etlText(12, color: EtlColors.slate500, lineHeight: 16),
                 ),
               ],
@@ -787,7 +873,9 @@ class _CardProgresso extends StatelessWidget {
     final int pct = (p * 100).round();
     final String texto = !enviando
         ? 'Estrutura validada com sucesso!'
-        : (p >= 1 ? 'Processando no servidor...' : 'Enviando arquivo...');
+        : (p >= 1
+            ? 'Analisando o arquivo: descompactando e lendo os municípios...'
+            : 'Enviando arquivo...');
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -865,7 +953,7 @@ class _CaixaErro extends StatelessWidget {
   const _CaixaErro({required this.mensagem, required this.onTentar});
 
   final String mensagem;
-  final VoidCallback onTentar;
+  final VoidCallback? onTentar;
 
   @override
   Widget build(BuildContext context) {

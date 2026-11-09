@@ -1,5 +1,49 @@
 /// Estado de uma carga ETL.
-enum EtlCargaStatus { concluido, processando, erro }
+enum EtlCargaStatus { concluido, processando, erro, aguardandoEscolha, cancelado }
+
+/// Município presente na .gdb, com as quantidades lidas na inspeção (#TG-143).
+class MunicipioNoArquivo {
+  const MunicipioNoArquivo({required this.codigo, required this.transformadores, required this.consumidoresBt});
+
+  final String codigo;
+  final int transformadores;
+  final int consumidoresBt;
+}
+
+/// O que o backend leu da .gdb antes da carga: distribuidora, período e municípios.
+class InspecaoGdb {
+  const InspecaoGdb({required this.distribuidora, this.periodoInicio, this.periodoFim, required this.municipios});
+
+  final String distribuidora;
+  final String? periodoInicio;
+  final String? periodoFim;
+  final List<MunicipioNoArquivo> municipios;
+
+  static InspecaoGdb? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final Object? periodo = raw['periodo'];
+    final Object? lista = raw['municipios'];
+    String? texto(Object? v) {
+      final String s = (v ?? '').toString().trim();
+      return s.isEmpty ? null : s;
+    }
+
+    return InspecaoGdb(
+      distribuidora: (raw['distribuidora'] ?? '').toString(),
+      periodoInicio: periodo is Map ? texto(periodo['inicio']) : null,
+      periodoFim: periodo is Map ? texto(periodo['fim']) : null,
+      municipios: <MunicipioNoArquivo>[
+        if (lista is List)
+          for (final Map m in lista.whereType<Map>())
+            MunicipioNoArquivo(
+              codigo: (m['codigo'] ?? '').toString(),
+              transformadores: EtlCarga._asInt(m['transformadores']) ?? 0,
+              consumidoresBt: EtlCarga._asInt(m['consumidores_bt']) ?? 0,
+            ),
+      ],
+    );
+  }
+}
 
 /// Tabela PostGIS carregada, com as métricas reais devolvidas pelo ETL (summary do job).
 class EtlCamada {
@@ -63,6 +107,8 @@ class EtlCarga {
     this.avisos = const <String>[],
     this.logTail,
     this.municipios = const <String>[],
+    this.etapa,
+    this.inspecao,
   });
 
   final String id;
@@ -86,6 +132,12 @@ class EtlCarga {
 
   /// Códigos IBGE dos municípios processados nesta carga.
   final List<String> municipios;
+
+  /// Etapa atual anunciada pelo ETL enquanto processa (ex.: "Gravando a rede no banco").
+  final String? etapa;
+
+  /// Distribuidora e municípios da .gdb, enquanto a carga aguarda a escolha.
+  final InspecaoGdb? inspecao;
 
   /// Total de registros gravados no banco (soma de todas as tabelas).
   int get totalGravados => camadas.fold<int>(0, (soma, c) => soma + c.gravados);
@@ -117,6 +169,10 @@ class EtlCarga {
         return 'Processando';
       case EtlCargaStatus.erro:
         return 'Falhou';
+      case EtlCargaStatus.aguardandoEscolha:
+        return 'Aguardando escolha';
+      case EtlCargaStatus.cancelado:
+        return 'Cancelado';
     }
   }
 
@@ -152,6 +208,8 @@ class EtlCarga {
       avisos: _avisosDe(summary),
       logTail: _textoOuNulo(primeiro(json, const ['logTail', 'log_tail'])),
       municipios: _codigos(json['municipios']),
+      etapa: _textoOuNulo(primeiro(json, const ['stage', 'etapa'])),
+      inspecao: InspecaoGdb.fromJson(json['inspecao']),
     );
   }
 
@@ -244,6 +302,9 @@ class EtlCarga {
   static EtlCargaStatus _parseStatus(String? s) {
     final v = (s ?? '').toLowerCase();
     if (v.isEmpty) return EtlCargaStatus.processando;
+    if (v.contains('awaiting') || v.contains('aguard')) return EtlCargaStatus.aguardandoEscolha;
+    if (v.contains('cancel')) return EtlCargaStatus.cancelado;
+    if (v.contains('inspect')) return EtlCargaStatus.processando;
     if (v.contains('conclu') || v.contains('success') || v.contains('done') || v.contains('ok')) {
       return EtlCargaStatus.concluido;
     }

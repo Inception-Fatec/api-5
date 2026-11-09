@@ -17,6 +17,8 @@ public record EtlJobResponseDto(
         JsonNode summary,
         String errorMessage,
         String logTail,
+        String stage,
+        JsonNode inspecao,
         Instant createdAt,
         Instant startedAt,
         Instant finishedAt
@@ -38,10 +40,14 @@ public record EtlJobResponseDto(
                 job.getStatus().name(),
                 job.getOriginalFilename(),
                 job.getFileSizeBytes(),
-                Arrays.asList(job.getMunicipios().split(",")),
+                Arrays.stream(job.getMunicipios().split(",")).filter(m -> !m.isBlank()).toList(),
                 parse(job.getSummaryJson()),
                 job.getErrorMessage(),
                 logTail,
+                job.getStage(),
+                // Distribuidora/municípios da .gdb só interessam enquanto aguarda a escolha.
+                job.getStatus() == com.tecsys.domain.etl.EtlJobStatus.AWAITING_SELECTION
+                        ? parse(job.getInspectionJson()) : null,
                 job.getCreatedAt(),
                 job.getStartedAt(),
                 job.getFinishedAt()
