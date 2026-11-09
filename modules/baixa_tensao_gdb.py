@@ -26,9 +26,12 @@ COLUNAS_UC = ["PN_CON", "UNI_TR_MT", "CTMT", "CONJ", "MUN", "BRR", "CLAS_SUB", "
               "SIT_ATIV", "CAR_INST", "ARE_LOC", "TIP_SIST"]
 CHAVE_GRUPO = ["PN_CON", "CLAS_SUB", "CNAE"]
 LOTE_PONTOS = 500
-# Margem (graus, ~500 m) em volta dos municípios: ponto de conexão fora disso é erro
+# Margem (graus, ~2 km) em volta dos municípios: ponto de conexão fora disso é erro
 # de cadastro (ex.: consumidor de Vitória com coordenada em Cachoeiro, a 98 km).
-MARGEM_MUNICIPIO_GRAUS = 0.005
+# Menos que isso descartaria consumidores legítimos na divisa de municípios rurais,
+# onde o limite do IBGE e o cadastro da distribuidora diferem (Aracruz: ~140 pontos
+# entre 0,5 e 2 km fora).
+MARGEM_MUNICIPIO_GRAUS = 0.02
 
 AVISO_SEM_BT_NO_ARQUIVO = (
     "Baixa tensão não carregada: a geodatabase não tem consumidores de baixa tensão ativos "
