@@ -114,7 +114,9 @@ public class PointCustomRepository {
                 params.addValue("conjCodes" + suf, request.conjCodes());
             }
 
-            if (request.subCodes() != null && !request.subCodes().isEmpty()) {
+            // A SSDAT não tem SUB (só a distribuidora, por temDistPropria): o filtro de
+            // subestação não se aplica a ela, senão ela some do mapa (#120).
+            if (request.subCodes() != null && !request.subCodes().isEmpty() && !meta.temDistPropria()) {
                 if (meta.tableName.equals("sub")) {
                     subQuery.append(" AND cod_id IN (:subCodes").append(suf).append(") ");
                 } else {

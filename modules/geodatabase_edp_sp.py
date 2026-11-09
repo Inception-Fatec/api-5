@@ -234,6 +234,22 @@ def garantir_integridade(camadas: dict, metricas: Metricas) -> None:
                 metricas.add(nome, **{f"fk_{coluna}_orfa_anulada": n})
 
 
+def preencher_dist_nulo(conn, tabela: str, codigos: list, dist: str, metricas: Metricas,
+                        tamanho_lote: int = 5000) -> None:
+    """carregar_idempotente usa ON CONFLICT DO NOTHING: linhas carregadas antes da coluna
+    `dist` existir ficam com dist nulo. Preenche só as desta carga (mesmos cod_id), sem
+    tocar em outras distribuidoras (#120)."""
+    atualizados = 0
+    for i in range(0, len(codigos), tamanho_lote):
+        atualizados += conn.execute(
+            text(f'UPDATE "{tabela}" SET dist = :dist WHERE dist IS NULL AND cod_id = ANY(:codigos)'),
+            {"dist": dist, "codigos": codigos[i:i + tamanho_lote]},
+        ).rowcount
+    if atualizados:
+        logger.info("[%s] %s registro(s) já existentes tiveram o dist preenchido", tabela, atualizados)
+    metricas.add(tabela, dist_preenchido_em_existentes=atualizados)
+
+
 def main(municipios: list[str], caminho_gdb, engine=None) -> dict:
     municipios = validar_municipios(municipios)
 
@@ -296,6 +312,8 @@ def main(municipios: list[str], caminho_gdb, engine=None) -> dict:
                 metricas, 
                 truncar=("nome", "dist", "mun", "are_loc", "posto", "tip_inst", "ctat", "ctmt")
             )
+            if tabela in TABELAS_COM_DIST:
+                preencher_dist_nulo(conn, tabela, camadas[tabela]["cod_id"].dropna().tolist(), dist, metricas)
             metricas.log(tabela)
 
         etapa("Gravando a baixa tensão (consumidores por ponto de conexão)")
