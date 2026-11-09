@@ -93,7 +93,7 @@ Future<Uint8List> buildReportPdf({
       pw.Text(formatPercent(s.coveragePercentage),
           style: pw.TextStyle(fontSize: 26, fontWeight: pw.FontWeight.bold)),
       pw.Text(
-          '${formatInt(s.coveredPoints)} de ${formatInt(s.totalPoints)} pontos atendidos - '
+          '${formatInt(s.coveredPoints)} de ${formatInt(s.totalPoints)} consumidores atendidos - '
           '${coverageLabel(s.coveragePercentage)}',
           style: const pw.TextStyle(fontSize: 10, color: muted)),
       if (mapImage != null) ...[
@@ -145,7 +145,7 @@ Future<Uint8List> buildReportPdf({
                   cell('Gateways', bold: true),
                   cell('Cobertura acum.', bold: true, align: pw.TextAlign.right),
                   cell('Ganho (p.p.)', bold: true, align: pw.TextAlign.right),
-                  cell('Pontos novos', bold: true, align: pw.TextAlign.right),
+                  cell('Consumidores novos', bold: true, align: pw.TextAlign.right),
                 ],
               ),
               for (final st in steps)
@@ -193,7 +193,7 @@ Future<Uint8List> buildReportPdf({
                 cell('#', bold: true),
                 cell('Gateway', bold: true),
                 cell('Coordenadas (lat, lon)', bold: true),
-                cell('Pontos novos', bold: true, align: pw.TextAlign.right),
+                cell('Consumidores novos', bold: true, align: pw.TextAlign.right),
                 cell('Cobertura acum.', bold: true, align: pw.TextAlign.right),
               ],
             ),

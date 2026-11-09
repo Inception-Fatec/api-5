@@ -21,9 +21,10 @@ import java.util.List;
 public class DecisionRepository {
 
     private static final List<TargetTable> POINT_TABLES = List.of(
-            new TargetTable("ucat_pj", VoltageLevel.ALTO),
-            new TargetTable("ucmt_pj", VoltageLevel.MEDIO),
-            new TargetTable("ucbt", VoltageLevel.BAIXO));
+            new TargetTable("ucat_pj", VoltageLevel.ALTO, "1"),
+            new TargetTable("ucmt_pj", VoltageLevel.MEDIO, "1"),
+            // baixa tensão agregada por ponto de conexão: cada registro vale N consumidores (#TG-144)
+            new TargetTable("ucbt", VoltageLevel.BAIXO, "u.qtd_consumidores"));
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
 
@@ -37,7 +38,7 @@ public class DecisionRepository {
         if (points == null) return List.of();
 
         String sql = """
-                SELECT id, level, mun, brr, sub, conj,
+                SELECT id, level, mun, brr, sub, conj, consumers,
                        ST_Y(ST_Transform(geom, 4326)) AS latitude,
                        ST_X(ST_Transform(geom, 4326)) AS longitude
                 FROM (%s) t
@@ -51,7 +52,8 @@ public class DecisionRepository {
                 rs.getString("sub"),
                 rs.getString("conj"),
                 rs.getDouble("latitude"),
-                rs.getDouble("longitude")));
+                rs.getDouble("longitude"),
+                rs.getInt("consumers")));
     }
 
     /**
@@ -116,11 +118,12 @@ public class DecisionRepository {
         for (TargetTable t : POINT_TABLES) {
             if (!criteria.targetLevels().isEmpty() && !criteria.targetLevels().contains(t.level())) continue;
             StringBuilder sql = new StringBuilder("""
-                    SELECT u.cod_id_encr AS id, '%s' AS level, u.mun, u.brr, u.sub, u.conj, u.geom
+                    SELECT u.cod_id_encr AS id, '%s' AS level, u.mun, u.brr, u.sub, u.conj,
+                           %s AS consumers, u.geom
                     FROM %s u
                     LEFT JOIN sub s ON s.cod_id = u.sub
                     WHERE u.geom IS NOT NULL
-                    """.formatted(t.level().name(), t.tableName()));
+                    """.formatted(t.level().name(), t.consumersColumn(), t.tableName()));
             sql.append(commonFilters(criteria, params));
             if (!criteria.clasSub().isEmpty()) {
                 sql.append(" AND u.clas_sub IN (:clasSub) ");
@@ -178,6 +181,6 @@ public class DecisionRepository {
         return sql.toString();
     }
 
-    private record TargetTable(String tableName, VoltageLevel level) {
+    private record TargetTable(String tableName, VoltageLevel level, String consumersColumn) {
     }
 }

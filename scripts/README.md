@@ -116,28 +116,21 @@ Após o primeiro restore os dados ficam no volume Docker (`tecsys-pgdata`)
 e o arquivo não é mais necessário. Para recomeçar do zero:
 `docker volume rm tecsys-pgdata` (container parado) e suba de novo.
 
-## Baixa tensão no upload de geodatabase (preload_ucbt)
+## Baixa tensão no upload de geodatabase
 
-O upload de `.gdb` pela tela **ETL & Geodados** carrega a rede e os
-consumidores de média/alta tensão, mas **não** os de baixa tensão. Os
-consumidores BT vêm do arquivo nacional da ANEEL (`ucbt_pj.zip`, ~1,3 GB),
-que é carregado à parte, uma vez por distribuidora, na tabela `ucbt_raw`.
-Na carga do `.gdb`, o ETL liga esses consumidores aos transformadores.
+O upload de `.gdb` pela tela **ETL & Geodados** carrega a rede, os
+consumidores de média/alta tensão e também os de **baixa tensão, inclusive
+residenciais**, lidos da própria geodatabase (camadas `UCBT_tab` e `PONNOT`).
 
-Se a `ucbt_raw` não tiver a distribuidora, a carga termina em **Concluído**
-com o aviso "Baixa tensão não carregada" no card e nos detalhes. Para
-resolver, rode o preload e envie o `.gdb` de novo:
+Para caber no Supabase gratuito (500 MB), a baixa tensão é gravada **um
+registro por ponto de conexão + classe + CNAE**, com a quantidade de
+consumidores (`ucbt.qtd_consumidores`). Em Vitória: 166.534 consumidores
+viram 37.973 registros. O motor usa essa quantidade como peso, então a
+cobertura do relatório é contada em consumidores.
 
-```bash
-cd modules
-pip install -r requirements.txt          # 1ª vez
-# ETL_DB_URL no modules/.env (ver .env.example); para o banco local:
-# ETL_DB_URL=postgresql+psycopg2://tecsys:tecsys@localhost:5433/tecsys
-python preload_ucbt.py --distribuidoras 391   # código DIST da distribuidora
-```
-
-O download fica em cache (`cache_aneel/`), então rodar para outra
-distribuidora não baixa o arquivo de novo.
+Enviar a `.gdb` de novo para os mesmos municípios **substitui** a baixa
+tensão deles (não duplica). O antigo `preload_ucbt.py` (CSV nacional da
+ANEEL, só não residenciais) não é mais usado (#TG-144).
 
 ## Pré-requisitos
 

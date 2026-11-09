@@ -53,6 +53,7 @@ class EtlCamada {
     required this.paisForaDaArea,
     required this.gravados,
     required this.ignorados,
+    this.consumidores = 0,
   });
 
   /// Nome da tabela (ex.: "ssdmt").
@@ -70,16 +71,21 @@ class EtlCamada {
   /// Registros ignorados (já existentes no banco ou sem transformador).
   final int ignorados;
 
+  /// Baixa tensão (#TG-144): consumidores gravados. Cada registro é um ponto de
+  /// conexão + classe e representa vários consumidores.
+  final int consumidores;
+
   factory EtlCamada.fromMetricas(String nome, Map<String, dynamic> m) {
     int i(String k) => EtlCarga._asInt(m[k]) ?? 0;
 
     final bool consumidor = m.containsKey('retidos'); // ucat_pj / ucmt_pj
-    final bool baixaTensao = m.containsKey('raw_disponiveis'); // ucbt
+    // ucbt: da .gdb agregada por ponto (registros) ou, em cargas antigas, da ucbt_raw
+    final bool baixaTensao = m.containsKey('registros') || m.containsKey('raw_disponiveis');
 
     final int naCidade = consumidor
         ? i('retidos')
         : baixaTensao
-            ? i('raw_disponiveis')
+            ? (m.containsKey('registros') ? i('registros') : i('raw_disponiveis'))
             : i('lidos') - i('fora_municipio') - i('inativos') - i('descartados_geometria');
 
     return EtlCamada(
@@ -87,7 +93,10 @@ class EtlCamada {
       naCidade: naCidade < 0 ? 0 : naCidade,
       paisForaDaArea: i('pais_fora_da_area'),
       gravados: i('inseridos'),
-      ignorados: baixaTensao ? i('sem_transformador_ou_ja_existentes') : i('ignorados_ja_existentes'),
+      ignorados: baixaTensao
+          ? (m.containsKey('sem_transformador') ? i('sem_transformador') : i('sem_transformador_ou_ja_existentes'))
+          : i('ignorados_ja_existentes'),
+      consumidores: i('consumidores_gravados'),
     );
   }
 }

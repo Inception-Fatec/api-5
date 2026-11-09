@@ -48,6 +48,31 @@ void main() {
     });
   });
 
+  test('baixa tensão da .gdb: registros por ponto e consumidores gravados (#TG-144)', () {
+    final carga = EtlCarga.fromJson({
+      'id': 4,
+      'status': 'SUCCESS',
+      'summary': {
+        'geodatabase': {
+          'tabelas': {
+            'ucbt': {
+              'consumidores_ativos': 166534,
+              'registros': 37973,
+              'inseridos': 37948,
+              'consumidores_gravados': 166430,
+              'sem_transformador': 25,
+            },
+          },
+        },
+      },
+    });
+    final bt = carga.camadas.singleWhere((c) => c.nome == 'ucbt');
+    expect(bt.naCidade, 37973);
+    expect(bt.gravados, 37948);
+    expect(bt.ignorados, 25);
+    expect(bt.consumidores, 166430);
+  });
+
   testWidgets('só lista os municípios do arquivo e "Selecionar todos" marca os dois', (tester) async {
     Set<String> escolhidos = <String>{};
     await tester.pumpWidget(MaterialApp(

@@ -21,8 +21,8 @@ from etl_common import (
     prefixar,
     resolver_gdb,
     validar_municipios,
-    vincular_baixa_tensao,
 )
+from baixa_tensao_gdb import carregar_baixa_tensao
 
 load_dotenv()
 logger = logging.getLogger("etl.gdb")
@@ -289,8 +289,8 @@ def main(municipios: list[str], caminho_gdb, engine=None) -> dict:
             )
             metricas.log(tabela)
 
-        etapa("Vinculando a baixa tensão")
-        aviso_bt = vincular_baixa_tensao(conn, dist, prefixo, municipios, metricas)
+        etapa("Gravando a baixa tensão (consumidores por ponto de conexão)")
+        aviso_bt = carregar_baixa_tensao(conn, caminho_gdb, dist, prefixo, municipios, metricas, area=area)
         metricas.log("ucbt")
 
     logger.info("Carga da geodatabase concluída.")

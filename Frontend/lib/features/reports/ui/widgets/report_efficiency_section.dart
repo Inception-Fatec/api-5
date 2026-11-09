@@ -71,7 +71,7 @@ class ReportEfficiencySection extends StatelessWidget {
                     child: Text(
                       '${formatInt(low)} de ${formatInt(gateways.length)} '
                       '${low == 1 ? 'gateway atende' : 'gateways atendem'} '
-                      'apenas 1 ponto novo '
+                      'apenas 1 consumidor novo '
                       '(${formatDecimal(100 * low / gateways.length)}% da rede).',
                       style: ReportStyles.body,
                     ),

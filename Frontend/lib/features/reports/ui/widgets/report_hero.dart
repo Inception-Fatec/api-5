@@ -39,7 +39,7 @@ class ReportHero extends StatelessWidget {
                     const SizedBox(height: AppSpacing.xs),
                     Text(
                       '${formatInt(summary.coveredPoints)} de '
-                      '${formatInt(summary.totalPoints)} pontos atendidos',
+                      '${formatInt(summary.totalPoints)} consumidores atendidos',
                       style: ReportStyles.rowLabel,
                     ),
                     const SizedBox(height: AppSpacing.sm),
