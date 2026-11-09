@@ -10,6 +10,11 @@ public record SelectedGateway(
 
         int cumulativePointsCovered,
 
+        // consumidores (peso dos pontos, #TG-144); o percentual é sobre consumidores
+        long newConsumersCovered,
+
+        long cumulativeConsumersCovered,
+
         double cumulativeCoveragePercentage
 
 ) {

@@ -127,6 +127,15 @@ class CargaDetalhesDialog extends StatelessWidget {
                               ],
                               const SizedBox(height: 20),
                               _SecaoCamadas(camadas: c.camadas),
+                              for (final bt in c.camadas.where((k) => k.nome == 'ucbt' && k.consumidores > 0)) ...[
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Baixa tensão: ${EtlCarga.milhar(bt.consumidores)} consumidores '
+                                  '(inclusive residenciais) gravados em ${EtlCarga.milhar(bt.gravados)} registros, '
+                                  'um por ponto de conexão e classe.',
+                                  style: etlText(12, color: EtlColors.slate500, lineHeight: 18),
+                                ),
+                              ],
                             ],
                           ),
                         ),

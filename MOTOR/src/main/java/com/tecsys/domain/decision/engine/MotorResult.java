@@ -28,6 +28,7 @@ public record MotorResult(
         List<SelectedGateway> gateways,
         List<CoverageAssignment> covered,
         List<CoveragePoint> uncovered,
+        // percentual de consumidores cobertos (peso dos pontos, #TG-144)
         double coveragePercentage,
         int greedyGateways,
         Integer lowerBound,
@@ -35,7 +36,10 @@ public record MotorResult(
         String optimizationMethod,
         String optimizationStatus,
         String terrainSource,
-        Map<String, Double> timingsSeconds
+        Map<String, Double> timingsSeconds,
+        long totalConsumers,
+        long coverableConsumers,
+        long coveredConsumers
 ) {
 
     public MotorResult {

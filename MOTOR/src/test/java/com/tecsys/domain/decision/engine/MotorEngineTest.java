@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class MotorEngineTest {
 
     private static CoveragePoint point(String id, double lat, double lon) {
-        return new CoveragePoint(id, VoltageLevel.BAIXO, "3549904", "Centro", "S1", "C1", lat, lon);
+        return new CoveragePoint(id, VoltageLevel.BAIXO, "3549904", "Centro", "S1", "C1", lat, lon, 1);
     }
 
     private static GatewayCandidate cand(String id, double lat, double lon, boolean inside) {

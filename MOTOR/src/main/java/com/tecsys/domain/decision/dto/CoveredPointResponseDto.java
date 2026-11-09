@@ -34,7 +34,10 @@ public record CoveredPointResponseDto(
 
         @JsonIgnore
         @JsonProperty("gateway_order")
-        int gatewayOrder
+        int gatewayOrder,
+
+        // consumidores representados pelo ponto (#TG-144)
+        int consumers
 
 ) {
 }

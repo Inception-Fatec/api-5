@@ -114,8 +114,9 @@ public class DecisionService {
         log.info("Gateways: {} (guloso {}, limite inferior {}, gap {}%) — {} / {}",
                 r.gateways().size(), r.greedyGateways(), r.lowerBound(), r.gapPct(),
                 r.optimizationMethod(), r.optimizationStatus());
-        log.info("Cobertura: {}% ({} de {}; {} cobríveis)",
-                r.coveragePercentage(), r.covered().size(), r.totalPoints(), r.coverablePoints());
+        log.info("Cobertura: {}% dos consumidores ({} de {}; {} cobríveis) | pontos: {} de {}",
+                r.coveragePercentage(), r.coveredConsumers(), r.totalConsumers(), r.coverableConsumers(),
+                r.covered().size(), r.totalPoints());
         log.info("======================================");
     }
 
@@ -133,25 +134,30 @@ public class DecisionService {
                 r.candidatesOutsideFilters(),
                 r.lowerBound(),
                 r.gapPct(),
-                r.terrainSource());
+                r.terrainSource(),
+                r.totalConsumers(),
+                r.coveredConsumers(),
+                r.totalConsumers() - r.coveredConsumers(),
+                r.coverableConsumers());
 
         List<SelectedGatewayResponseDto> gateways = r.gateways().stream().map(s -> {
             GatewayCandidate g = s.candidate();
             return new SelectedGatewayResponseDto(
                     s.order(), g.id(), g.type().name(), g.posto(), g.sub(),
                     g.latitude(), g.longitude(),
-                    s.newPointsCovered(), s.cumulativePointsCovered(), s.cumulativeCoveragePercentage(),
+                    s.newPointsCovered(), s.cumulativePointsCovered(),
+                    s.newConsumersCovered(), s.cumulativeConsumersCovered(), s.cumulativeCoveragePercentage(),
                     MotorEngine.gatewayHeight(r.params(), g), !g.insideFilters());
         }).toList();
 
         List<CoveredPointResponseDto> covered = r.covered().stream().map(a -> new CoveredPointResponseDto(
                 a.point().id(), a.point().level().name(), a.point().latitude(), a.point().longitude(),
                 a.point().bairro(), a.point().municipalityCode(), a.point().sub(), a.point().conjunto(),
-                a.gateway().id(), a.gatewayOrder())).toList();
+                a.gateway().id(), a.gatewayOrder(), a.point().consumers())).toList();
 
         List<UncoveredPointResponseDto> uncovered = r.uncovered().stream().map(p -> new UncoveredPointResponseDto(
                 p.id(), p.level().name(), p.latitude(), p.longitude(),
-                p.bairro(), p.municipalityCode(), p.sub(), p.conjunto())).toList();
+                p.bairro(), p.municipalityCode(), p.sub(), p.conjunto(), p.consumers())).toList();
 
         return new DecisionResultResponseDto(summary, gateways, covered, uncovered);
     }

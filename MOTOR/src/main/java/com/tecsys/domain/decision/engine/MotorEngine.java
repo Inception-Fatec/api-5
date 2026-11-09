@@ -146,11 +146,16 @@ public class MotorEngine {
                                       double radius, Terrain terrain, int threads, Timer timer) {
         int total = points.size();
         int outside = (int) cands.stream().filter(c -> !c.insideFilters()).count();
+        // Cobertura é contada em consumidores: cada ponto pesa o nº de consumidores que
+        // representa (baixa tensão agregada por ponto de conexão, #TG-144).
+        long totalConsumers = 0;
+        for (CoveragePoint pt : points) totalConsumers += pt.consumers();
         if (total == 0 || cands.isEmpty()) {
             List<CoveragePoint> uncovered = cands.isEmpty() ? points : List.of();
             return new MotorResult(p, radius, total, cands.size(), outside, 0, 0, 0, 0,
                     List.of(), List.of(), uncovered, 0.0, 0, 0, null, "nenhum",
-                    total == 0 ? "sem pontos" : "sem candidatos", terrain.source(), timer.marks);
+                    total == 0 ? "sem pontos" : "sem candidatos", terrain.source(), timer.marks,
+                    totalConsumers, 0, 0);
         }
 
         // --- agrupamento em locais únicos
@@ -175,7 +180,7 @@ public class MotorEngine {
         Groups gp = Groups.of(plat, plon, hp);
         Groups gc = Groups.of(clat, clon, hc);
         long[] w = new long[gp.count()];
-        for (int g : gp.groupOf) w[g]++;
+        for (int i = 0; i < total; i++) w[gp.groupOf[i]] += points.get(i).consumers();
         timer.mark("agrupamento");
 
         // --- matriz de cobertura
@@ -190,8 +195,13 @@ public class MotorEngine {
 
         // --- otimização
         long coverable = 0;
+        int coverablePoints = 0;
         int[] rowPtr = a.rowPtr();
         for (int r = 0; r < a.nRows; r++) if (rowPtr[r + 1] > rowPtr[r]) coverable += w[r];
+        for (int i = 0; i < total; i++) {
+            int r = gp.groupOf[i];
+            if (rowPtr[r + 1] > rowPtr[r]) coverablePoints++;
+        }
         int[] sel = SetCover.greedy(a, w).cols();
         int nGreedy = sel.length;
         timer.mark("guloso");
@@ -234,23 +244,37 @@ public class MotorEngine {
         SetCover.Greedy ordered = SetCover.orderSelection(a, sel, w);
         int[] firstGw = new int[a.nRows];
         Arrays.fill(firstGw, -1);
-        List<SelectedGateway> gateways = new ArrayList<>();
-        long cumulative = 0;
-        for (int i = 0; i < ordered.cols().length; i++) {
+        int nGw = ordered.cols().length;
+        for (int i = 0; i < nGw; i++) {
             int col = ordered.cols()[i];
             for (int k = a.colPtr[col]; k < a.colPtr[col + 1]; k++) {
                 if (firstGw[a.rows[k]] < 0) firstGw[a.rows[k]] = i;
             }
+        }
+        // ganho de cada gateway em pontos (registros); o ganho em consumidores é o do solver
+        int[] pointGain = new int[nGw];
+        for (int i = 0; i < total; i++) {
+            int g = firstGw[gp.groupOf[i]];
+            if (g >= 0) pointGain[g]++;
+        }
+        List<SelectedGateway> gateways = new ArrayList<>();
+        long cumulative = 0;
+        int cumulativePoints = 0;
+        for (int i = 0; i < nGw; i++) {
+            int col = ordered.cols()[i];
             cumulative += ordered.gains()[i];
-            gateways.add(new SelectedGateway(i + 1, cands.get(gc.rep[col]), (int) ordered.gains()[i],
-                    (int) cumulative, round(100.0 * cumulative / total, 2)));
+            cumulativePoints += pointGain[i];
+            gateways.add(new SelectedGateway(i + 1, cands.get(gc.rep[col]), pointGain[i], cumulativePoints,
+                    ordered.gains()[i], cumulative, round(100.0 * cumulative / totalConsumers, 2)));
         }
         List<CoverageAssignment> covered = new ArrayList<>();
         List<CoveragePoint> uncovered = new ArrayList<>();
+        long coveredConsumers = 0;
         for (int i = 0; i < total; i++) {
             int g = firstGw[gp.groupOf[i]];
             if (g >= 0) {
                 covered.add(new CoverageAssignment(points.get(i), gateways.get(g).candidate(), g + 1));
+                coveredConsumers += points.get(i).consumers();
             } else {
                 uncovered.add(points.get(i));
             }
@@ -259,8 +283,9 @@ public class MotorEngine {
         timer.mark("resultado");
 
         return new MotorResult(p, radius, total, cands.size(), outside, gp.count(), gc.count(), a.nnz(),
-                (int) coverable, gateways, covered, uncovered, round(100.0 * covered.size() / total, 2),
-                nGreedy, lb, gap, method, status, terrain.source(), timer.marks);
+                coverablePoints, gateways, covered, uncovered, round(100.0 * coveredConsumers / totalConsumers, 2),
+                nGreedy, lb, gap, method, status, terrain.source(), timer.marks,
+                totalConsumers, coverable, coveredConsumers);
     }
 
     static double round(double v, int places) {
