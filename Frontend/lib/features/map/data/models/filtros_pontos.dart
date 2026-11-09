@@ -13,6 +13,11 @@ class FiltrosPontos {
   final List<String> cnaeCodes;
   final List<String> bairroNames;
 
+  /// Papéis no cálculo (#TG-92): camadas de pontos a cobrir e de
+  /// candidatos a gateway. Vazias = padrão do backend.
+  final List<String> coverageLayers;
+  final List<String> candidateLayers;
+
   const FiltrosPontos({
     required this.distCode,
     this.targetLayers = const [],
@@ -21,6 +26,8 @@ class FiltrosPontos {
     this.clasSub = const [],
     this.cnaeCodes = const [],
     this.bairroNames = const [],
+    this.coverageLayers = const [],
+    this.candidateLayers = const [],
   });
 
   /// True se há algum filtro além da distribuidora (e do nível de tensão
@@ -43,7 +50,9 @@ class FiltrosPontos {
         listEquals(other.subCodes, subCodes) &&
         listEquals(other.clasSub, clasSub) &&
         listEquals(other.cnaeCodes, cnaeCodes) &&
-        listEquals(other.bairroNames, bairroNames);
+        listEquals(other.bairroNames, bairroNames) &&
+        listEquals(other.coverageLayers, coverageLayers) &&
+        listEquals(other.candidateLayers, candidateLayers);
   }
 
   @override
@@ -55,5 +64,7 @@ class FiltrosPontos {
         Object.hashAll(clasSub),
         Object.hashAll(cnaeCodes),
         Object.hashAll(bairroNames),
+        Object.hashAll(coverageLayers),
+        Object.hashAll(candidateLayers),
       );
 }

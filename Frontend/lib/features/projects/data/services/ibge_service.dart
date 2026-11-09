@@ -119,6 +119,16 @@ class IbgeService {
     return rotulos.join(', ');
   }
 
+  /// Município pelo código IBGE; sem a lista carregada (ou código
+  /// desconhecido), o próprio código no lugar do nome.
+  static Municipio municipioPorCodigo(String codigo) {
+    final id = int.tryParse(codigo) ?? 0;
+    for (final m in _cache ?? const <Municipio>[]) {
+      if (m.codigoIbge == id) return m;
+    }
+    return Municipio(codigoIbge: id, nome: codigo, uf: '');
+  }
+
   static String nomeMunicipio(String codigo) {
     final id = int.tryParse(codigo);
     if (id == null || _cache == null) return codigo;

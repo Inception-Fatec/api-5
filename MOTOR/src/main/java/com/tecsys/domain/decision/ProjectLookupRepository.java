@@ -55,7 +55,10 @@ public class ProjectLookupRepository {
                             levels(fp),
                             strings(fp, "clas_sub"),
                             strings(fp, "cnae_codes"),
-                            strings(fp, "bairro_names")
+                            strings(fp, "bairro_names"),
+                            // ausente (projeto antigo) = papéis padrão
+                            strings(fp, "coverage_layers"),
+                            strings(fp, "candidate_layers")
                     );
                 });
     }

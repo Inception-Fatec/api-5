@@ -6,6 +6,9 @@ import 'package:tecsys_app/core/utils/distributors.dart';
 import 'package:tecsys_app/features/projects/data/models/project_model.dart';
 import 'package:tecsys_app/features/projects/data/services/distribuidoras_service.dart';
 import 'package:tecsys_app/features/projects/data/services/ibge_service.dart';
+import 'package:tecsys_app/features/projects/state/project_store.dart';
+import 'package:tecsys_app/features/projects/ui/abrir_projeto_no_mapa.dart';
+import 'package:tecsys_app/features/projects/ui/widgets/project_versions_sheet.dart';
 import 'package:tecsys_app/features/reports/export/report_map_capture.dart';
 import 'package:tecsys_app/features/reports/export/report_pdf.dart';
 import 'package:tecsys_app/features/reports/state/report_controller.dart';
@@ -17,8 +20,10 @@ import 'package:tecsys_app/features/reports/ui/widgets/report_view.dart';
 /// salvou: resumo, mancha de cobertura, gateways propostos e parâmetros
 /// (ver [ReportView]).
 ///
-/// Fecha devolvendo o [Project] quando o usuário pede para refazer um
-/// projeto que falhou (`Navigator.pop<Project>`).
+/// "Abrir no mapa" (e "Recalcular projeto", quando o cálculo falhou) abre
+/// o mapa com a área e os filtros da última versão (#TG-86). Depois de
+/// recalcular, abre direto o relatório da versão nova. "Versões" lista o
+/// histórico do projeto (data e filtros de cada versão, CA4 da US #19).
 ///
 /// O nome da classe continua [ProjectDetailScreen] para não mexer na
 /// navegação da ProjectsScreen.
@@ -34,6 +39,7 @@ class ProjectDetailScreen extends StatefulWidget {
 class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   late final ReportController _controller;
   bool _exportingPdf = false;
+  bool _abrindoMapa = false;
 
   @override
   void initState() {
@@ -42,6 +48,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       ..carregar()
       // Projeto ainda calculando: a tela se atualiza sozinha ao terminar.
       ..iniciarAtualizacaoAutomatica();
+    // Abrir o relatório conta como atividade: sobe nos Recentes (#TG-88).
+    ProjectsStore.instance.registrarAtividade(widget.project.id);
     _carregarNomes();
   }
 
@@ -95,6 +103,23 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     }
   }
 
+  /// Abre o projeto no mapa com a última versão do histórico (#TG-86).
+  Future<void> _abrirNoMapa() async {
+    if (_abrindoMapa) return;
+    setState(() => _abrindoMapa = true);
+    try {
+      final recalculado = await abrirProjetoNoMapa(context, widget.project);
+      // Recalculou: abre direto o relatório da versão nova, que mostra
+      // "Cálculo em andamento" e se atualiza sozinho quando terminar.
+      if (recalculado != null && mounted) {
+        Navigator.of(context).pushReplacement(MaterialPageRoute<Project>(
+            builder: (_) => ProjectDetailScreen(project: recalculado)));
+      }
+    } finally {
+      if (mounted) setState(() => _abrindoMapa = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -105,19 +130,27 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             listenable: _controller,
             builder: (context, _) => ReportHeader(
               project: widget.project,
+              status: _controller.statusProjeto,
               cidades: _cidades(),
               onExportPdf: _controller.status == ReportStatus.ready
                   ? _exportPdf
                   : null,
               exportingPdf: _exportingPdf,
+              // Enquanto calcula não dá para recalcular de novo.
+              onOpenMap: _controller.status == ReportStatus.calculating
+                  ? null
+                  : _abrirNoMapa,
+              abrindoMapa: _abrindoMapa,
+              onVersions: () =>
+                  ProjectVersionsSheet.mostrar(context, widget.project),
             ),
           ),
           Expanded(
             child: ReportView(
               controller: _controller,
-              // Volta para a lista devolvendo o projeto: ela abre o
-              // formulário de novo projeto já com o nome preenchido.
-              onRedo: () => Navigator.of(context).pop<Project>(widget.project),
+              // Cálculo que falhou: abre no mapa com os mesmos filtros para
+              // recalcular (#TG-86).
+              onRedo: _abrirNoMapa,
             ),
           ),
         ],

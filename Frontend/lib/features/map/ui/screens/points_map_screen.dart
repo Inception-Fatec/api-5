@@ -10,16 +10,23 @@ import 'package:tecsys_app/features/map/ui/widgets/map/map_back_button.dart';
 import 'package:tecsys_app/features/map/ui/widgets/map/points_map_view.dart';
 import 'package:tecsys_app/features/map/ui/widgets/map/save_project_button.dart';
 import 'package:tecsys_app/features/map/ui/widgets/map/zoom_hint_banner.dart';
+import 'package:tecsys_app/features/projects/data/models/project_version.dart';
 import 'package:tecsys_app/features/projects/data/services/ibge_service.dart';
 
 /// Mapa de pontos de um projeto novo: filtros por cima do mapa e o
 /// botão que salva o projeto com os filtros escolhidos. Estado e regras
 /// ficam no [PointsMapController]; aqui só a composição e a navegação.
+///
+/// Com [projetoId] e [versaoInicial], abre um projeto salvo com a área e os
+/// filtros da versão (#TG-86) e o botão vira "Recalcular" (#TG-84). Fecha
+/// devolvendo `true` quando recalculou.
 class PointsMapScreen extends StatefulWidget {
   final String nomeProjeto;
   final String distCode;
   final String distribuidoraLabel;
   final List<Municipio> municipios;
+  final int? projetoId;
+  final ProjectVersion? versaoInicial;
 
   const PointsMapScreen({
     super.key,
@@ -27,6 +34,8 @@ class PointsMapScreen extends StatefulWidget {
     required this.distCode,
     required this.distribuidoraLabel,
     required this.municipios,
+    this.projetoId,
+    this.versaoInicial,
   });
 
   @override
@@ -45,6 +54,8 @@ class _PointsMapScreenState extends State<PointsMapScreen> {
       distCode: widget.distCode,
       distribuidoraLabel: widget.distribuidoraLabel,
       municipios: widget.municipios,
+      projetoId: widget.projetoId,
+      versaoInicial: widget.versaoInicial,
       onFocusPoint: (ponto) =>
           _mapKey.currentState?.moverPara(ponto, MapRegions.zoomFiltro),
     )
@@ -73,7 +84,7 @@ class _PointsMapScreenState extends State<PointsMapScreen> {
 
     if (salvou) {
       await Future.delayed(MapConfig.savedConfirmationDelay);
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) Navigator.of(context).pop(true);
       return;
     }
     ScaffoldMessenger.of(context)
@@ -81,7 +92,9 @@ class _PointsMapScreenState extends State<PointsMapScreen> {
       ..showSnackBar(SnackBar(
         content: Text(_controller.semPontos
             ? _AvisoSemPontos.mensagem
-            : 'Não foi possível salvar agora. Tente de novo.'),
+            : _controller.editando
+                ? 'Não foi possível recalcular agora. Tente de novo.'
+                : 'Não foi possível salvar agora. Tente de novo.'),
       ));
   }
 
@@ -144,6 +157,7 @@ class _PointsMapScreenState extends State<PointsMapScreen> {
                   salvando: _controller.salvando,
                   salvo: _controller.projetoSalvo,
                   totalFinal: _controller.totalFinal,
+                  recalcular: _controller.editando,
                   onPressed: _controller.podeSalvar ? _salvarProjeto : null,
                 ),
               ),

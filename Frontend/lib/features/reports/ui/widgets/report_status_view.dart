@@ -41,12 +41,14 @@ class ReportStatusView extends StatelessWidget {
         return _Message(
           icon: Icons.error_outline,
           title: 'O cálculo deste projeto falhou',
-          message: onRedo == null
-              ? 'Não há relatório para exibir.'
-              : 'Não há relatório para exibir. Você pode refazer o projeto: '
-                  'o formulário abre com o nome preenchido para escolher os '
-                  'filtros de novo.',
-          actionLabel: onRedo == null ? null : 'Refazer projeto',
+          message: [
+            if (controller.mensagemFalha case final motivo?) motivo,
+            onRedo == null
+                ? 'Não há relatório para exibir.'
+                : 'Não há relatório para exibir. Abra o projeto no mapa, com a '
+                    'mesma área e os mesmos filtros, para ajustar e recalcular.',
+          ].join('\n\n'),
+          actionLabel: onRedo == null ? null : 'Recalcular projeto',
           onAction: onRedo,
         );
       case ReportStatus.unauthorized:

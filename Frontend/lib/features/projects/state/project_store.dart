@@ -70,17 +70,54 @@ class ProjectsStore extends ChangeNotifier {
     for (var i = 0; i < a.length; i++) {
       if (a[i].id != b[i].id ||
           a[i].status != b[i].status ||
-          a[i].name != b[i].name) {
+          a[i].name != b[i].name ||
+          a[i].lastActivityAt != b[i].lastActivityAt) {
         return true;
       }
     }
     return false;
   }
 
+  /// Quantos projetos a seção "Recentes" mostra (#TG-88).
+  static const maxRecentes = 5;
+
+  /// Os projetos de atividade mais recente (criar, recalcular ou abrir o
+  /// relatório), no máximo [maxRecentes].
+  List<Project> get recentes {
+    final ordenados = List.of(projects)
+      ..sort((a, b) {
+        final porAtividade = b.ultimaAtividade.compareTo(a.ultimaAtividade);
+        return porAtividade != 0 ? porAtividade : b.id.compareTo(a.id);
+      });
+    return ordenados.take(maxRecentes).toList();
+  }
+
+  /// Abriu o projeto: sobe nos Recentes na hora e avisa o backend. Falha
+  /// de rede não atrapalha quem abriu (o próximo GET acerta a ordem).
+  Future<void> registrarAtividade(int id, {DateTime? agora}) async {
+    final quando = agora ?? DateTime.now();
+    projects = [
+      for (final p in projects)
+        p.id == id ? p.copyWith(lastActivityAt: quando) : p,
+    ];
+    notifyListeners();
+    try {
+      await _service.registrarAtividade(id);
+    } catch (_) {}
+  }
+
   /// Insere um projeto recém-criado no topo da lista imediatamente —
   /// sem esperar um novo GET pra ele aparecer na ProjectsScreen.
   void adicionar(Project projeto) {
     projects = [projeto, ...projects];
+    notifyListeners();
+  }
+
+  /// Troca o projeto de mesmo id pela versão nova (ex.: depois de
+  /// recalcular, o status volta para ENVIADO). Fica na mesma posição.
+  void atualizar(Project projeto) {
+    if (!projects.any((p) => p.id == projeto.id)) return adicionar(projeto);
+    projects = [for (final p in projects) p.id == projeto.id ? projeto : p];
     notifyListeners();
   }
 

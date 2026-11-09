@@ -4,11 +4,13 @@ import 'package:tecsys_app/core/theme/app_theme.dart';
 import 'package:tecsys_app/features/map/ui/styles/map_styles.dart';
 
 /// Botão "Salvar Projeto" da base do mapa: mostra o progresso enquanto
-/// salva e, depois, a confirmação com o total de pontos.
+/// salva e, depois, a confirmação com o total de pontos. Num projeto
+/// aberto para ajuste ([recalcular]), vira "Recalcular" (#TG-86).
 class SaveProjectButton extends StatelessWidget {
   final bool salvando;
   final bool salvo;
   final int? totalFinal;
+  final bool recalcular;
   final VoidCallback? onPressed;
 
   const SaveProjectButton({
@@ -16,6 +18,7 @@ class SaveProjectButton extends StatelessWidget {
     required this.salvando,
     required this.salvo,
     required this.totalFinal,
+    this.recalcular = false,
     required this.onPressed,
   });
 
@@ -48,14 +51,20 @@ class SaveProjectButton extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
-                    salvo ? Icons.check_circle_outline : Icons.save_outlined,
+                    salvo
+                        ? Icons.check_circle_outline
+                        : recalcular
+                            ? Icons.refresh
+                            : Icons.save_outlined,
                     size: MapStyles.saveButtonIconSize,
                   ),
                   const SizedBox(width: AppSpacing.sm),
                   Text(
                     salvo
-                        ? 'Salvo — ${totalFinal ?? 0} ponto(s) a cobrir'
-                        : 'Salvar Projeto',
+                        ? '${recalcular ? 'Enviado' : 'Salvo'} — ${totalFinal ?? 0} ponto(s) a cobrir'
+                        : recalcular
+                            ? 'Recalcular'
+                            : 'Salvar Projeto',
                     style: AppTextStyles.buttonTextLarge,
                   ),
                 ],

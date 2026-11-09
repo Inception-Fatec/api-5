@@ -13,6 +13,28 @@ class MapStyles {
   // Marcadores
   static const markerSize = 14.0;
 
+  /// Cores dos marcadores (#TG-92), todas sólidas:
+  /// * ponto a cobrir: círculo na cor da tensão ([corDaTensao]);
+  /// * candidato a gateway: losango roxo;
+  /// * rede: quadrado azul.
+  static const corTensaoAlta = Color(0xFFDC2626); // vermelho padrão, forte
+  static const corTensaoMedia = Color(0xFFEAB308); // amarelo
+  static const corTensaoBaixa = Color(0xFF22C55E); // verde
+  static const corCandidato = Color(0xFFEC4899); // rosa pink
+  static const corRede = Color(0xFF2563EB); // azul
+  static const bordaMarcador = Color(0xFFFFFFFF);
+  static const bordaCandidato = Color(0xFF3B0764); // roxo escuro
+
+  /// Cor do ponto a cobrir pela tensão da camada.
+  static Color corDaTensao(String? layer) => switch (layer) {
+        'ALTO' => corTensaoAlta,
+        'MEDIO' => corTensaoMedia,
+        _ => corTensaoBaixa,
+      };
+
+  /// Área desenhada no mapa.
+  static const corArea = Color(0xFF16A34A); // verde
+
   /// Cor do marcador conforme a camada do ponto.
   static Color layerColor(String? layer) => switch (layer) {
         'ALTO' => AppColors.layerHigh,
@@ -161,7 +183,7 @@ class MapStyles {
   static const areaHighlightBorderWidth = 4.0;
 
   static Color get areaSelectedColor =>
-      Color.lerp(AppColors.primary, Colors.black, 0.25)!;
+      Color.lerp(corArea, Colors.black, 0.25)!;
   static const areaSelectedFillOpacity = 0.20;
   static const areaSelectedBorderWidth = 2.5;
   static const areaFocusPadding = EdgeInsets.fromLTRB(48, 170, 72, 170);

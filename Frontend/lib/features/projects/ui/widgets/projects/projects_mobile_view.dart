@@ -8,6 +8,7 @@ import 'package:tecsys_app/features/projects/ui/styles/projects_styles.dart';
 import 'package:tecsys_app/features/projects/ui/widgets/projects/new_project_button.dart';
 import 'package:tecsys_app/features/projects/ui/widgets/projects/projects_list_view.dart';
 import 'package:tecsys_app/features/projects/ui/widgets/projects/projects_metrics.dart';
+import 'package:tecsys_app/features/projects/ui/widgets/projects/projects_recent_section.dart';
 import 'package:tecsys_app/features/projects/ui/widgets/projects/projects_search_field.dart';
 import 'package:tecsys_app/features/projects/ui/widgets/projects/projects_status_filter.dart';
 import 'package:tecsys_app/features/projects/ui/widgets/projects/projects_title.dart';
@@ -18,11 +19,15 @@ class ProjectsMobileView extends StatelessWidget {
   final VoidCallback onNewProject;
   final ValueChanged<Project> onOpenProject;
 
+  /// Clique num projeto dos Recentes (#TG-88).
+  final ValueChanged<Project> onOpenRecent;
+
   const ProjectsMobileView({
     super.key,
     required this.controller,
     required this.onNewProject,
     required this.onOpenProject,
+    required this.onOpenRecent,
   });
 
   @override
@@ -43,6 +48,12 @@ class ProjectsMobileView extends StatelessWidget {
                   total: controller.totalProjetos,
                   calculados: controller.totalCalculados),
               const SizedBox(height: AppSpacing.lg),
+              // Seção "Recentes" (#TG-88); sem projetos não aparece (CA4).
+              if (controller.recentes.isNotEmpty) ...[
+                ProjectsRecentSection(
+                    projetos: controller.recentes, onOpen: onOpenRecent),
+                const SizedBox(height: AppSpacing.lg),
+              ],
               ProjectsSearchField(
                   initialText: controller.busca,
                   onChanged: controller.setBusca),

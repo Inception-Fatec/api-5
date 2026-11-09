@@ -64,7 +64,10 @@ public class DecisionService {
         } catch (RuntimeException | Error e) {
             // Error também (ex.: OutOfMemoryError): o projeto não pode ficar parado em ENVIADO (#TG-134)
             log.error("Erro ao processar simulação para o projeto {}: {}", projectId, e.getMessage(), e);
-            projectStatusRepository.updateStatus(projectId, "FALHA");
+            String motivo = e.getMessage() == null || e.getMessage().isBlank()
+                    ? e.getClass().getSimpleName()
+                    : e.getMessage();
+            projectStatusRepository.updateStatus(projectId, "FALHA", "O cálculo falhou: " + motivo);
             throw e;
         }
     }

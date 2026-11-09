@@ -225,7 +225,7 @@ class _AlcaCanto extends StatelessWidget {
         color: AppColors.surface,
         borderRadius: const BorderRadius.all(Radius.circular(2)),
         border: Border.all(
-          color: AppColors.primary,
+          color: MapStyles.corArea,
           width: MapStyles.selectionStrokeWidth,
         ),
       ),
@@ -260,7 +260,7 @@ class _RetanguloTracejado extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const cor = AppColors.primary;
+    const cor = MapStyles.corArea;
     canvas.drawRect(
       Offset.zero & size,
       Paint()..color = cor.withOpacity(MapStyles.selectionFillOpacity),

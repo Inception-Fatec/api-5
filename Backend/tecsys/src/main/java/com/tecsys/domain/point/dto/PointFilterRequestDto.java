@@ -23,6 +23,12 @@ public record PointFilterRequestDto(
         @JsonProperty("cnae_codes") List<String> cnaeCodes,
         @JsonProperty("bairro_names") List<String> bairroNames,
 
+        // Papéis no cálculo (#TG-92): camadas BDGD de pontos a cobrir e de
+        // candidatos a gateway. Vazio/ausente = padrão (consumidores e
+        // transformadores), igual ao motor.
+        @JsonProperty("coverage_layers") List<String> coverageLayers,
+        @JsonProperty("candidate_layers") List<String> candidateLayers,
+
         @JsonProperty("count_only") Boolean countOnly,
 
         // Zoom afastado: em vez dos pontos, devolve um ponto por célula de
