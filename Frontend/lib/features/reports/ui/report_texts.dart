@@ -58,8 +58,7 @@ List<ReportParam> filterEntries(ReportFilters? f) {
       ReportParam('Distribuidora',
           joinList(f.distCodes.map(nomeDistribuidora).toList())),
     if (f.munCodes.isNotEmpty)
-      ReportParam('Municípios',
-          joinList(f.munCodes.map(IbgeService.nomeMunicipio).toList())),
+      ReportParam('Municípios', IbgeService.rotulosMunicipios(f.munCodes)),
     if (f.targetLevels.isNotEmpty)
       ReportParam('Tensão dos pontos',
           joinList(f.targetLevels.map((l) => _niveis[l] ?? l).toList())),

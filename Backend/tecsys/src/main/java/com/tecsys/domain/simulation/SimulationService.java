@@ -49,10 +49,10 @@ public class SimulationService {
         // aciona o motor
         decisionEngineClient.sendToEngineAsync(project.getId());
 
-        return toDto(project);
+        return toDto(project, request.filterParams());
     }
 
-    private ProjectResponseDto toDto(Project project) {
+    private ProjectResponseDto toDto(Project project, com.fasterxml.jackson.databind.JsonNode filterParams) {
         return new ProjectResponseDto(
                 project.getId(),
                 project.getName(),
@@ -61,7 +61,8 @@ public class SimulationService {
                 project.getCreatedBy().getId(),
                 project.getCreatedBy().getName(),
                 project.getCreatedAt(),
-                project.isActive()
+                project.isActive(),
+                ProjectResponseDto.munCodesDe(filterParams)
         );
     }
 }

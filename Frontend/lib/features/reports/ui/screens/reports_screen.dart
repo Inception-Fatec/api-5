@@ -61,6 +61,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     super.dispose();
   }
 
+  /// Cidades do cálculo: as dos filtros do relatório ou, enquanto ele não
+  /// carrega, as que vieram com o projeto (#TG-148).
+  String _cidades() {
+    final codigos = _controller.report?.filters?.munCodes ?? widget.project.munCodes;
+    return IbgeService.rotulosMunicipios(codigos);
+  }
+
   Future<void> _exportPdf() async {
     final report = _controller.report;
     if (report == null || _exportingPdf) return;
@@ -73,6 +80,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         projectName: project.name,
         distribuidora: nomeDistribuidora(project.distCode),
         date: project.dataFormatada,
+        cidades: _cidades(),
         report: report,
         mapImage: mapImage,
       );
@@ -97,6 +105,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             listenable: _controller,
             builder: (context, _) => ReportHeader(
               project: widget.project,
+              cidades: _cidades(),
               onExportPdf: _controller.status == ReportStatus.ready
                   ? _exportPdf
                   : null,

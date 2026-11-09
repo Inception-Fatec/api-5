@@ -18,6 +18,7 @@ public class ProjectService {
 
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
+    private final ProjectHistoryRepository projectHistoryRepository;
 
     @Transactional
     public ProjectResponseDto createProject(ProjectCreateRequestDto request, String userEmail) {
@@ -76,7 +77,10 @@ public class ProjectService {
                 project.getCreatedBy().getId(),
                 project.getCreatedBy().getName(),
                 project.getCreatedAt(),
-                project.isActive()
+                project.isActive(),
+                projectHistoryRepository.findFirstByProject_IdOrderByCreatedAtDescIdDesc(project.getId())
+                        .map(h -> ProjectResponseDto.munCodesDe(h.getFilterParams()))
+                        .orElse(List.of())
         );
     }
 }
