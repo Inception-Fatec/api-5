@@ -68,39 +68,6 @@ DOWNLOAD_BLOCO = 64 * 1024
 _STATUS_COM_RETRY = {408, 429}
 _REGEX_CONTENT_RANGE = re.compile(r"bytes\s+(?:(\d+)-(\d+)|\*)/(\d+|\*)")
 
-VAR_DB_URL = "ETL_DB_URL"
-
-
-def criar_engine(**kwargs):
-    url = (os.getenv(VAR_DB_URL) or "").strip()
-    if not url:
-        raise RuntimeError(
-            f"Variável de ambiente {VAR_DB_URL} não definida. Copie modules/.env.example "
-            "para modules/.env e preencha, ex.: "
-            "postgresql+psycopg2://usuario:senha@localhost:5432/bdgd"
-        )
-    return create_engine(url, **kwargs)
-
-
-DOWNLOAD_TENTATIVAS = 5
-DOWNLOAD_TIMEOUT = (30, 60)
-DOWNLOAD_ESPERA_MAXIMA = 30
-DOWNLOAD_BLOCO = 64 * 1024
-_STATUS_COM_RETRY = {408, 429}
-_REGEX_CONTENT_RANGE = re.compile(r"bytes\s+(?:(\d+)-(\d+)|\*)/(\d+|\*)")
-
-VAR_DB_URL = "ETL_DB_URL"
-
-
-def criar_engine(**kwargs):
-    url = (os.getenv(VAR_DB_URL) or "").strip()
-    if not url:
-        raise RuntimeError(
-            f"Variável de ambiente {VAR_DB_URL} não definida. Copie modules/.env.example "
-            "para modules/.env e preencha, ex.: "
-            "postgresql+psycopg2://usuario:senha@localhost:5432/bdgd"
-        )
-    return create_engine(url, **kwargs)
 
 def validar_municipios(municipios) -> list[str]:
     codigos = list(dict.fromkeys(str(m).strip() for m in (municipios or []) if str(m).strip()))
