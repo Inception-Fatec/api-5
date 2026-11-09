@@ -6,14 +6,16 @@ public record UserResponseDto(
         Long id,
         String name,
         String email,
-        String role
+        String role,
+        boolean isActive
 ) {
     public static UserResponseDto fromEntity(User user) {
         return new UserResponseDto(
                 user.getId(),
                 user.getName(),
                 user.getEmail(),
-                user.getRole().name()
+                user.getRole().name(),
+                user.isActive()
         );
     }
 }

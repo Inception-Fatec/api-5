@@ -1,0 +1,61 @@
+import argparse
+import json
+import logging
+import sys
+
+import etl_bdgd
+import geodatabase_edp_sp
+import inspecao_gdb
+from etl_common import etapa
+
+
+def main(argv=None) -> int:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+
+    parser = argparse.ArgumentParser(description="ETL BDGD (geodatabase + consumidores)")
+    parser.add_argument("--gdb", required=True,
+                        help="Pasta .gdb ou o .zip que a contém (lido sem descompactar)")
+    parser.add_argument("--municipios", help="Códigos IBGE separados por vírgula (obrigatório na carga)")
+    parser.add_argument("--inspecionar", action="store_true",
+                        help="Só lista distribuidora e municípios da geodatabase (não grava nada)")
+    parser.add_argument("--sem-consumidores", action="store_true",
+                        help="Carrega só a geodatabase (não roda o ETL dos CSVs da ANEEL)")
+    args = parser.parse_args(argv)
+
+    if args.inspecionar:
+        try:
+            inspecao = inspecao_gdb.inspecionar(args.gdb)
+        except Exception:
+            logging.exception("Inspeção da geodatabase falhou")
+            return 1
+        print("ETL_INSPECAO:" + json.dumps(inspecao, ensure_ascii=False), flush=True)
+        return 0
+
+    if not args.municipios:
+        parser.error("--municipios é obrigatório na carga")
+
+    municipios = [m.strip() for m in args.municipios.split(",") if m.strip()]
+
+    try:
+        resumo = {"geodatabase": geodatabase_edp_sp.main(municipios, args.gdb)}
+        if not args.sem_consumidores:
+            dist = resumo["geodatabase"]["distribuidora"]
+            etapa("Gravando consumidores de média e alta tensão (ANEEL)")
+            resumo["consumidores"] = etl_bdgd.main(
+                municipios=municipios,
+                distribuidoras=[dist],
+                prefixos={dist: resumo["geodatabase"]["prefixo"]},
+            )
+    except Exception:
+        logging.exception("ETL falhou")
+        return 1
+
+    # Avisos de todas as etapas num lugar só, para a tela de ETL mostrar.
+    resumo["avisos"] = [a for bloco in resumo.values() if isinstance(bloco, dict) for a in bloco.get("avisos", [])]
+
+    print("ETL_RESULT:" + json.dumps(resumo, ensure_ascii=False, default=str), flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

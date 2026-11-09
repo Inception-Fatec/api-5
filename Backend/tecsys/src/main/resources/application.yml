@@ -1,5 +1,6 @@
+
 server:
-  port: 8081
+  port: ${BACKEND_PORT:8081}
 
 springdoc:
   show-hateoas: false
@@ -7,17 +8,35 @@ springdoc:
 spring:
   config:
     import: optional:file:.env.properties
+
   datasource:
     url: ${DB_URL}
     username: ${DB_USER}
     password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 8
+      minimum-idle: 1
+
   jpa:
     hibernate:
-      ddl-auto: update
-    show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
+      ddl-auto: validate
+    show-sql: false
+
   flyway:
-    enabled: false
+    enabled: true
     baseline-on-migrate: true
+  servlet:
+    multipart:
+      max-file-size: 4GB
+      max-request-size: 4GB
+
+# Fica na raiz (não dentro de spring:) para o EtlRunner ler via @Value("${etl.*}").
+etl:
+  python-executable: ${ETL_PYTHON:python}
+  script-path: ${ETL_SCRIPT_PATH:../api-5/modules/etl_cli.py}
+  timeout-minutes: 120
+
+# URL do motor de decisão. Lida pelo DecisionEngineClient; nos scripts e no
+# docker-compose vem da variável ENGINE_URL.
+engine:
+  url: ${ENGINE_URL:http://localhost:8082/api/calculate}

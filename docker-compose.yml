@@ -1,0 +1,102 @@
+# Alternativa "sobe tudo de uma vez" — os scripts em scripts/ continuam
+# sendo o jeito principal (cada serviço sobe/para sozinho).
+#
+#   docker compose up --build        # db + backend + motor + frontend
+#   docker compose up --build db     # só um serviço
+#   docker compose down              # para tudo (volumes tecsys-pgdata e tecsys-dem-cache preservados)
+#   docker compose down -v           # CUIDADO: apaga também os caches tecsys-dem-cache e tecsys-aneel-cache
+#
+# Segredo do JWT (obrigatório, #TG-94): vem do ambiente ou do arquivo .env na
+# raiz do repositório (gitignored), por exemplo:
+#   API_SECURITY_TOKEN_SECRET=<saída de: openssl rand -hex 32>
+# Relevo do motor: Copernicus GLO-30 baixado da AWS, sem chave (#TG-139). Os
+# tiles ficam no volume tecsys-dem-cache, o mesmo do scripts/run-motor.sh.
+#
+# Banco local (PostGIS 17). Para usar o Supabase no backend, suba o
+# backend pelo script (./scripts/run-backend.sh --db supabase) em vez
+# de pelo compose.
+name: tecsys
+
+services:
+  db:
+    image: postgis/postgis:17-3.6-alpine
+    container_name: tecsys-postgis
+    environment:
+      POSTGRES_USER: tecsys
+      POSTGRES_PASSWORD: tecsys
+      POSTGRES_DB: tecsys
+    ports:
+      - "5433:5432"
+    volumes:
+      - tecsys-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tecsys"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ./Backend/tecsys
+      # Scripts Python do ETL (modules/) entram na imagem do backend (#TG-103).
+      additional_contexts:
+        modules: ./modules
+    container_name: tecsys-backend
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/tecsys
+      DB_USER: tecsys
+      DB_PASSWORD: tecsys
+      API_SECURITY_TOKEN_SECRET: "${API_SECURITY_TOKEN_SECRET:?Defina API_SECURITY_TOKEN_SECRET}"
+      # Dentro do container, localhost é o próprio backend: o motor é
+      # chamado pelo nome do serviço na rede do compose.
+      ENGINE_URL: http://motor:8082/api/calculate
+      # Banco onde o ETL (Python, dentro do container) grava os dados da rede.
+      ETL_DB_URL: postgresql+psycopg2://tecsys:tecsys@db:5432/tecsys
+    ports:
+      - "8081:8081"
+    volumes:
+      - tecsys-aneel-cache:/var/cache/tecsys-aneel
+    depends_on:
+      db:
+        condition: service_healthy
+
+  motor:
+    build: ./MOTOR
+    container_name: tecsys-motor
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/tecsys
+      DB_USER: tecsys
+      DB_PASSWORD: tecsys
+      # Escuta em todas as interfaces do container para o backend alcançar;
+      # no host, a porta só é publicada em 127.0.0.1 (o motor não tem login).
+      MOTOR_BIND_ADDRESS: 0.0.0.0
+    ports:
+      - "127.0.0.1:8082:8082"
+    volumes:
+      - tecsys-dem-cache:/var/cache/tecsys-dem
+    # O motor só consulta o banco sob demanda (chamado pelo backend), que é
+    # quem roda as migrações Flyway (project_coverage) no startup.
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./Frontend
+      args:
+        API_HOST: localhost
+        API_PORT: "8081"
+    container_name: tecsys-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+volumes:
+  tecsys-pgdata:
+  tecsys-aneel-cache:
+    # CSVs da ANEEL baixados pelo ETL; nome fixo, compartilhado com o run-backend.sh.
+    name: tecsys-aneel-cache
+  tecsys-dem-cache:
+    # Nome fixo para compartilhar o cache do relevo com o scripts/run-motor.sh.
+    name: tecsys-dem-cache

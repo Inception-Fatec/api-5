@@ -18,6 +18,7 @@ public class ProjectService {
 
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
+    private final ProjectHistoryRepository projectHistoryRepository;
 
     @Transactional
     public ProjectResponseDto createProject(ProjectCreateRequestDto request, String userEmail) {
@@ -36,7 +37,7 @@ public class ProjectService {
 
     @Transactional(readOnly = true)
     public List<ProjectResponseDto> findAll() {
-        return projectRepository.findAll().stream()
+        return projectRepository.findAllByActiveTrue().stream()
                 .map(this::toDto)
                 .toList();
     }
@@ -58,11 +59,12 @@ public class ProjectService {
     @Transactional
     public void deleteProject(Long id) {
         Project project = getProjectOrThrow(id);
-        projectRepository.delete(project);
+        project.setActive(false);
+        projectRepository.save(project);
     }
 
     private Project getProjectOrThrow(Long id) {
-        return projectRepository.findById(id)
+        return projectRepository.findByIdAndActiveTrue(id)
                 .orElseThrow(() -> new EntityNotFoundException("Projeto não encontrado com o ID: " + id));
     }
 
@@ -73,7 +75,12 @@ public class ProjectService {
                 project.getDistCode(),
                 project.getStatus(),
                 project.getCreatedBy().getId(),
-                project.getCreatedAt()
+                project.getCreatedBy().getName(),
+                project.getCreatedAt(),
+                project.isActive(),
+                projectHistoryRepository.findFirstByProject_IdOrderByCreatedAtDescIdDesc(project.getId())
+                        .map(h -> ProjectResponseDto.munCodesDe(h.getFilterParams()))
+                        .orElse(List.of())
         );
     }
 }

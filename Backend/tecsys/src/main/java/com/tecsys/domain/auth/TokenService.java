@@ -8,15 +8,26 @@ import com.tecsys.domain.user.User;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.nio.charset.StandardCharsets;
 
 @Service
 public class TokenService {
 
-    @Value("${api.security.token.secret:default-secret-key}")
-    private String secret;
+    private final String secret;
+
+    public TokenService(@Value("${API_SECURITY_TOKEN_SECRET}") String secret) {
+        if (secret == null
+                || secret.isBlank()
+                || secret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException(
+                    "API_SECURITY_TOKEN_SECRET deve conter pelo menos 32 bytes."
+            );
+        }
+
+        this.secret = secret;
+    }
 
     public String generateToken(User user) {
         try {
@@ -46,6 +57,6 @@ public class TokenService {
     }
 
     private Instant genExpirationDate() {
-        return LocalDateTime.now().plusHours(2).toInstant(ZoneOffset.of("-03:00"));
+        return Instant.now().plus(Duration.ofHours(2));
     }
 }

@@ -1,0 +1,325 @@
+/// Estado de uma carga ETL.
+enum EtlCargaStatus { concluido, processando, erro, aguardandoEscolha, cancelado }
+
+/// Município presente na .gdb, com as quantidades lidas na inspeção (#TG-143).
+class MunicipioNoArquivo {
+  const MunicipioNoArquivo({required this.codigo, required this.transformadores, required this.consumidoresBt});
+
+  final String codigo;
+  final int transformadores;
+  final int consumidoresBt;
+}
+
+/// O que o backend leu da .gdb antes da carga: distribuidora, período e municípios.
+class InspecaoGdb {
+  const InspecaoGdb({required this.distribuidora, this.periodoInicio, this.periodoFim, required this.municipios});
+
+  final String distribuidora;
+  final String? periodoInicio;
+  final String? periodoFim;
+  final List<MunicipioNoArquivo> municipios;
+
+  static InspecaoGdb? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final Object? periodo = raw['periodo'];
+    final Object? lista = raw['municipios'];
+    String? texto(Object? v) {
+      final String s = (v ?? '').toString().trim();
+      return s.isEmpty ? null : s;
+    }
+
+    return InspecaoGdb(
+      distribuidora: (raw['distribuidora'] ?? '').toString(),
+      periodoInicio: periodo is Map ? texto(periodo['inicio']) : null,
+      periodoFim: periodo is Map ? texto(periodo['fim']) : null,
+      municipios: <MunicipioNoArquivo>[
+        if (lista is List)
+          for (final Map m in lista.whereType<Map>())
+            MunicipioNoArquivo(
+              codigo: (m['codigo'] ?? '').toString(),
+              transformadores: EtlCarga._asInt(m['transformadores']) ?? 0,
+              consumidoresBt: EtlCarga._asInt(m['consumidores_bt']) ?? 0,
+            ),
+      ],
+    );
+  }
+}
+
+/// Tabela PostGIS carregada, com as métricas reais devolvidas pelo ETL (summary do job).
+class EtlCamada {
+  const EtlCamada({
+    required this.nome,
+    required this.naCidade,
+    required this.paisForaDaArea,
+    required this.gravados,
+    required this.ignorados,
+    this.consumidores = 0,
+  });
+
+  /// Nome da tabela (ex.: "ssdmt").
+  final String nome;
+
+  /// Registros dos municípios selecionados que passaram pelos filtros.
+  final int naCidade;
+
+  /// Subestações/transformadores fora dos municípios, gravados só para manter os vínculos da rede.
+  final int paisForaDaArea;
+
+  /// Registros inseridos no banco nesta execução.
+  final int gravados;
+
+  /// Registros ignorados (já existentes no banco ou sem transformador).
+  final int ignorados;
+
+  /// Baixa tensão (#TG-144): consumidores gravados. Cada registro é um ponto de
+  /// conexão + classe e representa vários consumidores.
+  final int consumidores;
+
+  factory EtlCamada.fromMetricas(String nome, Map<String, dynamic> m) {
+    int i(String k) => EtlCarga._asInt(m[k]) ?? 0;
+
+    final bool consumidor = m.containsKey('retidos'); // ucat_pj / ucmt_pj
+    // ucbt: da .gdb agregada por ponto (registros) ou, em cargas antigas, da ucbt_raw
+    final bool baixaTensao = m.containsKey('registros') || m.containsKey('raw_disponiveis');
+
+    final int naCidade = consumidor
+        ? i('retidos')
+        : baixaTensao
+            ? (m.containsKey('registros') ? i('registros') : i('raw_disponiveis'))
+            : i('lidos') - i('fora_municipio') - i('inativos') - i('descartados_geometria');
+
+    return EtlCamada(
+      nome: nome,
+      naCidade: naCidade < 0 ? 0 : naCidade,
+      paisForaDaArea: i('pais_fora_da_area'),
+      gravados: i('inseridos'),
+      ignorados: baixaTensao
+          ? (m.containsKey('sem_transformador') ? i('sem_transformador') : i('sem_transformador_ou_ja_existentes'))
+          : i('ignorados_ja_existentes'),
+      consumidores: i('consumidores_gravados'),
+    );
+  }
+}
+
+/// Modelo tipado de uma carga ETL (.zip).
+class EtlCarga {
+  const EtlCarga({
+    required this.id,
+    required this.nomeArquivo,
+    required this.tamanhoBytes,
+    this.totalCamadas = 0,
+    this.status = EtlCargaStatus.concluido,
+    this.duracao,
+    this.executadoEm,
+    this.errorMessage,
+    this.camadas = const <EtlCamada>[],
+    this.avisos = const <String>[],
+    this.logTail,
+    this.municipios = const <String>[],
+    this.etapa,
+    this.inspecao,
+  });
+
+  final String id;
+  final String nomeArquivo;
+  final int tamanhoBytes;
+  final int totalCamadas;
+  final EtlCargaStatus status;
+  final String? duracao;
+  final String? executadoEm;
+
+  /// Motivo da falha informado pelo backend (só quando o status é FAILED).
+  final String? errorMessage;
+  final List<EtlCamada> camadas;
+
+  /// Avisos da carga que terminou com sucesso mas ficou incompleta
+  /// (ex.: baixa tensão não carregada). Vêm de summary.avisos.
+  final List<String> avisos;
+
+  /// Últimas linhas do log do processamento (para entender uma falha).
+  final String? logTail;
+
+  /// Códigos IBGE dos municípios processados nesta carga.
+  final List<String> municipios;
+
+  /// Etapa atual anunciada pelo ETL enquanto processa (ex.: "Gravando a rede no banco").
+  final String? etapa;
+
+  /// Distribuidora e municípios da .gdb, enquanto a carga aguarda a escolha.
+  final InspecaoGdb? inspecao;
+
+  /// Total de registros gravados no banco (soma de todas as tabelas).
+  int get totalGravados => camadas.fold<int>(0, (soma, c) => soma + c.gravados);
+
+  /// Ex.: "42.8 MB".
+  String get tamanhoFormatado {
+    const int mb = 1024 * 1024;
+    if (tamanhoBytes >= mb) return '${(tamanhoBytes / mb).toStringAsFixed(1)} MB';
+    if (tamanhoBytes >= 1024) return '${(tamanhoBytes / 1024).toStringAsFixed(1)} KB';
+    return '$tamanhoBytes B';
+  }
+
+  /// Ex.: "42.8 MB • 3 Camadas PostGIS".
+  String get resumo {
+    // O tamanho só é conhecido na carga enviada nesta sessão; no histórico
+    // vindo do backend ele não existe e não deve aparecer como "0 B".
+    final partes = <String>[if (tamanhoBytes > 0) tamanhoFormatado];
+    if (totalCamadas > 0) {
+      partes.add('$totalCamadas ${totalCamadas == 1 ? 'Camada' : 'Camadas'} PostGIS');
+    }
+    return partes.join(' • ');
+  }
+
+  String get statusLabel {
+    switch (status) {
+      case EtlCargaStatus.concluido:
+        return 'Concluído';
+      case EtlCargaStatus.processando:
+        return 'Processando';
+      case EtlCargaStatus.erro:
+        return 'Falhou';
+      case EtlCargaStatus.aguardandoEscolha:
+        return 'Aguardando escolha';
+      case EtlCargaStatus.cancelado:
+        return 'Cancelado';
+    }
+  }
+
+  /// Conversão tolerante a nomes de chaves (camelCase / snake_case / inglês).
+  factory EtlCarga.fromJson(
+    Map<String, dynamic> json, {
+    String? nomeFallback,
+    int? tamanhoFallback,
+  }) {
+    final Map<String, dynamic> summary = _mapa(json['summary']);
+    final List<EtlCamada> camadas = <EtlCamada>[
+      ..._camadasDe(_mapa(summary['geodatabase'])),
+      ..._camadasDe(_mapa(summary['consumidores'])),
+    ];
+    final int totalCamadas = camadas.length;
+
+    return EtlCarga(
+      id: primeiro(json, const ['id', 'cargaId', 'carga_id'])?.toString() ??
+          DateTime.now().microsecondsSinceEpoch.toString(),
+      nomeArquivo: primeiro(json, const ['nomeArquivo', 'nome_arquivo', 'originalFilename', 'filename', 'fileName', 'name'])
+              ?.toString() ??
+          nomeFallback ??
+          'arquivo.zip',
+      tamanhoBytes: _asInt(primeiro(json, const ['tamanhoBytes', 'tamanho_bytes', 'fileSizeBytes', 'tamanho', 'size', 'sizeBytes'])) ??
+          tamanhoFallback ??
+          0,
+      totalCamadas: totalCamadas,
+      status: _parseStatus(primeiro(json, const ['status', 'estado'])?.toString()),
+      duracao: _duracao(json['startedAt'], json['finishedAt']),
+      executadoEm: _formatarData(primeiro(json, const ['executadoEm', 'executado_em', 'timestamp', 'createdAt'])),
+      errorMessage: primeiro(json, const ['errorMessage', 'error_message'])?.toString(),
+      camadas: camadas,
+      avisos: _avisosDe(summary),
+      logTail: _textoOuNulo(primeiro(json, const ['logTail', 'log_tail'])),
+      municipios: _codigos(json['municipios']),
+      etapa: _textoOuNulo(primeiro(json, const ['stage', 'etapa'])),
+      inspecao: InspecaoGdb.fromJson(json['inspecao']),
+    );
+  }
+
+  static List<String> _codigos(Object? v) {
+    final Iterable<Object?> itens = v is List ? v : (v is String ? v.split(',') : const <Object?>[]);
+    return itens.map((e) => (e ?? '').toString().trim()).where((e) => e.isNotEmpty).toList();
+  }
+
+  static String? _textoOuNulo(Object? v) {
+    final String s = (v ?? '').toString().trim();
+    return s.isEmpty ? null : s;
+  }
+
+  /// Converte qualquer resposta de lista em `List<EtlCarga>` com segurança de tipos.
+  static List<EtlCarga> listFromJson(Object? raw) {
+    if (raw is! List) return <EtlCarga>[];
+    return raw
+        .whereType<Map>()
+        .map((m) => EtlCarga.fromJson(Map<String, dynamic>.from(m)))
+        .toList();
+  }
+
+  /// summary.avisos (todas as etapas) ou, em cargas antigas, o de cada bloco.
+  static List<String> _avisosDe(Map<String, dynamic> summary) {
+    List<String> lista(Object? v) =>
+        v is List ? v.map((e) => e.toString()).where((e) => e.isNotEmpty).toList() : <String>[];
+    final List<String> geral = lista(summary['avisos']);
+    if (geral.isNotEmpty) return geral;
+    return <String>[
+      ...lista(_mapa(summary['geodatabase'])['avisos']),
+      ...lista(_mapa(summary['consumidores'])['avisos']),
+    ];
+  }
+
+  static Map<String, dynamic> _mapa(Object? v) =>
+      v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
+
+  /// Uma camada por tabela do resumo (summary.<bloco>.tabelas) devolvido pelo ETL.
+  static List<EtlCamada> _camadasDe(Map<String, dynamic> bloco) {
+    final Map<String, dynamic> tabelas = _mapa(bloco['tabelas']);
+    return <EtlCamada>[
+      for (final MapEntry<String, dynamic> e in tabelas.entries) EtlCamada.fromMetricas(e.key, _mapa(e.value)),
+    ];
+  }
+
+  /// startedAt/finishedAt (ISO-8601) -> "1 min 35 s". Nulo enquanto o job não terminou.
+  static String? _duracao(Object? inicio, Object? fim) {
+    final DateTime? a = inicio == null ? null : DateTime.tryParse(inicio.toString());
+    final DateTime? b = fim == null ? null : DateTime.tryParse(fim.toString());
+    if (a == null || b == null) return null;
+    final Duration d = b.difference(a);
+    if (d.inSeconds < 60) return '${d.inSeconds} s';
+    if (d.inMinutes < 60) return '${d.inMinutes} min ${d.inSeconds % 60} s';
+    return '${d.inHours} h ${d.inMinutes % 60} min';
+  }
+
+  static Object? primeiro(Map<String, dynamic> json, List<String> chaves) {
+    for (final k in chaves) {
+      if (json[k] != null) return json[k];
+    }
+    return null;
+  }
+
+  /// 128450 -> "128.450".
+  static String milhar(int n) {
+    final String s = n.abs().toString();
+    final StringBuffer b = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) b.write('.');
+      b.write(s[i]);
+    }
+    return n < 0 ? '-$b' : b.toString();
+  }
+
+  /// Data ISO-8601 do backend -> "23/10/2026 às 18:32" (horário local).
+  static String? _formatarData(Object? v) {
+    if (v == null) return null;
+    final DateTime? d = DateTime.tryParse(v.toString())?.toLocal();
+    if (d == null) return v.toString();
+    String p(int n) => n.toString().padLeft(2, '0');
+    return '${p(d.day)}/${p(d.month)}/${d.year} às ${p(d.hour)}:${p(d.minute)}';
+  }
+
+  static int? _asInt(Object? v) {
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v);
+    return null;
+  }
+
+  static EtlCargaStatus _parseStatus(String? s) {
+    final v = (s ?? '').toLowerCase();
+    if (v.isEmpty) return EtlCargaStatus.processando;
+    if (v.contains('awaiting') || v.contains('aguard')) return EtlCargaStatus.aguardandoEscolha;
+    if (v.contains('cancel')) return EtlCargaStatus.cancelado;
+    if (v.contains('inspect')) return EtlCargaStatus.processando;
+    if (v.contains('conclu') || v.contains('success') || v.contains('done') || v.contains('ok')) {
+      return EtlCargaStatus.concluido;
+    }
+    if (v.contains('process') || v.contains('pend') || v.contains('run') || v.contains('queue')) {
+      return EtlCargaStatus.processando;
+    }
+    return EtlCargaStatus.erro;
+  }
+}

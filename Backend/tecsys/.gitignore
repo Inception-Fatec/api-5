@@ -61,6 +61,7 @@ app.*.map.json
 # ==========================================
 .env
 *.env
+.env.supabase
 .env.properties
 *.env.properties
 **/.env
