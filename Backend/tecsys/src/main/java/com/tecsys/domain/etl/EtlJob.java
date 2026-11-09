@@ -38,6 +38,18 @@ public class EtlJob {
     @Column(name = "error_message", columnDefinition = "TEXT")
     private String errorMessage;
 
+    @Column(name = "inspection_json", columnDefinition = "TEXT")
+    private String inspectionJson;
+
+    @Column(name = "work_dir", length = 500)
+    private String workDir;
+
+    @Column(length = 120)
+    private String stage;
+
+    @Column(name = "file_size_bytes")
+    private Long fileSizeBytes;
+
     @Column(name = "created_by")
     private Long createdBy;
 

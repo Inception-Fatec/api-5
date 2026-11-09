@@ -327,7 +327,7 @@ public class PointCustomRepository {
                 new TableMetadata("untrmt", "cod_id", "MEDIO", true, true, false, Set.of("mun", "sub", "conj")),
                 new TableMetadata("ucbt", "cod_id_encr", "BAIXO", true, true, true,
                         Set.of("mun", "brr", "sub", "conj", "clas_sub", "cnae", "car_inst", "tip_sist", "are_loc",
-                                "uni_tr_mt")),
+                                "uni_tr_mt", "qtd_consumidores")),
                 new TableMetadata("ssdbt", "cod_id", "BAIXO", false, true, false, Set.of("sub", "conj", "uni_tr_mt")));
 
         if (targetLayers == null || targetLayers.isEmpty() || targetLayers.contains("all")) {

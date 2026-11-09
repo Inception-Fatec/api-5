@@ -15,21 +15,33 @@ class UserStore extends ChangeNotifier {
   List<AppUser> users = [];
   bool loading = false;
   bool _carregouAlgumaVez = false;
+  Future<void>? _emAndamento;
+
+  /// Erro da última busca (null se deu certo).
+  Object? erro;
 
   /// Busca a lista de usuários no backend. Se já tiver carregado
-  /// antes, não busca de novo sozinho.
-  Future<void> carregar({bool force = false}) async {
-    if (loading) return;
-    if (_carregouAlgumaVez && !force) return;
+  /// antes, não busca de novo sozinho ([force] busca de novo). Se uma
+  /// busca já está em andamento, devolve ela em vez de abrir outra —
+  /// assim Projetos e Usuários, montadas juntas, fazem uma chamada só.
+  Future<void> carregar({bool force = false}) {
+    final emAndamento = _emAndamento;
+    if (emAndamento != null) return emAndamento;
+    if (_carregouAlgumaVez && !force) return Future.value();
+    return _emAndamento = _buscar().whenComplete(() => _emAndamento = null);
+  }
 
+  Future<void> _buscar() async {
     loading = true;
+    erro = null;
     notifyListeners();
-
     try {
       users = await _service.listUsers();
       _carregouAlgumaVez = true;
-    } catch (_) {
-      // Silenciosamente falha — o card de projeto mostrará "Usuário #id"
+    } catch (e) {
+      // O card de projeto mostra "Usuário #id"; a tela de Usuários
+      // mostra o erro.
+      erro = e;
     } finally {
       loading = false;
       notifyListeners();

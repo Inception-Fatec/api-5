@@ -7,6 +7,7 @@ import 'package:tecsys_app/core/widgets/card_info_row.dart';
 import 'package:tecsys_app/core/widgets/list_card.dart';
 import 'package:tecsys_app/core/widgets/status_badge.dart';
 import 'package:tecsys_app/features/projects/data/models/project_model.dart';
+import 'package:tecsys_app/features/projects/data/services/ibge_service.dart';
 import 'package:tecsys_app/features/projects/ui/styles/project_status_style.dart';
 import 'package:tecsys_app/features/projects/ui/widgets/projects/confirm_delete_project_dialog.dart';
 
@@ -92,6 +93,11 @@ class _ProjectCardState extends State<ProjectCard> {
             icon: Icons.person_outline,
             text: widget.creatorName,
             color: statusColor),
+        if (data.munCodes.isNotEmpty)
+          CardInfoRow(
+              icon: Icons.location_on_outlined,
+              text: IbgeService.rotulosMunicipios(data.munCodes),
+              color: statusColor),
       ],
     );
   }

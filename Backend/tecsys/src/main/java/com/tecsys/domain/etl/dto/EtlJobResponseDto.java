@@ -12,10 +12,13 @@ public record EtlJobResponseDto(
         Long id,
         String status,
         String originalFilename,
+        Long fileSizeBytes,
         List<String> municipios,
         JsonNode summary,
         String errorMessage,
         String logTail,
+        String stage,
+        JsonNode inspecao,
         Instant createdAt,
         Instant startedAt,
         Instant finishedAt
@@ -23,14 +26,28 @@ public record EtlJobResponseDto(
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     public static EtlJobResponseDto fromEntity(EtlJob job) {
+        return montar(job, job.getLogTail());
+    }
+
+    /** Igual ao fromEntity, sem o log (usado na listagem do histórico). */
+    public static EtlJobResponseDto semLog(EtlJob job) {
+        return montar(job, null);
+    }
+
+    private static EtlJobResponseDto montar(EtlJob job, String logTail) {
         return new EtlJobResponseDto(
                 job.getId(),
                 job.getStatus().name(),
                 job.getOriginalFilename(),
-                Arrays.asList(job.getMunicipios().split(",")),
+                job.getFileSizeBytes(),
+                Arrays.stream(job.getMunicipios().split(",")).filter(m -> !m.isBlank()).toList(),
                 parse(job.getSummaryJson()),
                 job.getErrorMessage(),
-                job.getLogTail(),
+                logTail,
+                job.getStage(),
+                // Distribuidora/municípios da .gdb só interessam enquanto aguarda a escolha.
+                job.getStatus() == com.tecsys.domain.etl.EtlJobStatus.AWAITING_SELECTION
+                        ? parse(job.getInspectionJson()) : null,
                 job.getCreatedAt(),
                 job.getStartedAt(),
                 job.getFinishedAt()

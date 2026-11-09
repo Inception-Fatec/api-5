@@ -15,7 +15,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 
 /**
- * Lê um GeoTIFF de elevação (COP30 da OpenTopography: float32, LZW, em blocos) como
+ * Lê um GeoTIFF de elevação (Copernicus DEM GLO-30: float32, DEFLATE, em blocos) como
  * <b>valores em metros</b>.
  *
  * <p>O motor antigo usava {@code Imaging.getBufferedImage}, que converte o float32 para uma
@@ -94,7 +94,7 @@ public final class GeoTiffReader {
         }
 
         fillInvalid(z, nodata);
-        return new GridTerrain(z, h, w, lon0, lat0, dx, dy, "COP30:" + file.getFileName());
+        return new GridTerrain(z, h, w, lon0, lat0, dx, dy, "Copernicus GLO-30:" + file.getFileName());
     }
 
     private static Double parseNodata(String s) {

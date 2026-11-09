@@ -19,7 +19,10 @@ public record UncoveredPointResponseDto(
 
         String sub,
 
-        String conjunto
+        String conjunto,
+
+        // consumidores representados pelo ponto (#TG-144)
+        int consumers
 
 ) {
 }

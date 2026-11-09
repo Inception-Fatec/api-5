@@ -4,10 +4,11 @@ import 'package:printing/printing.dart';
 import 'package:tecsys_app/core/theme/app_theme.dart';
 import 'package:tecsys_app/core/utils/distributors.dart';
 import 'package:tecsys_app/features/projects/data/models/project_model.dart';
+import 'package:tecsys_app/features/projects/data/services/distribuidoras_service.dart';
+import 'package:tecsys_app/features/projects/data/services/ibge_service.dart';
 import 'package:tecsys_app/features/reports/export/report_map_capture.dart';
 import 'package:tecsys_app/features/reports/export/report_pdf.dart';
 import 'package:tecsys_app/features/reports/state/report_controller.dart';
-import 'package:tecsys_app/features/reports/ui/report_texts.dart';
 import 'package:tecsys_app/features/reports/ui/widgets/report_header.dart';
 import 'package:tecsys_app/features/reports/ui/widgets/report_view.dart';
 
@@ -41,12 +42,30 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       ..carregar()
       // Projeto ainda calculando: a tela se atualiza sozinha ao terminar.
       ..iniciarAtualizacaoAutomatica();
+    _carregarNomes();
+  }
+
+  /// Nomes de municípios (IBGE) e distribuidoras usados nos parâmetros
+  /// do relatório; sem eles, aparecem os códigos.
+  Future<void> _carregarNomes() async {
+    await IbgeService().precarregar();
+    try {
+      await DistribuidorasService().listar();
+    } catch (_) {}
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  /// Cidades do cálculo: as dos filtros do relatório ou, enquanto ele não
+  /// carrega, as que vieram com o projeto (#TG-148).
+  String _cidades() {
+    final codigos = _controller.report?.filters?.munCodes ?? widget.project.munCodes;
+    return IbgeService.rotulosMunicipios(codigos);
   }
 
   Future<void> _exportPdf() async {
@@ -61,6 +80,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         projectName: project.name,
         distribuidora: nomeDistribuidora(project.distCode),
         date: project.dataFormatada,
+        cidades: _cidades(),
         report: report,
         mapImage: mapImage,
       );
@@ -85,6 +105,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             listenable: _controller,
             builder: (context, _) => ReportHeader(
               project: widget.project,
+              cidades: _cidades(),
               onExportPdf: _controller.status == ReportStatus.ready
                   ? _exportPdf
                   : null,

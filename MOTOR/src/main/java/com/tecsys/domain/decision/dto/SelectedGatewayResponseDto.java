@@ -28,6 +28,16 @@ public record SelectedGatewayResponseDto(
         @JsonProperty("cumulative_points_covered")
         int cumulativePointsCovered,
 
+        // consumidores (peso dos pontos, #TG-144)
+
+        @JsonProperty("new_consumers_covered")
+
+        long newConsumersCovered,
+
+        @JsonProperty("cumulative_consumers_covered")
+
+        long cumulativeConsumersCovered,
+
         @JsonProperty("cumulative_coverage_percentage")
         double cumulativeCoveragePercentage,
 

@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 
 import 'package:tecsys_app/core/theme/app_theme.dart';
 
-/// Result of the Add User form.
+/// Resultado do formulário de novo usuário.
 class NewUserData {
   final String fullName;
   final String email;
-  final String role; // 'USER' or 'ADMIN'
+  final String role; // 'USER' ou 'ADMIN'
   final String password;
 
   NewUserData({
@@ -17,17 +17,20 @@ class NewUserData {
   });
 }
 
-/// Opens the "Add User" modal as a rounded-top bottom sheet. Returns
-/// the submitted [NewUserData], or null if cancelled/dismissed.
+/// Abre o modal "Novo usuário" centralizado, como os outros modais do app.
+/// Devolve o [NewUserData] preenchido, ou null se o usuário cancelar.
 Future<NewUserData?> showAddUserDialog(BuildContext context) {
-  return showModalBottomSheet<NewUserData>(
+  return showDialog<NewUserData>(
     context: context,
-    isScrollControlled: true,
-    backgroundColor: AppColors.background,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    builder: (_) => Dialog(
+      backgroundColor: AppColors.background,
+      insetPadding: const EdgeInsets.all(AppSpacing.lg),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: const AddUserDialog(),
+      ),
     ),
-    builder: (_) => const AddUserDialog(),
   );
 }
 
@@ -121,7 +124,7 @@ class _AddUserDialogState extends State<AddUserDialog> {
               ),
               const SizedBox(width: 6),
               Text(
-                role,
+                role == 'ADMIN' ? 'Administrador' : 'Usuário',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
@@ -152,22 +155,11 @@ class _AddUserDialogState extends State<AddUserDialog> {
       padding:
           EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(
-            AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.lg),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: AppSpacing.lg),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE4E8EF),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -175,13 +167,13 @@ class _AddUserDialogState extends State<AddUserDialog> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Add User',
+                      Text('Novo usuário',
                           style: TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.w800,
                               color: AppColors.textPrimary)),
                       SizedBox(height: 2),
-                      Text('Assign permissions and team access',
+                      Text('Cadastre o acesso e o perfil do usuário',
                           style: TextStyle(
                               fontSize: 14, color: AppColors.textSecondary)),
                     ],
@@ -194,24 +186,24 @@ class _AddUserDialogState extends State<AddUserDialog> {
               ],
             ),
             const SizedBox(height: AppSpacing.lg),
-            _label('FULL NAME'),
+            _label('NOME COMPLETO'),
             TextField(
               controller: _nameController,
               style:
                   const TextStyle(fontSize: 15, color: AppColors.textPrimary),
-              decoration: _decoration('e.g. John Doe'),
+              decoration: _decoration('ex.: Maria Silva'),
             ),
             const SizedBox(height: AppSpacing.md),
-            _label('CORPORATE EMAIL'),
+            _label('E-MAIL'),
             TextField(
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
               style:
                   const TextStyle(fontSize: 15, color: AppColors.textPrimary),
-              decoration: _decoration('name@tecsys.com'),
+              decoration: _decoration('nome@tecsys.com.br'),
             ),
             const SizedBox(height: AppSpacing.md),
-            _label('ROLE'),
+            _label('PERFIL'),
             Row(
               children: [
                 _roleOption('USER'),
@@ -220,7 +212,7 @@ class _AddUserDialogState extends State<AddUserDialog> {
               ],
             ),
             const SizedBox(height: AppSpacing.md),
-            _label('PASSWORD'),
+            _label('SENHA'),
             TextField(
               controller: _passwordController,
               obscureText: _obscurePassword,
@@ -252,7 +244,7 @@ class _AddUserDialogState extends State<AddUserDialog> {
                       borderRadius: BorderRadius.circular(10)),
                   elevation: 0,
                 ),
-                child: const Text('Save',
+                child: const Text('Salvar',
                     style:
                         TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               ),
@@ -261,7 +253,7 @@ class _AddUserDialogState extends State<AddUserDialog> {
             Center(
               child: TextButton(
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel',
+                child: const Text('Cancelar',
                     style: TextStyle(
                         fontSize: 15, color: AppColors.textSecondary)),
               ),
