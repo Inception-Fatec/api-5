@@ -5,6 +5,7 @@ import 'package:tecsys_app/core/theme/app_theme.dart';
 import 'package:tecsys_app/app/navigation/bottom_nav_bar.dart';
 import 'package:tecsys_app/app/navigation/top_nav_bar.dart';
 import 'package:tecsys_app/app/navigation/nav_items.dart';
+import 'package:tecsys_app/app/navigation/aba_salva.dart';
 import 'package:tecsys_app/features/projects/ui/screens/projects_screen.dart';
 import 'package:tecsys_app/features/users/ui/screens/users_screen.dart';
 import 'package:tecsys_app/features/etl_geodados/etl_geodados_screen.dart';
@@ -65,13 +66,30 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   int _currentIndex = 0;
 
+  bool get _isAdmin => AuthService.instance.role == 'ADM';
+
+  @override
+  void initState() {
+    super.initState();
+    // F5 volta na aba em que o usuário estava (#TG-145); aba que o perfil
+    // não vê (RN04) cai em Projetos.
+    _currentIndex = indiceInicialDaAba(lerAbaSalva(), isAdmin: _isAdmin)
+        .clamp(0, widget.tabs.length - 1);
+  }
+
+  void _irPara(int index) {
+    setState(() => _currentIndex = index);
+    final chaves = chavesDasAbas(isAdmin: _isAdmin);
+    if (index >= 0 && index < chaves.length) salvarAba(chaves[index]);
+  }
+
   void _handleNavTap(
       List<({IconData icon, String label})> navItems, int index) {
     if (index == navItems.length - 1) {
       widget.onLoginTap(context);
       return;
     }
-    setState(() => _currentIndex = index);
+    _irPara(index);
   }
 
   @override
@@ -113,8 +131,7 @@ class _AppShellState extends State<AppShell> {
                 ),
               );
 
-        return _AppShellScope(
-            goToTab: (i) => setState(() => _currentIndex = i), child: scaffold);
+        return _AppShellScope(goToTab: _irPara, child: scaffold);
       },
     );
   }
