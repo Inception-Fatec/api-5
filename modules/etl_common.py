@@ -1,27 +1,70 @@
 import logging
+import os
 import re
 import time
 import uuid
+import zipfile
 from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
 import requests
 from shapely.geometry import MultiLineString, MultiPolygon
-from sqlalchemy import text
-
+from sqlalchemy import create_engine, text
 
 CRS_ALVO = "EPSG:4674"
-CRS_ORIGEM_BDGD = "EPSG:4674" 
+CRS_ORIGEM_BDGD = "EPSG:4674"
 
 logger = logging.getLogger("etl")
 
+def resolver_gdb(caminho):
+    """Pasta .gdb ou .zip que a contém. No .zip devolve o caminho /vsizip/ (texto):
+    o GDAL lê a .gdb direto do arquivo compactado, sem descompactar (#TG-143).
+    É texto e não Path porque o GDAL exige "/vsizip//caminho/absoluto" e o Path
+    colapsaria a barra dupla."""
+    caminho = Path(caminho)
+    if caminho.suffix.lower() == ".zip" and caminho.is_file():
+        with zipfile.ZipFile(caminho) as z:
+            for nome in z.namelist():
+                partes = nome.replace("\\", "/").split("/")
+                for i, parte in enumerate(partes):
+                    if parte.lower().endswith(".gdb"):
+                        return "/vsizip/" + str(caminho.resolve()) + "/" + "/".join(partes[: i + 1])
+        raise ValueError("Nenhuma pasta .gdb encontrada dentro do zip.")
+    if caminho.is_dir() and caminho.suffix.lower() == ".gdb":
+        return caminho
+    raise ValueError(f"Geodatabase inválida (esperada uma pasta .gdb ou um .zip): {caminho}")
+
+
+# Linha que o backend lê no stdout para mostrar a etapa atual da carga (#TG-143).
+PREFIXO_ETAPA = "ETL_ETAPA:"
+
+
+def etapa(texto: str) -> None:
+    """Anuncia a etapa atual da carga (o card da tela ETL mostra este texto)."""
+    print(PREFIXO_ETAPA + texto, flush=True)
+    logger.info("Etapa: %s", texto)
+
 _REGEX_IBGE = re.compile(r"^\d{7}$")
 
+VAR_DB_URL = "ETL_DB_URL"
+
+
+def criar_engine(**kwargs):
+    url = (os.getenv(VAR_DB_URL) or "").strip()
+    if not url:
+        raise RuntimeError(
+            f"Variável de ambiente {VAR_DB_URL} não definida. Copie modules/.env.example "
+            "para modules/.env e preencha, ex.: "
+            "postgresql+psycopg2://usuario:senha@localhost:5432/bdgd"
+        )
+    return create_engine(url, **kwargs)
+
+
 DOWNLOAD_TENTATIVAS = 5
-DOWNLOAD_TIMEOUT = (30, 60) 
+DOWNLOAD_TIMEOUT = (30, 60)
 DOWNLOAD_ESPERA_MAXIMA = 30
-DOWNLOAD_BLOCO = 64 * 1024 
+DOWNLOAD_BLOCO = 64 * 1024
 _STATUS_COM_RETRY = {408, 429}
 _REGEX_CONTENT_RANGE = re.compile(r"bytes\s+(?:(\d+)-(\d+)|\*)/(\d+|\*)")
 
@@ -71,7 +114,7 @@ def baixar_com_retomada(url: str, destino: Path, tentativas: int = DOWNLOAD_TENT
                 if status == 416:
                     _, total = _parse_content_range(resposta.headers.get("Content-Range"))
                     if baixados and total == baixados:
-                        temporario.replace(destino) 
+                        temporario.replace(destino)
                         return
                     temporario.unlink(missing_ok=True)
                     raise _DownloadIncompleto("Servidor recusou o Range; reiniciando o download do zero.")
@@ -274,35 +317,3 @@ def prefixar(df, prefixo, colunas=COLUNAS_CODIGO):
         novo = prefixo + df[c].astype(str)
         df[c] = novo.where(df[c].notna(), None)
     return df
-
-
-def vincular_baixa_tensao(conn, dist: str, prefixo: str, municipios: list[str], metricas: Metricas) -> int:
-    if conn.execute(text("SELECT to_regclass('ucbt_raw') IS NOT NULL")).scalar() is not True:
-        logger.warning("Tabela ucbt_raw não existe — baixa tensão não vinculada.")
-        return 0
-
-    resultado = conn.execute(
-        text(
-            """
-            INSERT INTO ucbt (cod_id_encr, mun, brr, sub, uni_tr_at, uni_tr_mt, conj, ctmt, clas_sub,
-                              cnae, car_inst, tip_sist, are_loc, geom)
-            SELECT :p || r.cod_id_encr, left(r.mun, 10), left(r.brr, 60), t.sub, t.uni_tr_at, t.cod_id,
-                   left(r.conj, 20), left(:p || r.ctmt, 40), left(r.clas_sub, 10), left(r.cnae, 10),
-                   r.car_inst, left(r.tip_sist, 15), left(r.are_loc, 5),
-                   COALESCE(r.geom, t.geom)
-            FROM ucbt_raw r
-            JOIN untrmt t ON t.cod_id = :p || r.uni_tr_mt
-            JOIN sub s    ON s.cod_id = t.sub AND s.dist = r.dist
-            WHERE r.dist = :dist AND r.mun = ANY(:municipios)
-            ON CONFLICT (cod_id_encr) DO NOTHING
-            """
-        ),
-        {"p": prefixo, "dist": dist, "municipios": municipios},
-    )
-    disponiveis = conn.execute(
-        text("SELECT count(*) FROM ucbt_raw WHERE dist = :dist AND mun = ANY(:municipios)"),
-        {"dist": dist, "municipios": municipios},
-    ).scalar()
-    metricas.add("ucbt", raw_disponiveis=disponiveis, inseridos=resultado.rowcount)
-    metricas.add("ucbt", sem_transformador_ou_ja_existentes=disponiveis - resultado.rowcount)
-    return resultado.rowcount

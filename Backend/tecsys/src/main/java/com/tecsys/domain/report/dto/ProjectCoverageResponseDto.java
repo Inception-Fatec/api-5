@@ -15,15 +15,20 @@ public record ProjectCoverageResponseDto(
 
         @JsonProperty("calculated_at")
         @JsonFormat(pattern = "dd/MM/yyyy HH:mm:ss", timezone = "America/Sao_Paulo")
-        Instant calculatedAt
+        Instant calculatedAt,
+
+        // filtros do cálculo (project_history), para o relatório mostrar cidades e
+        // parâmetros do estudo (#TG-148); null se o projeto não tiver histórico
+        @JsonProperty("filter_params") JsonNode filterParams
 ) {
-    public static ProjectCoverageResponseDto fromEntity(ProjectCoverage entity) {
+    public static ProjectCoverageResponseDto fromEntity(ProjectCoverage entity, JsonNode filterParams) {
         return new ProjectCoverageResponseDto(
                 entity.getProjectId(),
                 entity.getSummary(),
                 entity.getGateways(),
                 entity.getPoints(),
-                entity.getCalculatedAt()
+                entity.getCalculatedAt(),
+                filterParams
         );
     }
 }

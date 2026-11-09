@@ -1,0 +1,7 @@
+# Só os scripts .py e o requirements.txt entram na imagem do backend (#TG-103).
+# Nunca mandar credenciais, venv ou cache para o build.
+.env
+.venv/
+venv/
+cache_aneel/
+__pycache__/

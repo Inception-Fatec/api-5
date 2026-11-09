@@ -29,6 +29,15 @@ public class SecurityFilter extends OncePerRequestFilter {
             var user = userRepository.findByEmail(login).orElse(null);
 
             if (user != null) {
+                // Usuário excluído/desativado perde o acesso na hora, mesmo com
+                // token ainda válido. 401 faz o front deslogar.
+                if (!user.isEnabled()) {
+                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                    response.setContentType("application/json;charset=UTF-8");
+                    response.getWriter().write("{\"message\": \"Conta inativa. Acesso bloqueado.\"}");
+                    return;
+                }
+
                 if (user.isMustChangePassword() && !request.getRequestURI().equals("/api/v1/auth/change-password")) {
                     response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                     response.setContentType("application/json;charset=UTF-8");

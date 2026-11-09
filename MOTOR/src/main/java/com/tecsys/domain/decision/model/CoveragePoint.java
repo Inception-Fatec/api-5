@@ -11,7 +11,14 @@ public record CoveragePoint(
         String conjunto,
 
         double latitude,
-        double longitude
+        double longitude,
+
+        // quantos consumidores o registro representa: a baixa tensão é gravada por
+        // ponto de conexão + classe + CNAE (#TG-144); MT/AT e dados antigos = 1
+        int consumers
 
 ) {
+    public CoveragePoint {
+        if (consumers < 1) consumers = 1;
+    }
 }

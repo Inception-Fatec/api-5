@@ -21,6 +21,7 @@ class PointDetailSheet extends StatelessWidget {
   }
 
   static const _rotulos = <String, String>{
+    'qtd_consumidores': 'Consumidores no ponto',
     'mun': 'Município (IBGE)',
     'brr': 'Bairro',
     'sub': 'Subestação',

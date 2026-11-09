@@ -43,6 +43,18 @@ class MunicipioService {
     ];
   }
 
+  /// "Vila Velha - ES" pelo código IBGE, se a lista já foi baixada; senão o
+  /// próprio código (o histórico de cargas guarda só os códigos).
+  static String rotuloDe(String codigo) {
+    for (final Municipio m in _cache ?? const <Municipio>[]) {
+      if (m.codigo == codigo) return m.rotulo;
+    }
+    return codigo;
+  }
+
+  /// Rótulos dos municípios de uma carga, separados por vírgula.
+  static String rotulosDe(List<String> codigos) => codigos.map(rotuloDe).join(', ');
+
   static String _uf(Map e) {
     try {
       final Object? micro = e['microrregiao'];

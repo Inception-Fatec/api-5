@@ -315,7 +315,7 @@ class _GatewayMarker extends StatelessWidget {
   Widget build(BuildContext context) {
     final label = 'Gateway ${gateway.order} — '
         '${gatewayTypeLabel(gateway.type)} ${gateway.id} — '
-        '${formatInt(gateway.newPointsCovered)} pontos novos';
+        '${formatInt(gateway.newPointsCovered)} consumidores novos';
     final Widget visual = style == GatewayMarkerStyle.dot
         ? Container(
             decoration: BoxDecoration(
