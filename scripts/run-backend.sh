@@ -68,8 +68,10 @@ else
 fi
 
 echo "Build da imagem $IMAGE (pode demorar na 1ª vez)..."
-# O contexto "modules" leva os scripts Python do ETL para a imagem (#TG-103).
-docker build -q -t "$IMAGE" --build-context modules="$ROOT/modules" "$ROOT/Backend/tecsys" >/dev/null
+# A imagem é montada pelo docker compose: ele leva a pasta modules/ (scripts
+# Python do ETL, #TG-103) como contexto extra e já traz o BuildKit. O
+# "docker build" comum, sem o plugin buildx, não aceita --build-context (#TG-149).
+docker compose -f "$ROOT/docker-compose.yml" build -q backend
 
 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 # Modo supabase: o host direto do Supabase só tem IPv6, que não existe
