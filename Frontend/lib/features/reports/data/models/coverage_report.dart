@@ -92,6 +92,10 @@ class CoverageReport {
 }
 
 class ReportSummary {
+  /// Totais do relatório contados em **consumidores** (#TG-144): na baixa
+  /// tensão cada ponto de conexão representa vários consumidores. Resultados
+  /// antigos não trazem os campos *_consumers e usam os de pontos, que até
+  /// então eram um por consumidor.
   final int totalPoints;
   final int totalCandidates;
   final int selectedGateways;
@@ -115,11 +119,11 @@ class ReportSummary {
 
   factory ReportSummary.fromJson(Map<String, dynamic> json) {
     return ReportSummary(
-      totalPoints: _int(json['total_points']),
+      totalPoints: _int(json['total_consumers'] ?? json['total_points']),
       totalCandidates: _int(json['total_candidates']),
       selectedGateways: _int(json['selected_gateways']),
-      coveredPoints: _int(json['covered_points']),
-      uncoveredPoints: _int(json['uncovered_points']),
+      coveredPoints: _int(json['covered_consumers'] ?? json['covered_points']),
+      uncoveredPoints: _int(json['uncovered_consumers'] ?? json['uncovered_points']),
       coveragePercentage: _double(json['coverage_percentage']),
       gatewayRangeM: _int(json['gateway_range_m']),
     );
@@ -160,8 +164,10 @@ class ReportGateway {
       posto: json['posto']?.toString(),
       sub: json['sub']?.toString(),
       position: LatLng(_double(json['latitude']), _double(json['longitude'])),
-      newPointsCovered: _int(json['new_points_covered']),
-      cumulativePointsCovered: _int(json['cumulative_points_covered']),
+      // em consumidores quando o cálculo traz (#TG-144)
+      newPointsCovered: _int(json['new_consumers_covered'] ?? json['new_points_covered']),
+      cumulativePointsCovered:
+          _int(json['cumulative_consumers_covered'] ?? json['cumulative_points_covered']),
       cumulativeCoveragePercentage:
           _double(json['cumulative_coverage_percentage']),
     );

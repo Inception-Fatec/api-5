@@ -4,6 +4,7 @@ import 'package:tecsys_app/core/theme/app_theme.dart';
 import 'package:tecsys_app/core/widgets/page_body.dart';
 import 'package:tecsys_app/features/users/data/models/user_model.dart';
 import 'package:tecsys_app/features/users/data/services/user_api_service.dart';
+import 'package:tecsys_app/features/users/state/user_store.dart';
 import 'package:tecsys_app/features/users/ui/styles/user_role_style.dart';
 import 'package:tecsys_app/features/users/ui/widgets/add_user_dialog.dart';
 import 'package:tecsys_app/features/users/ui/widgets/users/role_filter_dropdown.dart';
@@ -30,26 +31,22 @@ class _UsersScreenState extends State<UsersScreen> {
     _loadUsers();
   }
 
-  /// CA01 - carrega a lista real de usuários do backend.
-  Future<void> _loadUsers() async {
+  /// CA01 - carrega a lista real de usuários do backend pelo
+  /// [UserStore] (o mesmo que a tela de Projetos usa). [force] busca de
+  /// novo depois de criar/excluir ou no "puxar para atualizar".
+  Future<void> _loadUsers({bool force = false}) async {
     setState(() {
       _isLoading = true;
       _error = null;
     });
-    try {
-      final users = await UserApiService.instance.listUsers();
-      if (!mounted) return;
-      setState(() {
-        _members = users;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = e.toString();
-        _isLoading = false;
-      });
-    }
+    final store = UserStore.instance;
+    await store.carregar(force: force);
+    if (!mounted) return;
+    setState(() {
+      _members = List.of(store.users);
+      _error = store.erro?.toString();
+      _isLoading = false;
+    });
   }
 
   List<AppUser> get _filteredMembers {
@@ -87,7 +84,7 @@ class _UsersScreenState extends State<UsersScreen> {
               '${result.fullName} adicionado como ${UserRoleStyle.label(role)}'),
         ),
       );
-      await _loadUsers();
+      await _loadUsers(force: true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -118,7 +115,9 @@ class _UsersScreenState extends State<UsersScreen> {
     try {
       await UserApiService.instance.deleteUser(member.id);
       if (!mounted) return;
-      setState(() => _members.removeWhere((m) => m.id == member.id));
+      // Busca de novo para o UserStore (cache compartilhado) não guardar
+      // o usuário excluído.
+      await _loadUsers(force: true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -141,7 +140,7 @@ class _UsersScreenState extends State<UsersScreen> {
                 textAlign: TextAlign.center, style: AppTextStyles.bodyError),
             const SizedBox(height: AppSpacing.md),
             OutlinedButton(
-                onPressed: _loadUsers, child: const Text('Tentar de novo')),
+                onPressed: () => _loadUsers(force: true), child: const Text('Tentar de novo')),
           ],
         ),
       ),
@@ -170,7 +169,7 @@ class _UsersScreenState extends State<UsersScreen> {
             onRoleChanged: (val) =>
                 setState(() => _selectedRole = val ?? RoleFilterDropdown.all),
             onAddUser: _openAddUser,
-            onRefresh: _loadUsers,
+            onRefresh: () => _loadUsers(force: true),
             onDelete: _handleDelete,
           );
         },

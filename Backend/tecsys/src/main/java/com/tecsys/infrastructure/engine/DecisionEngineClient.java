@@ -12,7 +12,7 @@ import java.time.Duration;
 @Component
 public class DecisionEngineClient {
 
-    @Value("${engine.url:http://localhost:8082/api/calculate}")
+    @Value("${engine.url}")
     private String engineUrl;
 
     private final HttpClient httpClient;

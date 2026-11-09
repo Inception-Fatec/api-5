@@ -21,6 +21,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Orquestra o cálculo: dados → relevo → matriz de cobertura → otimização → resultado.
@@ -76,9 +77,10 @@ public class MotorEngine {
                 w = Math.min(w, c.longitude()); e = Math.max(e, c.longitude());
             }
             DemService.Loaded loaded = demService.load(s - margin, n + margin, w - margin, e + margin);
+            guardOceanTiles(points, cands, loaded.info().oceanTiles());
             terrain = loaded.terrain();
-            log.info("Relevo: {} ({} bloco(s), {}, {} s, cotas {}..{} m)", terrain.source(), loaded.info().blocks(),
-                    loaded.info().fromCache() ? "cache" : "download", round(loaded.info().downloadSeconds(), 1),
+            log.info("Relevo: {} ({} tile(s), {}, {} s, cotas {}..{} m)", terrain.source(), loaded.info().tiles(),
+                    loaded.info().fromCache() ? "cache/mirror" : "download", round(loaded.info().downloadSeconds(), 1),
                     round(terrain.minElevation(), 0), round(terrain.maxElevation(), 0));
         } else {
             log.warn("Relevo desligado (use-terrain=false): cálculo sobre terreno plano.");
@@ -86,6 +88,30 @@ public class MotorEngine {
         }
         timer.mark("relevo");
         return compute(points, cands, p, radius, terrain, properties.effectiveThreads(), timer);
+    }
+
+    /**
+     * Tile fora do catálogo da AWS é mar (0 m) e serve para a visada passar por cima do oceano.
+     * Mas um ponto ou candidato dentro dele indica coordenada errada: o cálculo falha.
+     */
+    static void guardOceanTiles(List<CoveragePoint> points, List<GatewayCandidate> cands, List<String> oceanTiles)
+            throws IOException {
+        if (oceanTiles.isEmpty()) return;
+        Set<String> ocean = Set.copyOf(oceanTiles);
+        for (CoveragePoint pt : points) {
+            String tile = DemService.tileName((int) Math.floor(pt.latitude()), (int) Math.floor(pt.longitude()));
+            if (ocean.contains(tile)) {
+                throw new IOException("Ponto " + pt.id() + " (" + pt.latitude() + ", " + pt.longitude()
+                        + ") está no tile " + tile + ", que é só mar no Copernicus: confira as coordenadas.");
+            }
+        }
+        for (GatewayCandidate c : cands) {
+            String tile = DemService.tileName((int) Math.floor(c.latitude()), (int) Math.floor(c.longitude()));
+            if (ocean.contains(tile)) {
+                throw new IOException("Candidato " + c.id() + " (" + c.latitude() + ", " + c.longitude()
+                        + ") está no tile " + tile + ", que é só mar no Copernicus: confira as coordenadas.");
+            }
+        }
     }
 
     // ------------------------------------------------------------------ cálculo
@@ -120,11 +146,16 @@ public class MotorEngine {
                                       double radius, Terrain terrain, int threads, Timer timer) {
         int total = points.size();
         int outside = (int) cands.stream().filter(c -> !c.insideFilters()).count();
+        // Cobertura é contada em consumidores: cada ponto pesa o nº de consumidores que
+        // representa (baixa tensão agregada por ponto de conexão, #TG-144).
+        long totalConsumers = 0;
+        for (CoveragePoint pt : points) totalConsumers += pt.consumers();
         if (total == 0 || cands.isEmpty()) {
             List<CoveragePoint> uncovered = cands.isEmpty() ? points : List.of();
             return new MotorResult(p, radius, total, cands.size(), outside, 0, 0, 0, 0,
                     List.of(), List.of(), uncovered, 0.0, 0, 0, null, "nenhum",
-                    total == 0 ? "sem pontos" : "sem candidatos", terrain.source(), timer.marks);
+                    total == 0 ? "sem pontos" : "sem candidatos", terrain.source(), timer.marks,
+                    totalConsumers, 0, 0);
         }
 
         // --- agrupamento em locais únicos
@@ -149,7 +180,7 @@ public class MotorEngine {
         Groups gp = Groups.of(plat, plon, hp);
         Groups gc = Groups.of(clat, clon, hc);
         long[] w = new long[gp.count()];
-        for (int g : gp.groupOf) w[g]++;
+        for (int i = 0; i < total; i++) w[gp.groupOf[i]] += points.get(i).consumers();
         timer.mark("agrupamento");
 
         // --- matriz de cobertura
@@ -164,8 +195,13 @@ public class MotorEngine {
 
         // --- otimização
         long coverable = 0;
+        int coverablePoints = 0;
         int[] rowPtr = a.rowPtr();
         for (int r = 0; r < a.nRows; r++) if (rowPtr[r + 1] > rowPtr[r]) coverable += w[r];
+        for (int i = 0; i < total; i++) {
+            int r = gp.groupOf[i];
+            if (rowPtr[r + 1] > rowPtr[r]) coverablePoints++;
+        }
         int[] sel = SetCover.greedy(a, w).cols();
         int nGreedy = sel.length;
         timer.mark("guloso");
@@ -208,23 +244,37 @@ public class MotorEngine {
         SetCover.Greedy ordered = SetCover.orderSelection(a, sel, w);
         int[] firstGw = new int[a.nRows];
         Arrays.fill(firstGw, -1);
-        List<SelectedGateway> gateways = new ArrayList<>();
-        long cumulative = 0;
-        for (int i = 0; i < ordered.cols().length; i++) {
+        int nGw = ordered.cols().length;
+        for (int i = 0; i < nGw; i++) {
             int col = ordered.cols()[i];
             for (int k = a.colPtr[col]; k < a.colPtr[col + 1]; k++) {
                 if (firstGw[a.rows[k]] < 0) firstGw[a.rows[k]] = i;
             }
+        }
+        // ganho de cada gateway em pontos (registros); o ganho em consumidores é o do solver
+        int[] pointGain = new int[nGw];
+        for (int i = 0; i < total; i++) {
+            int g = firstGw[gp.groupOf[i]];
+            if (g >= 0) pointGain[g]++;
+        }
+        List<SelectedGateway> gateways = new ArrayList<>();
+        long cumulative = 0;
+        int cumulativePoints = 0;
+        for (int i = 0; i < nGw; i++) {
+            int col = ordered.cols()[i];
             cumulative += ordered.gains()[i];
-            gateways.add(new SelectedGateway(i + 1, cands.get(gc.rep[col]), (int) ordered.gains()[i],
-                    (int) cumulative, round(100.0 * cumulative / total, 2)));
+            cumulativePoints += pointGain[i];
+            gateways.add(new SelectedGateway(i + 1, cands.get(gc.rep[col]), pointGain[i], cumulativePoints,
+                    ordered.gains()[i], cumulative, round(100.0 * cumulative / totalConsumers, 2)));
         }
         List<CoverageAssignment> covered = new ArrayList<>();
         List<CoveragePoint> uncovered = new ArrayList<>();
+        long coveredConsumers = 0;
         for (int i = 0; i < total; i++) {
             int g = firstGw[gp.groupOf[i]];
             if (g >= 0) {
                 covered.add(new CoverageAssignment(points.get(i), gateways.get(g).candidate(), g + 1));
+                coveredConsumers += points.get(i).consumers();
             } else {
                 uncovered.add(points.get(i));
             }
@@ -233,8 +283,9 @@ public class MotorEngine {
         timer.mark("resultado");
 
         return new MotorResult(p, radius, total, cands.size(), outside, gp.count(), gc.count(), a.nnz(),
-                (int) coverable, gateways, covered, uncovered, round(100.0 * covered.size() / total, 2),
-                nGreedy, lb, gap, method, status, terrain.source(), timer.marks);
+                coverablePoints, gateways, covered, uncovered, round(100.0 * coveredConsumers / totalConsumers, 2),
+                nGreedy, lb, gap, method, status, terrain.source(), timer.marks,
+                totalConsumers, coverable, coveredConsumers);
     }
 
     static double round(double v, int places) {

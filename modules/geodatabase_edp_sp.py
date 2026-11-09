@@ -16,11 +16,13 @@ from etl_common import (
     carregar_idempotente,
     criar_engine,
     decidir_prefixo,
+    etapa,
     normalizar_geometria,
     prefixar,
+    resolver_gdb,
     validar_municipios,
-    vincular_baixa_tensao,
 )
+from baixa_tensao_gdb import carregar_baixa_tensao
 
 load_dotenv()
 logger = logging.getLogger("etl.gdb")
@@ -89,7 +91,7 @@ def _baixar_malha_municipio(codigo: str, tentativas: int = 3) -> dict:
         except (requests.RequestException, ValueError) as exc:
             ultimo_erro = exc
             logger.warning("Falha ao consultar a malha do município %s (tentativa %s/%s): %s",
-                           codigo, tentativa, tentativas, exc)
+                          codigo, tentativa, tentativas, exc)
             time.sleep(2 * tentativa)
     raise RuntimeError(f"Não foi possível consultar a API de malhas do IBGE para {codigo}: {ultimo_erro}")
 
@@ -131,6 +133,23 @@ def _podar_colunas(gdf: gpd.GeoDataFrame, colunas: list[str]) -> gpd.GeoDataFram
     return gdf.rename_geometry("geom")
 
 
+def _vazio_para_nulo(gdf: gpd.GeoDataFrame, colunas: list[str], tabela: str,
+                     metricas: Metricas) -> gpd.GeoDataFrame:
+    gdf = gdf.copy()
+    for coluna in colunas:
+        if coluna not in gdf.columns:
+            continue
+        serie = gdf[coluna]
+        if not (pd.api.types.is_object_dtype(serie) or pd.api.types.is_string_dtype(serie)):
+            continue
+        vazios = serie.notna() & serie.astype(str).str.strip().eq("")
+        n = int(vazios.sum())
+        if n:
+            gdf[coluna] = serie.mask(vazios, None)
+            metricas.add(tabela, **{f"{coluna.lower()}_vazio_para_nulo": n})
+    return gdf
+
+
 def recortar_camada(gdb: Path, nivel: dict, area, metricas: Metricas) -> gpd.GeoDataFrame:
     tabela = nivel["tabela"]
     mascara = _mascara_no_crs_da_camada(gdb, nivel["layer_gdb"], area)
@@ -147,6 +166,7 @@ def recortar_camada(gdb: Path, nivel: dict, area, metricas: Metricas) -> gpd.Geo
         gdf = gdf[ativos]
 
     gdf = normalizar_geometria(gdf, nivel["geom_tipo"], tabela, metricas)
+    gdf = _vazio_para_nulo(gdf, nivel["colunas"], tabela, metricas)
     return _podar_colunas(gdf, nivel["colunas"])
 
 
@@ -171,6 +191,7 @@ def extrair_da_geodatabase_original(gdb: Path, nivel: dict, codigos, metricas: M
 
     gdf = _para_crs_alvo(gpd.GeoDataFrame(pd.concat(partes, ignore_index=True), crs=partes[0].crs))
     gdf = normalizar_geometria(gdf, nivel["geom_tipo"], nivel["tabela"], metricas)
+    gdf = _vazio_para_nulo(gdf, nivel["colunas"], nivel["tabela"], metricas)
     return _podar_colunas(gdf, nivel["colunas"])
 
 
@@ -202,7 +223,7 @@ def garantir_integridade(camadas: dict, metricas: Metricas) -> None:
                 codigos_orfaos = filho.loc[orfas, coluna].value_counts()
                 amostra = ", ".join(f"{c} ({q})" for c, q in codigos_orfaos.head(5).items())
                 logger.warning("[%s] %s registro(s) com %s sem pai em '%s' (%s código(s) distintos; mais frequentes: %s) — FK anulada",
-                               nome, n, coluna, nivel["tabela"], len(codigos_orfaos), amostra)
+                              nome, n, coluna, nivel["tabela"], len(codigos_orfaos), amostra)
                 filho.loc[orfas, coluna] = None
                 metricas.add(nome, **{f"fk_{coluna}_orfa_anulada": n})
 
@@ -210,16 +231,16 @@ def garantir_integridade(camadas: dict, metricas: Metricas) -> None:
 def main(municipios: list[str], caminho_gdb, engine=None) -> dict:
     municipios = validar_municipios(municipios)
 
-    caminho_gdb = Path(caminho_gdb)
-    if not caminho_gdb.is_dir() or caminho_gdb.suffix.lower() != ".gdb":
-        raise ValueError(f"Geodatabase inválida (esperada uma pasta .gdb): {caminho_gdb}")
+    caminho_gdb = resolver_gdb(caminho_gdb)
 
     engine = engine or criar_engine()
     metricas = Metricas()
     dist = descobrir_distribuidora(caminho_gdb)
     logger.info("Distribuidora do .gdb: %s", dist)
+    etapa("Baixando os limites dos municípios (IBGE)")
     area = carregar_area_recorte(municipios)
 
+    etapa("Lendo e recortando a rede da geodatabase")
     camadas = {}
     for nivel in CAMADAS_PAI + CAMADAS_FOLHA:
         logger.info("Lendo %s da geodatabase...", nivel["tabela"])
@@ -241,6 +262,7 @@ def main(municipios: list[str], caminho_gdb, engine=None) -> dict:
 
     garantir_integridade(camadas, metricas)
 
+    etapa("Gravando a rede no banco")
     with engine.begin() as conn:
         prefixo = decidir_prefixo(conn, dist)
         logger.info("Distribuidora %s: prefixo de códigos = %r", dist, prefixo)
@@ -267,8 +289,11 @@ def main(municipios: list[str], caminho_gdb, engine=None) -> dict:
             )
             metricas.log(tabela)
 
-        vincular_baixa_tensao(conn, dist, prefixo, municipios, metricas)
+        etapa("Gravando a baixa tensão (consumidores por ponto de conexão)")
+        aviso_bt = carregar_baixa_tensao(conn, caminho_gdb, dist, prefixo, municipios, metricas, area=area)
         metricas.log("ucbt")
 
     logger.info("Carga da geodatabase concluída.")
-    return {"status": "concluido", "distribuidora": dist, "prefixo": prefixo, **metricas.resumo()}
+    avisos = [aviso_bt] if aviso_bt else []
+    return {"status": "concluido", "distribuidora": dist, "prefixo": prefixo, "avisos": avisos,
+            **metricas.resumo()}

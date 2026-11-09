@@ -26,6 +26,9 @@ Future<Uint8List> buildReportPdf({
   required String date,
   required CoverageReport report,
 
+  /// Cidades do cálculo, ex.: "Aracruz - ES, Vitória - ES" (#TG-148).
+  String cidades = '',
+
   /// Foto do mapa (PNG), se foi possível capturar.
   Uint8List? mapImage,
 }) async {
@@ -89,11 +92,14 @@ Future<Uint8List> buildReportPdf({
       pw.SizedBox(height: 2),
       pw.Text(pdfSafe('$distribuidora - $date'),
           style: const pw.TextStyle(fontSize: 10, color: muted)),
+      if (cidades.isNotEmpty)
+        pw.Text(pdfSafe(cidades),
+            style: const pw.TextStyle(fontSize: 10, color: muted)),
       heading('Resumo'),
       pw.Text(formatPercent(s.coveragePercentage),
           style: pw.TextStyle(fontSize: 26, fontWeight: pw.FontWeight.bold)),
       pw.Text(
-          '${formatInt(s.coveredPoints)} de ${formatInt(s.totalPoints)} pontos atendidos - '
+          '${formatInt(s.coveredPoints)} de ${formatInt(s.totalPoints)} consumidores atendidos - '
           '${coverageLabel(s.coveragePercentage)}',
           style: const pw.TextStyle(fontSize: 10, color: muted)),
       if (mapImage != null) ...[
@@ -145,7 +151,7 @@ Future<Uint8List> buildReportPdf({
                   cell('Gateways', bold: true),
                   cell('Cobertura acum.', bold: true, align: pw.TextAlign.right),
                   cell('Ganho (p.p.)', bold: true, align: pw.TextAlign.right),
-                  cell('Pontos novos', bold: true, align: pw.TextAlign.right),
+                  cell('Consumidores novos', bold: true, align: pw.TextAlign.right),
                 ],
               ),
               for (final st in steps)
@@ -193,7 +199,7 @@ Future<Uint8List> buildReportPdf({
                 cell('#', bold: true),
                 cell('Gateway', bold: true),
                 cell('Coordenadas (lat, lon)', bold: true),
-                cell('Pontos novos', bold: true, align: pw.TextAlign.right),
+                cell('Consumidores novos', bold: true, align: pw.TextAlign.right),
                 cell('Cobertura acum.', bold: true, align: pw.TextAlign.right),
               ],
             ),

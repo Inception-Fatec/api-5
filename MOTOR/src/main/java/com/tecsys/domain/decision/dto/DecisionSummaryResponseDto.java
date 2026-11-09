@@ -49,7 +49,21 @@ public record DecisionSummaryResponseDto(
         Double optimalityGapPct,
 
         @JsonProperty("terrain_source")
-        String terrainSource
+        String terrainSource,
+
+        // Cobertura em consumidores (#TG-144): na baixa tensão cada ponto de conexão
+        // representa vários consumidores. coverage_percentage é sobre consumidores.
+        @JsonProperty("total_consumers")
+        Long totalConsumers,
+
+        @JsonProperty("covered_consumers")
+        Long coveredConsumers,
+
+        @JsonProperty("uncovered_consumers")
+        Long uncoveredConsumers,
+
+        @JsonProperty("coverable_consumers")
+        Long coverableConsumers
 
 ) {
 }

@@ -5,21 +5,19 @@ import 'package:flutter/foundation.dart';
 import 'package:tecsys_app/core/utils/distributors.dart';
 import 'package:tecsys_app/core/utils/text_normalizer.dart';
 import 'package:tecsys_app/features/projects/data/models/project_model.dart';
+import 'package:tecsys_app/features/projects/data/services/ibge_service.dart';
 import 'package:tecsys_app/features/projects/state/project_store.dart';
-import 'package:tecsys_app/features/users/state/user_store.dart';
 
 /// Estado da tela "Meus Projetos": a lista de verdade vive no
 /// [ProjectsStore] (compartilhado com a tela de Novo Projeto); aqui
 /// ficam a busca, as métricas e os helpers de exibição.
 class ProjectsListController extends ChangeNotifier {
-  ProjectsListController({ProjectsStore? store, UserStore? userStore})
-      : _store = store ?? ProjectsStore.instance,
-        _userStore = userStore ?? UserStore.instance {
+  ProjectsListController({ProjectsStore? store})
+      : _store = store ?? ProjectsStore.instance {
     _store.addListener(notifyListeners);
   }
 
   final ProjectsStore _store;
-  final UserStore _userStore;
 
   String _busca = '';
   String? _statusFiltro;
@@ -40,9 +38,14 @@ class ProjectsListController extends ChangeNotifier {
   /// atualização automática.
   void carregarInicial() {
     _store.carregar();
-    _userStore.carregar();
     iniciarAtualizacaoAutomatica();
+    // Nomes das cidades dos cards (#TG-148); sem a lista, aparecem os códigos.
+    IbgeService().precarregar().then((_) {
+      if (!_descartado) notifyListeners();
+    });
   }
+
+  bool _descartado = false;
 
   /// Enquanto houver projeto calculando (CRIADO/ENVIADO/PROCESSANDO),
   /// consulta a lista a cada [intervalo] para refletir o fim do cálculo.
@@ -99,12 +102,9 @@ class ProjectsListController extends ChangeNotifier {
   /// Exclui de verdade; deixa o erro estourar pra quem chamou avisar.
   Future<void> excluir(int id) => _store.excluir(id);
 
-  /// Nome do criador, ou "Usuário #id" se o usuário não foi carregado.
-  String nomeCriador(int userId) =>
-      _userStore.nomeDoUsuario(userId) ?? 'Usuário #$userId';
-
   @override
   void dispose() {
+    _descartado = true;
     _timer?.cancel();
     _store.removeListener(notifyListeners);
     super.dispose();

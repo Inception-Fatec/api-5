@@ -30,8 +30,9 @@ Para rebuildar/reiniciar só uma parte, sem mexer no resto:
 ./scripts/run-db.sh [--dump CAMINHO] [--stop]
 ```
 
-PostGIS 17 (`tecsys-postgis`). Restaura o `bdgd.dump` automaticamente só se
-o banco estiver vazio. Conexão: `postgres://tecsys:tecsys@localhost:5433/tecsys`.
+PostGIS 17 (`tecsys-postgis`). Se o banco estiver vazio, cria as tabelas pelas
+migrations do Flyway e carrega os dados da rede do `bdgd.dump` (ver "Onde
+colocar o dump"). Conexão: `postgres://tecsys:tecsys@localhost:5433/tecsys`.
 
 ```bash
 ./scripts/run-backend.sh [--db local|supabase] [--stop]
@@ -48,7 +49,19 @@ Spring Boot (`tecsys-backend`, porta 8081). Rebuilda a imagem do código atual.
 
 Motor de decisão (`tecsys-motor`, porta 8082, só em 127.0.0.1 — não tem
 autenticação; quem chama é o backend). Mesmo esquema de banco do backend
-(`--db supabase` lê `Backend/tecsys/.env.supabase`). Utiliziza os mesmos campos no .env com a adição da cheve da chave do OpenTopography pela variável de ambiente `OPENTOPOGRAPHY_API_KEY`.
+(`--db supabase` lê `MOTOR/.env.supabase`). O relevo usa o Copernicus GLO-30
+no AWS Open Data, sem chave de API. O mirror local/NAS é opcional e definido
+por `DEM_MIRROR_DIR` no arquivo de ambiente; o script monta o diretório
+read-only. Para semear o mirror, use `./scripts/sync-dem-mirror.sh`.
+
+```bash
+./scripts/sync-dem-mirror.sh --mirror-dir DIR --bbox S,N,W,E
+./scripts/sync-dem-mirror.sh --mirror-dir DIR --tiles TILE[,TILE...]
+```
+
+Baixa tiles do Copernicus GLO-30 do AWS Open Data para o mirror local/NAS,
+sem AWS CLI e sem credenciais. Atualiza `manifest.sha256`. Ver
+[`docs/MOTOR_RELEVO_AWS.md`](../docs/MOTOR_RELEVO_AWS.md).
 
 ```bash
 ./scripts/run-frontend.sh [--api-host HOST] [--api-port PORT] [--stop]
@@ -58,7 +71,16 @@ Flutter web no nginx (`tecsys-frontend`, porta 8080). A URL da API é embutida
 no build: trocou de backend, o script rebuilda sozinho.
 
 Alternativa "sobe tudo": `docker compose up --build` (usa os mesmos
-Dockerfiles; o backend do compose fala com o banco local).
+Dockerfiles; sobe banco local, backend, motor e frontend). O segredo do JWT
+vem do ambiente ou do `.env` da raiz: `API_SECURITY_TOKEN_SECRET=...` (gere com
+`openssl rand -hex 32`). O motor não precisa de chave: o relevo vem da AWS.
+O banco do compose nasce vazio; para carregar a rede do `bdgd.dump` nele:
+
+```bash
+docker compose up -d db
+./scripts/run-db.sh          # migrations + dados da rede no banco do compose
+docker compose up --build -d
+```
 
 ## Onde colocar o dump (só necessário na 1ª subida)
 
@@ -73,9 +95,42 @@ api-5/db/bdgd.dump
 ./scripts/run-db.sh --dump ~/meus-arquivos/bdgd.dump
 ```
 
+Como o banco é montado (banco vazio):
+
+1. **Tabelas:** o script roda as migrations do Flyway (`Backend/tecsys/src/main/resources/db/migration`)
+   num container `flyway/flyway` na mesma versão do backend. Assim o backend encontra o
+   banco já em dia ("Schema is up to date") e o admin (`admin@tecsys.com.br`) vem da V9.
+2. **Dados:** carrega do dump só os dados das tabelas da rede (`sub`, `untrat`, `untrmt`,
+   `ssdat`, `ssdmt`, `ssdbt`, `ucat_pj`, `ucmt_pj`, `ucbt`); `users` e `spatial_ref_sys`
+   ficam de fora.
+
+Antes, o dump era restaurado inteiro, com a tabela `users` e sem o histórico do Flyway, e o
+backend caía com `Migration V2__create_users.sql failed: relation "users" already exists`
+(#TG-142). Se o seu volume é desse jeito, o script avisa; recrie com:
+
+```bash
+./scripts/run-db.sh --stop && docker volume rm tecsys-pgdata && ./scripts/run-db.sh
+```
+
 Após o primeiro restore os dados ficam no volume Docker (`tecsys-pgdata`)
 e o arquivo não é mais necessário. Para recomeçar do zero:
 `docker volume rm tecsys-pgdata` (container parado) e suba de novo.
+
+## Baixa tensão no upload de geodatabase
+
+O upload de `.gdb` pela tela **ETL & Geodados** carrega a rede, os
+consumidores de média/alta tensão e também os de **baixa tensão, inclusive
+residenciais**, lidos da própria geodatabase (camadas `UCBT_tab` e `PONNOT`).
+
+Para caber no Supabase gratuito (500 MB), a baixa tensão é gravada **um
+registro por ponto de conexão + classe + CNAE**, com a quantidade de
+consumidores (`ucbt.qtd_consumidores`). Em Vitória: 166.534 consumidores
+viram 37.973 registros. O motor usa essa quantidade como peso, então a
+cobertura do relatório é contada em consumidores.
+
+Enviar a `.gdb` de novo para os mesmos municípios **substitui** a baixa
+tensão deles (não duplica). O antigo `preload_ucbt.py` (CSV nacional da
+ANEEL, só não residenciais) não é mais usado (#TG-144).
 
 ## Pré-requisitos
 
@@ -87,7 +142,7 @@ e o arquivo não é mais necessário. Para recomeçar do zero:
 
 ## Problemas comuns
 
-- **Sessão expirada (403)**: o token JWT dura 2h — faça logout/login de novo no app.
+- **Sessão expirada (401)**: o token JWT dura 2h — o app volta para o login sozinho. 403 é falta de permissão (ex.: rota de ADM).
 - **Cidade não seleciona / salvar não funciona**: quase sempre é a sessão
   expirada acima, não o banco. Relogue antes de investigar mais.
 - **Backend modo supabase não sobe**: o host direto do Supabase é IPv6-only

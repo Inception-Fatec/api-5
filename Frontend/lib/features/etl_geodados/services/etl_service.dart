@@ -9,6 +9,7 @@ import 'package:tecsys_app/core/network/api_client.dart';
 import 'package:tecsys_app/features/auth/data/services/auth_service.dart';
 
 import '../models/etl_carga.dart';
+import 'arquivo_local.dart';
 
 class EtlUploadException implements Exception {
   const EtlUploadException(this.mensagem);
@@ -100,6 +101,28 @@ class EtlService {
     }
   }
 
+  /// Valida um arquivo escolhido no navegador lendo só o começo (assinatura
+  /// ZIP) e o fim (diretório central, onde aparece o nome da pasta `.gdb`),
+  /// sem carregar o arquivo inteiro na memória (#TG-141).
+  static Future<String?> validarEstruturaZipArquivo(ArquivoLocal arquivo) async {
+    final int tamanho = arquivo.tamanho;
+    if (tamanho < 22) return 'O arquivo .zip está vazio ou corrompido.';
+    final Uint8List cabecalho = await arquivo.lerTrecho(0, 4);
+    final bool assinaturaOk = cabecalho.length == 4 &&
+        cabecalho[0] == 0x50 &&
+        cabecalho[1] == 0x4B &&
+        cabecalho[2] == 0x03 &&
+        cabecalho[3] == 0x04;
+    if (!assinaturaOk) {
+      return 'O arquivo não é um .zip válido (assinatura ZIP não encontrada).';
+    }
+    final int inicio = math.max(0, tamanho - _janelaVarredura);
+    if (!_contemGdb(await arquivo.lerTrecho(inicio, tamanho))) {
+      return 'O .zip não parece conter um File Geodatabase (.gdb).';
+    }
+    return null;
+  }
+
   /// Valida a assinatura ZIP e procura a pasta `.gdb` em arquivos lidos no navegador.
   static String? validarEstruturaZipBytes(Uint8List bytes) {
     if (bytes.length < 22) return 'O arquivo .zip está vazio ou corrompido.';
@@ -131,15 +154,34 @@ class EtlService {
     return false;
   }
 
-  /// POST multipart para o endpoint de upload-gdb do backend.
+  /// POST multipart para o endpoint de upload-gdb do backend. Sem municípios:
+  /// o backend descompacta, lê a .gdb e devolve a carga "aguardando escolha"
+  /// com a distribuidora e os municípios do arquivo (#TG-143).
   static Future<EtlCarga> enviarZip({
     String? caminho,
     Uint8List? arquivoBytes,
+    ArquivoLocal? arquivoNavegador,
     required String nomeArquivo,
-    required List<String> municipios, // códigos IBGE de 7 dígitos
     required void Function(double progresso) onProgress,
   }) async {
     final Uri uri = Uri.parse('${ApiConfig.baseUrl}$uploadPath');
+
+    // Web: o navegador envia o arquivo direto do disco (sem ler para a
+    // memória), com progresso real. Arquivos de centenas de MB chegavam
+    // vazios quando eram lidos inteiros como bytes (#TG-141).
+    if (arquivoNavegador != null) {
+      final RespostaEnvio r = await enviarPeloNavegador(
+        arquivo: arquivoNavegador,
+        uri: uri,
+        campos: const <String, String>{},
+        token: AuthService.instance.token,
+        onProgress: onProgress,
+      );
+      if (r.status == 0) throw const EtlUploadException(_falhaConexao);
+      return _cargaDaResposta(r.status, _jsonDe(r.corpo),
+          nomeArquivo: nomeArquivo, tamanho: arquivoNavegador.tamanho);
+    }
+
     final request =
         _ProgressMultipartRequest('POST', uri, onProgress: onProgress);
 
@@ -159,10 +201,6 @@ class EtlService {
         : await http.MultipartFile.fromPath('file', caminho!,
             filename: nomeArquivo));
 
-    // Municípios escolhidos pelo usuário (o backend só aceita códigos IBGE, separados por vírgula).
-    request.fields['municipios'] = municipios.join(',');
-    request.fields['incluirConsumidores'] = 'true';
-
     final int tamanho = arquivoBytes?.length ?? await File(caminho!).length();
 
     final http.Response resposta;
@@ -179,17 +217,22 @@ class EtlService {
           'O servidor ETL demorou demasiado tempo a responder.');
     }
 
-    final Map<String, dynamic>? json = _tentarJson(resposta);
+    return _cargaDaResposta(resposta.statusCode, _tentarJson(resposta),
+        nomeArquivo: nomeArquivo, tamanho: tamanho);
+  }
 
-    if (resposta.statusCode < 200 || resposta.statusCode >= 300) {
-      _verificarSessao(resposta.statusCode);
+  /// Monta a [EtlCarga] da resposta do upload ou lança o erro do backend.
+  static EtlCarga _cargaDaResposta(int status, Map<String, dynamic>? json,
+      {required String nomeArquivo, required int tamanho}) {
+    if (status < 200 || status >= 300) {
+      _verificarSessao(status);
       final Object? msg = json?['message'] ??
           json?['mensagem'] ??
           json?['error'] ??
           json?['detail'];
       throw EtlUploadException(
         msg?.toString() ??
-            'O servidor respondeu com o código HTTP ${resposta.statusCode}.',
+            'O servidor respondeu com o código HTTP $status.',
       );
     }
 
@@ -202,6 +245,37 @@ class EtlService {
   }
 
   /// GET /api/v1/etl/jobs/{id}: devolve a carga com o status atual do processamento.
+  /// Etapa 2 (#TG-143): manda os municípios escolhidos e a carga começa.
+  static Future<EtlCarga> iniciarCarga(EtlCarga carga, List<String> municipios) =>
+      _postJob(carga, 'iniciar', <String, Object>{
+        'municipios': municipios,
+        'incluirConsumidores': true,
+      });
+
+  /// Descarta um upload que aguardava a escolha dos municípios.
+  static Future<EtlCarga> cancelarCarga(EtlCarga carga) => _postJob(carga, 'cancelar', null);
+
+  static Future<EtlCarga> _postJob(EtlCarga carga, String acao, Map<String, Object>? corpo) async {
+    final String? token = AuthService.instance.token;
+    final http.Response resposta;
+    try {
+      resposta = await http
+          .post(
+            Uri.parse('${ApiConfig.baseUrl}$jobsPath/${carga.id}/$acao'),
+            headers: <String, String>{
+              'Content-Type': 'application/json',
+              if (token != null) 'Authorization': 'Bearer $token',
+            },
+            body: corpo == null ? null : jsonEncode(corpo),
+          )
+          .timeout(const Duration(seconds: 60));
+    } catch (_) {
+      throw const EtlUploadException(_falhaConexao);
+    }
+    return _cargaDaResposta(resposta.statusCode, _tentarJson(resposta),
+        nomeArquivo: carga.nomeArquivo, tamanho: carga.tamanhoBytes);
+  }
+
   static Future<EtlCarga> consultarCarga(EtlCarga atual) async {
     final String? token = AuthService.instance.token;
     final http.Response resposta = await http.get(
@@ -223,9 +297,39 @@ class EtlService {
         nomeFallback: atual.nomeArquivo, tamanhoFallback: atual.tamanhoBytes);
   }
 
+  /// GET /api/v1/etl/jobs: as últimas cargas gravadas no banco (de qualquer
+  /// ADM), mais novas primeiro. Assim o histórico sobrevive ao F5 (#TG-141).
+  static Future<List<EtlCarga>> listarCargas() async {
+    final String? token = AuthService.instance.token;
+    final http.Response resposta = await http.get(
+      Uri.parse('${ApiConfig.baseUrl}$jobsPath'),
+      headers: <String, String>{
+        if (token != null) 'Authorization': 'Bearer $token'
+      },
+    ).timeout(const Duration(seconds: 30));
+    _verificarSessao(resposta.statusCode);
+    if (resposta.statusCode < 200 || resposta.statusCode >= 300) {
+      throw EtlUploadException(
+          'Não foi possível carregar o histórico (HTTP ${resposta.statusCode}).');
+    }
+    try {
+      return EtlCarga.listFromJson(jsonDecode(utf8.decode(resposta.bodyBytes)));
+    } catch (_) {
+      return <EtlCarga>[];
+    }
+  }
+
   static Map<String, dynamic>? _tentarJson(http.Response r) {
     try {
       final Object? d = jsonDecode(utf8.decode(r.bodyBytes));
+      if (d is Map) return Map<String, dynamic>.from(d);
+    } catch (_) {}
+    return null;
+  }
+
+  static Map<String, dynamic>? _jsonDe(String corpo) {
+    try {
+      final Object? d = jsonDecode(corpo);
       if (d is Map) return Map<String, dynamic>.from(d);
     } catch (_) {}
     return null;

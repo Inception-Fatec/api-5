@@ -20,10 +20,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
-    show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
+    show-sql: false
 
   flyway:
     enabled: true
@@ -39,5 +36,7 @@ etl:
   script-path: ${ETL_SCRIPT_PATH:../api-5/modules/etl_cli.py}
   timeout-minutes: ${ETL_TIMEOUT_MINUTES:120}
 
-motor:
-  base-url: ${MOTOR_BASE_URL:http://127.0.0.1:8082}
+# URL do motor de decisão. Lida pelo DecisionEngineClient; nos scripts e no
+# docker-compose vem da variável ENGINE_URL.
+engine:
+  url: ${ENGINE_URL:http://localhost:8082/api/calculate}
