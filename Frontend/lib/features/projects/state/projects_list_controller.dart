@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:tecsys_app/core/utils/distributors.dart';
 import 'package:tecsys_app/core/utils/text_normalizer.dart';
 import 'package:tecsys_app/features/projects/data/models/project_model.dart';
+import 'package:tecsys_app/features/projects/data/services/ibge_service.dart';
 import 'package:tecsys_app/features/projects/state/project_store.dart';
 
 /// Estado da tela "Meus Projetos": a lista de verdade vive no
@@ -38,7 +39,13 @@ class ProjectsListController extends ChangeNotifier {
   void carregarInicial() {
     _store.carregar();
     iniciarAtualizacaoAutomatica();
+    // Nomes das cidades dos cards (#TG-148); sem a lista, aparecem os códigos.
+    IbgeService().precarregar().then((_) {
+      if (!_descartado) notifyListeners();
+    });
   }
+
+  bool _descartado = false;
 
   /// Enquanto houver projeto calculando (CRIADO/ENVIADO/PROCESSANDO),
   /// consulta a lista a cada [intervalo] para refletir o fim do cálculo.
@@ -97,6 +104,7 @@ class ProjectsListController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _descartado = true;
     _timer?.cancel();
     _store.removeListener(notifyListeners);
     super.dispose();

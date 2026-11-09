@@ -14,9 +14,13 @@ class ReportHeader extends StatelessWidget {
     required this.project,
     this.onExportPdf,
     this.exportingPdf = false,
+    this.cidades = '',
   });
 
   final Project project;
+
+  /// Cidades do cálculo, ex.: "Aracruz - ES, Vitória - ES" (#TG-148).
+  final String cidades;
 
   /// Botão "Exportar PDF"; nulo esconde (relatório ainda não pronto).
   final VoidCallback? onExportPdf;
@@ -77,6 +81,15 @@ class ReportHeader extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: ReportStyles.rowLabel,
                         ),
+                        if (cidades.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            cidades,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: ReportStyles.rowLabel,
+                          ),
+                        ],
                         const SizedBox(height: AppSpacing.sm),
                         Container(
                           padding: const EdgeInsets.symmetric(

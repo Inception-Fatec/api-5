@@ -26,6 +26,9 @@ Future<Uint8List> buildReportPdf({
   required String date,
   required CoverageReport report,
 
+  /// Cidades do cálculo, ex.: "Aracruz - ES, Vitória - ES" (#TG-148).
+  String cidades = '',
+
   /// Foto do mapa (PNG), se foi possível capturar.
   Uint8List? mapImage,
 }) async {
@@ -89,6 +92,9 @@ Future<Uint8List> buildReportPdf({
       pw.SizedBox(height: 2),
       pw.Text(pdfSafe('$distribuidora - $date'),
           style: const pw.TextStyle(fontSize: 10, color: muted)),
+      if (cidades.isNotEmpty)
+        pw.Text(pdfSafe(cidades),
+            style: const pw.TextStyle(fontSize: 10, color: muted)),
       heading('Resumo'),
       pw.Text(formatPercent(s.coveragePercentage),
           style: pw.TextStyle(fontSize: 26, fontWeight: pw.FontWeight.bold)),

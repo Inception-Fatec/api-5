@@ -101,6 +101,24 @@ class IbgeService {
 
   /// Nome do município pelo código IBGE (texto), se a lista já foi
   /// carregada; senão devolve o próprio código.
+  /// "Vitória - ES" pelo código IBGE, se a lista já foi carregada; senão o
+  /// próprio código (#TG-148).
+  static String rotuloMunicipio(String codigo) {
+    final id = int.tryParse(codigo);
+    if (id == null || _cache == null) return codigo;
+    for (final m in _cache!) {
+      if (m.codigoIbge == id) return m.uf.isEmpty ? m.nome : m.rotulo;
+    }
+    return codigo;
+  }
+
+  /// Cidades separadas por vírgula, em ordem alfabética.
+  static String rotulosMunicipios(List<String> codigos) {
+    final rotulos = codigos.map(rotuloMunicipio).toList()
+      ..sort((a, b) => normalizarTexto(a.toLowerCase()).compareTo(normalizarTexto(b.toLowerCase())));
+    return rotulos.join(', ');
+  }
+
   static String nomeMunicipio(String codigo) {
     final id = int.tryParse(codigo);
     if (id == null || _cache == null) return codigo;

@@ -14,6 +14,9 @@ class Project {
   /// Falso quando o projeto foi excluído (soft delete) no backend.
   final bool ativo;
 
+  /// Municípios (IBGE) do último cálculo; vazio antes de calcular (#TG-148).
+  final List<String> munCodes;
+
   const Project({
     required this.id,
     required this.name,
@@ -23,6 +26,7 @@ class Project {
     this.createdByName = '',
     required this.createdAt,
     this.ativo = true,
+    this.munCodes = const [],
   });
 
   factory Project.fromJson(Map<String, dynamic> json) {
@@ -37,6 +41,10 @@ class Project {
           DateTime.now(),
       // Ausente em respostas antigas: conta como ativo.
       ativo: json['active'] as bool? ?? true,
+      munCodes: (json['mun_codes'] as List? ?? const [])
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList(),
     );
   }
 
