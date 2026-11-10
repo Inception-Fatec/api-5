@@ -63,7 +63,37 @@ public record DecisionSummaryResponseDto(
         Long uncoveredConsumers,
 
         @JsonProperty("coverable_consumers")
-        Long coverableConsumers
+        Long coverableConsumers,
+
+        @JsonProperty("range_criterion")
+        String rangeCriterion,
+
+        @JsonProperty("gateway_height_m")
+        Double gatewayHeightMeters,
+
+        @JsonProperty("sensor_height_m")
+        Double sensorHeightMeters,
+
+        @JsonProperty("bdgd_heights")
+        Boolean bdgdHeights,
+
+        @JsonProperty("elevation_used")
+        Boolean elevationUsed,
+
+        @JsonProperty("elevation_source")
+        String elevationSource,
+
+        @JsonProperty("los_mode")
+        String losMode,
+
+        @JsonProperty("los_samples")
+        Integer losSamples,
+
+        @JsonProperty("los_step_m")
+        Double losStepMeters,
+
+        @JsonProperty("calculation_time_seconds")
+        Double calculationTimeSeconds
 
 ) {
 }

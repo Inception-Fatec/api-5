@@ -78,8 +78,11 @@ public class DecisionService {
         } catch (IOException e) {
             throw new UncheckedIOException("Falha ao obter o relevo: " + e.getMessage(), e);
         }
-        logSummary(result, (System.nanoTime() - start) / 1e9);
-        return toResponse(result);
+        double elapsedSeconds = (System.nanoTime() - start) / 1e9;
+
+        logSummary(result, elapsedSeconds);
+        return toResponse(result, elapsedSeconds);
+
     }
 
     private DecisionCriteria findCriteria(long projectId) {
@@ -120,8 +123,61 @@ public class DecisionService {
         log.info("======================================");
     }
 
-    static DecisionResultResponseDto toResponse(MotorResult r) {
+    static DecisionResultResponseDto toResponse(
+            MotorResult r,
+            double elapsedSeconds) {
+
+        // Parâmetros efetivamente utilizados no cálculo.
+        var params = r.params();
+
+        // Identifica a fonte real do relevo.
+        String terrainSource = r.terrainSource();
+
+        boolean elevationUsed = terrainSource != null
+                && !terrainSource.equalsIgnoreCase("plano");
+
+        String elevationSource = !elevationUsed
+                ? "plano"
+                : terrainSource.startsWith("Copernicus GLO-30")
+                    ? "COP30"
+                    : terrainSource;
+
+        // Identifica o critério utilizado no alcance.
+        String rangeCriterion;
+
+        if (params.fixedRangeM() != null) {
+            rangeCriterion = "fixed_range";
+        } else {
+            rangeCriterion = (params.useTerrain() || params.earthCurvature())
+                    ? "link_budget_and_horizon"
+                    : "link_budget";
+
+            if (params.maxRangeM() != null) {
+                rangeCriterion += "_with_max_range";
+            }
+        }
+
+        // TEAM usa um número fixo de amostras.
+        Integer losSamples =
+                params.lineOfSight() == MotorParams.LosMode.TEAM
+                        ? params.teamSamples()
+                        : null;
+
+        // PROFILE e RAYS utilizam um passo em metros.
+        Double losStepMeters =
+                params.lineOfSight() == MotorParams.LosMode.TEAM
+                        ? null
+                        : params.losStepM();
+
+        // Alturas fixas, quando não determinadas pela BDGD.
+        Double gatewayHeight = params.bdgdHeights()
+                ? null : params.gatewayHeightM();
+
+        Double sensorHeight = params.bdgdHeights()
+                ? null : params.sensorHeightM();
+
         DecisionSummaryResponseDto summary = new DecisionSummaryResponseDto(
+
                 r.totalPoints(),
                 r.totalCandidates(),
                 r.gateways().size(),
@@ -138,7 +194,18 @@ public class DecisionService {
                 r.totalConsumers(),
                 r.coveredConsumers(),
                 r.totalConsumers() - r.coveredConsumers(),
-                r.coverableConsumers());
+                r.coverableConsumers(),
+                rangeCriterion,
+                gatewayHeight,
+                sensorHeight,
+                params.bdgdHeights(),
+                elevationUsed,
+                elevationSource,
+                params.lineOfSight().name(),
+                losSamples,
+                losStepMeters,
+                elapsedSeconds
+                );
 
         List<SelectedGatewayResponseDto> gateways = r.gateways().stream().map(s -> {
             GatewayCandidate g = s.candidate();
