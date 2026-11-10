@@ -10,6 +10,8 @@ import com.tecsys.domain.user.UserRepository;
 import com.tecsys.infrastructure.engine.DecisionEngineClient;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,7 +42,15 @@ public class ProjectService {
     }
 
     @Transactional(readOnly = true)
-    public List<ProjectResponseDto> findAll() {
+    public List<ProjectResponseDto> findAll(String sort, Integer limit) {
+        // Atividade mais recente (criar, recalcular ou abrir o relatório) primeiro (#TG-87).
+        // sort=recent continua aceito (#TG-87, PR #81); limit corta a lista.
+        if (limit != null && limit > 0) {
+            Sort porAtividade = Sort.by(Sort.Direction.DESC, "lastActivityAt").and(Sort.by(Sort.Direction.DESC, "id"));
+            return projectRepository.findAllByActiveTrue(PageRequest.of(0, limit, porAtividade)).stream()
+                    .map(this::toDto)
+                    .toList();
+        }
         return projectRepository.findAllByActiveTrueOrderByLastActivityAtDescIdDesc().stream()
                 .map(this::toDto)
                 .toList();
@@ -113,6 +123,7 @@ public class ProjectService {
                 salvo.getCreatedBy().getId(),
                 salvo.getCreatedBy().getName(),
                 salvo.getCreatedAt(),
+                salvo.getUpdatedAt(),
                 salvo.isActive(),
                 ProjectResponseDto.munCodesDe(request.filterParams()),
                 salvo.getStatusMessage(),
@@ -163,6 +174,7 @@ public class ProjectService {
                 project.getCreatedBy().getId(),
                 project.getCreatedBy().getName(),
                 project.getCreatedAt(),
+                project.getUpdatedAt(),
                 project.isActive(),
                 projectHistoryRepository.findFirstByProject_IdOrderByCreatedAtDescIdDesc(project.getId())
                         .map(h -> ProjectResponseDto.munCodesDe(h.getFilterParams()))

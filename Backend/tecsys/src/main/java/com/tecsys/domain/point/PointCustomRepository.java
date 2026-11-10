@@ -70,7 +70,7 @@ public class PointCustomRepository {
             subQuery.append("geom FROM ").append(meta.tableName).append(" WHERE 1=1 ");
 
             if (request.distCodes() != null && !request.distCodes().isEmpty()) {
-                if (meta.tableName.equals("sub")) {
+                if (meta.tableName.equals("sub") || meta.temDistPropria()) {
                     subQuery.append(" AND dist IN (:distCodes").append(suf).append(") ");
                 } else {
                     subQuery.append(" AND sub IN (SELECT cod_id FROM sub WHERE dist IN (:distCodes").append(suf)
@@ -110,7 +110,9 @@ public class PointCustomRepository {
                 params.addValue("conjCodes" + suf, request.conjCodes());
             }
 
-            if (request.subCodes() != null && !request.subCodes().isEmpty()) {
+            // A SSDAT não tem SUB (só a distribuidora, por temDistPropria): o filtro de
+            // subestação não se aplica a ela, senão ela some do mapa (#120).
+            if (request.subCodes() != null && !request.subCodes().isEmpty() && !meta.temDistPropria()) {
                 if (meta.tableName.equals("sub")) {
                     subQuery.append(" AND cod_id IN (:subCodes").append(suf).append(") ");
                 } else {
@@ -402,5 +404,14 @@ public class PointCustomRepository {
             String tableName, String idColumn, String layerName,
             boolean hasMun, boolean hasConj, boolean hasAttributes,
             Set<String> colunasExtras) {
+
+        /**
+         * Tabelas que guardam a distribuidora na própria linha. A SSDAT da BDGD não tem o
+         * campo SUB, então não dá para chegar à distribuidora pela subestação.
+         * Precisa estar em sincronia com TABELAS_COM_DIST do ETL (geodatabase_edp_sp.py).
+         */
+        boolean temDistPropria() {
+            return tableName.equals("ssdat");
+        }
     }
 }

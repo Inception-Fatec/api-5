@@ -29,8 +29,10 @@ public class ProjectController {
     }
 
     @GetMapping
-    public ResponseEntity<List<ProjectResponseDto>> findAll() {
-        return ResponseEntity.ok(projectService.findAll());
+    public ResponseEntity<List<ProjectResponseDto>> findAll(
+            @RequestParam(required = false) String sort,
+            @RequestParam(required = false) Integer limit) {
+        return ResponseEntity.ok(projectService.findAll(sort, limit));
     }
 
     @GetMapping("/{id}")

@@ -68,6 +68,9 @@ CAMADAS_FOLHA = [
     },
 ]
 
+# Camadas da BDGD sem o campo SUB: o vínculo com a distribuidora é gravado direto na tabela.
+TABELAS_COM_DIST = {"ssdat"}
+
 
 class MunicipioNaoEncontrado(ValueError):
     pass
@@ -216,6 +219,9 @@ def garantir_integridade(camadas: dict, metricas: Metricas) -> None:
         for nome in nivel["referencias"]:
             filho = camadas[nome]
             if coluna not in filho.columns:
+                if nome not in TABELAS_COM_DIST:
+                    logger.warning("[%s] camada sem a coluna '%s' — vínculo com '%s' não será gravado",
+                                   nome, coluna, nivel["tabela"])
                 continue
             orfas = filho[coluna].notna() & ~filho[coluna].isin(existentes)
             n = int(orfas.sum())
@@ -226,6 +232,22 @@ def garantir_integridade(camadas: dict, metricas: Metricas) -> None:
                               nome, n, coluna, nivel["tabela"], len(codigos_orfaos), amostra)
                 filho.loc[orfas, coluna] = None
                 metricas.add(nome, **{f"fk_{coluna}_orfa_anulada": n})
+
+
+def preencher_dist_nulo(conn, tabela: str, codigos: list, dist: str, metricas: Metricas,
+                        tamanho_lote: int = 5000) -> None:
+    """carregar_idempotente usa ON CONFLICT DO NOTHING: linhas carregadas antes da coluna
+    `dist` existir ficam com dist nulo. Preenche só as desta carga (mesmos cod_id), sem
+    tocar em outras distribuidoras (#120)."""
+    atualizados = 0
+    for i in range(0, len(codigos), tamanho_lote):
+        atualizados += conn.execute(
+            text(f'UPDATE "{tabela}" SET dist = :dist WHERE dist IS NULL AND cod_id = ANY(:codigos)'),
+            {"dist": dist, "codigos": codigos[i:i + tamanho_lote]},
+        ).rowcount
+    if atualizados:
+        logger.info("[%s] %s registro(s) já existentes tiveram o dist preenchido", tabela, atualizados)
+    metricas.add(tabela, dist_preenchido_em_existentes=atualizados)
 
 
 def main(municipios: list[str], caminho_gdb, engine=None) -> dict:
@@ -268,6 +290,9 @@ def main(municipios: list[str], caminho_gdb, engine=None) -> dict:
         logger.info("Distribuidora %s: prefixo de códigos = %r", dist, prefixo)
         for nivel in CAMADAS_PAI + CAMADAS_FOLHA:
             prefixar(camadas[nivel["tabela"]], prefixo)
+            if nivel["tabela"] in TABELAS_COM_DIST:
+                # Valor cru (sem prefixo), igual ao sub.dist: é por ele que o filtro do mapa casa.
+                camadas[nivel["tabela"]]["dist"] = dist
 
         codigos_sub = camadas["sub"]["cod_id"].dropna().tolist()
         conflito = conn.execute(
@@ -287,6 +312,8 @@ def main(municipios: list[str], caminho_gdb, engine=None) -> dict:
                 metricas, 
                 truncar=("nome", "dist", "mun", "are_loc", "posto", "tip_inst", "ctat", "ctmt")
             )
+            if tabela in TABELAS_COM_DIST:
+                preencher_dist_nulo(conn, tabela, camadas[tabela]["cod_id"].dropna().tolist(), dist, metricas)
             metricas.log(tabela)
 
         etapa("Gravando a baixa tensão (consumidores por ponto de conexão)")

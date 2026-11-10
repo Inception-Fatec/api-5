@@ -56,7 +56,7 @@ class ProjectActivityTest {
         when(projectRepository.findAllByActiveTrueOrderByLastActivityAtDescIdDesc())
                 .thenReturn(List.of(projeto(1, agora), projeto(7, agora.minusSeconds(60))));
 
-        var lista = service.findAll();
+        var lista = service.findAll(null, null);
 
         assertEquals(List.of(1L, 7L), lista.stream().map(d -> d.id()).toList());
         assertEquals(agora, lista.get(0).lastActivityAt());

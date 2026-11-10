@@ -63,6 +63,7 @@ public class SimulationService {
                 project.getCreatedBy().getId(),
                 project.getCreatedBy().getName(),
                 project.getCreatedAt(),
+                project.getUpdatedAt(),
                 project.isActive(),
                 ProjectResponseDto.munCodesDe(filterParams),
                 project.getStatusMessage(),
