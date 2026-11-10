@@ -13,9 +13,10 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
 
     List<Project> findAllByActiveTrue();
 
-    List<Project> findAllByActiveTrue(Sort sort);
-
     List<Project> findAllByActiveTrue(Pageable pageable);
+
+    /** Ativos, da atividade mais recente para a mais antiga (#TG-87). */
+    List<Project> findAllByActiveTrueOrderByLastActivityAtDescIdDesc();
 
     Optional<Project> findByIdAndActiveTrue(Long id);
 }

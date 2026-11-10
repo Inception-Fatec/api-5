@@ -96,6 +96,12 @@ class ProjectsListController extends ChangeNotifier {
 
   int get totalProjetos => _store.projects.length;
 
+  /// Seção "Recentes" (#TG-88): vazia quando não há projetos.
+  List<Project> get recentes => _store.recentes;
+
+  /// Abriu o projeto: sobe nos Recentes.
+  Future<void> registrarAtividade(int id) => _store.registrarAtividade(id);
+
   /// Projetos com cálculo concluído (status SUCESSO).
   int get totalCalculados => contagemStatus('SUCESSO');
 

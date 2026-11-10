@@ -28,7 +28,14 @@ public record ProjectResponseDto(
 
         boolean active,
 
-        @JsonProperty("mun_codes") List<String> munCodes
+        // municípios (IBGE) do último cálculo do projeto, para o card mostrar as cidades (#TG-148)
+        @JsonProperty("mun_codes") List<String> munCodes,
+
+        // motivo da falha quando status = FALHA (#TG-84); nulo nos demais
+        @JsonProperty("status_message") String statusMessage,
+
+        // atividade mais recente (criar, recalcular, abrir relatório), ISO 8601 (#TG-87)
+        @JsonProperty("last_activity_at") Instant lastActivityAt
 ) {
     public static List<String> munCodesDe(JsonNode filterParams) {
         if (filterParams == null || !filterParams.path("mun_codes").isArray()) {

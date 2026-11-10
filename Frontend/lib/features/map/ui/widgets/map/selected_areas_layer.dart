@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 
-import 'package:tecsys_app/core/theme/app_theme.dart';
 import 'package:tecsys_app/features/map/data/models/selected_area.dart';
 import 'package:tecsys_app/features/map/ui/styles/map_styles.dart';
 
@@ -33,10 +32,9 @@ class SelectedAreasLayer extends StatelessWidget {
             if (i != selecionada)
               Polygon(
                 points: areas[i].corners,
-                color:
-                    AppColors.primary.withOpacity(MapStyles.areaFillOpacity),
+                color: MapStyles.corArea.withOpacity(MapStyles.areaFillOpacity),
                 borderColor:
-                    AppColors.primary.withOpacity(MapStyles.areaBorderOpacity),
+                    MapStyles.corArea.withOpacity(MapStyles.areaBorderOpacity),
                 borderStrokeWidth: MapStyles.areaBorderWidth,
               ),
           if (temSelecionada)

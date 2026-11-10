@@ -73,6 +73,40 @@ class SelectedArea {
     };
   }
 
+  /// Áreas de um GeoJSON salvo (Polygon ou MultiPolygon), como as que
+  /// [toGeoJson] gera. Cada anel vira o retângulo que o contém.
+  static List<SelectedArea> fromGeoJson(Map<String, dynamic>? geo) {
+    if (geo == null) return const [];
+    final coords = geo['coordinates'];
+    if (coords is! List) return const [];
+    final List<dynamic> poligonos = switch (geo['type']) {
+      'Polygon' => [coords],
+      'MultiPolygon' => coords,
+      _ => const [],
+    };
+    final areas = <SelectedArea>[];
+    for (final poligono in poligonos) {
+      if (poligono is! List || poligono.isEmpty || poligono.first is! List) {
+        continue;
+      }
+      final pontos = <LatLng>[
+        for (final c in poligono.first as List)
+          if (c is List && c.length >= 2 && c[0] is num && c[1] is num)
+            LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()),
+      ];
+      if (pontos.length < 3) continue;
+      final lats = pontos.map((p) => p.latitude);
+      final lons = pontos.map((p) => p.longitude);
+      areas.add(SelectedArea(
+        north: lats.reduce(math.max),
+        south: lats.reduce(math.min),
+        west: lons.reduce(math.min),
+        east: lons.reduce(math.max),
+      ));
+    }
+    return areas;
+  }
+
   @override
   bool operator ==(Object other) =>
       other is SelectedArea &&

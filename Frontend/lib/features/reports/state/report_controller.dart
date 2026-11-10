@@ -69,6 +69,20 @@ class ReportController extends ChangeNotifier {
   /// Mensagem pronta para exibir quando [status] é [ReportStatus.error].
   String? get errorMessage => _errorMessage;
 
+  String? _mensagemFalha;
+  String? _statusServidor;
+
+  /// Status mais recente do projeto (o do servidor, se já consultou; senão
+  /// o que veio da lista) — o cabeçalho usa este, não o da lista.
+  String get statusProjeto => _statusServidor ?? project.status;
+
+  /// Motivo da falha do cálculo (ex.: motor fora do ar), quando o backend
+  /// informa; null = sem detalhe.
+  String? get mensagemFalha {
+    final m = _mensagemFalha ?? project.statusMessage;
+    return (m == null || m.isEmpty) ? null : m;
+  }
+
   /// Gateway que o usuário tocou na lista (o mapa deve centralizar nele).
   ReportGateway? get focusedGateway => _focusedGateway;
 
@@ -83,8 +97,10 @@ class ReportController extends ChangeNotifier {
       if (_service.requiresCompletedProject) {
         // Status fresco do servidor: a lista de projetos pode estar
         // desatualizada (o motor grava SUCESSO/FALHA direto no banco).
-        final status =
-            await _service.statusAtual(project.id) ?? project.status;
+        final atual = await _service.statusAtual(project.id);
+        final status = atual?.status ?? project.status;
+        _mensagemFalha = atual?.mensagem;
+        _statusServidor = atual?.status ?? _statusServidor;
         if (status == 'FALHA') {
           _emit(ReportStatus.calculationFailed);
           return;
@@ -185,8 +201,11 @@ class ReportController extends ChangeNotifier {
     if (_disposed || _polling || _status != ReportStatus.calculating) return;
     _polling = true;
     try {
-      final status = await _service.statusAtual(project.id);
+      final atual = await _service.statusAtual(project.id);
+      final status = atual?.status;
       if (_disposed || _status != ReportStatus.calculating) return;
+      _mensagemFalha = atual?.mensagem;
+      _statusServidor = status ?? _statusServidor;
       if (status == 'SUCESSO') {
         await carregar();
       } else if (status == 'FALHA') {

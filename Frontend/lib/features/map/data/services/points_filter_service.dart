@@ -81,6 +81,8 @@ class PointsFilterService {
     List<String>? clasSub,
     List<String>? cnaeCodes,
     List<String>? bairroNames,
+    List<String>? coverageLayers,
+    List<String>? candidateLayers,
     bool countOnly = false,
     double? clusterCell,
     int? limit,
@@ -108,6 +110,10 @@ class PointsFilterService {
       if (cnaeCodes != null && cnaeCodes.isNotEmpty) 'cnae_codes': cnaeCodes,
       if (bairroNames != null && bairroNames.isNotEmpty)
         'bairro_names': bairroNames,
+      if (coverageLayers != null && coverageLayers.isNotEmpty)
+        'coverage_layers': coverageLayers,
+      if (candidateLayers != null && candidateLayers.isNotEmpty)
+        'candidate_layers': candidateLayers,
       if (countOnly) 'count_only': true,
       if (clusterCell != null) 'cluster_cell': clusterCell,
       if (limit != null) 'limit': limit,

@@ -80,6 +80,13 @@ String gatewayTypeLabel(String? type) {
   switch (type) {
     case 'SUB':
       return 'Subestação';
+    // consumidores escolhidos como candidatos a gateway (#TG-92)
+    case 'UCAT':
+      return 'Consumidor AT';
+    case 'UCMT':
+      return 'Consumidor MT';
+    case 'UCBT':
+      return 'Consumidor BT';
     case null:
     case '':
       return 'Gateway';

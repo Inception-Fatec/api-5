@@ -1,6 +1,8 @@
 package com.tecsys.domain.project;
 
 import com.tecsys.domain.project.dto.ProjectCreateRequestDto;
+import com.tecsys.domain.project.dto.ProjectHistoryResponseDto;
+import com.tecsys.domain.project.dto.ProjectRecalculateRequestDto;
 import com.tecsys.domain.project.dto.ProjectResponseDto;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -36,6 +38,25 @@ public class ProjectController {
     @GetMapping("/{id}")
     public ResponseEntity<ProjectResponseDto> findById(@PathVariable Long id) {
         return ResponseEntity.ok(projectService.findById(id));
+    }
+
+    @GetMapping("/{id}/history")
+    public ResponseEntity<List<ProjectHistoryResponseDto>> findHistory(@PathVariable Long id) {
+        return ResponseEntity.ok(projectService.findHistory(id));
+    }
+
+    @PostMapping("/{id}/recalculate")
+    public ResponseEntity<ProjectResponseDto> recalculate(
+            @PathVariable Long id,
+            @RequestBody @Valid ProjectRecalculateRequestDto request) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(projectService.recalculate(id, request));
+    }
+
+    /** Registra uma atividade (ex.: abriu o relatório) para os Recentes (#TG-87). */
+    @PostMapping("/{id}/activity")
+    public ResponseEntity<Void> registrarAtividade(@PathVariable Long id) {
+        projectService.registrarAtividade(id);
+        return ResponseEntity.noContent().build();
     }
 
     @PutMapping("/{id}")

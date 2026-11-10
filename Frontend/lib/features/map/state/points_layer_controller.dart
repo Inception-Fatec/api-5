@@ -115,6 +115,8 @@ class PointsLayerController extends ChangeNotifier {
         f.clasSub,
         f.cnaeCodes,
         f.bairroNames,
+        f.coverageLayers,
+        f.candidateLayers,
       ]);
 
   String _chaveDetalheDe(FiltrosPontos f, MapViewport v) =>
@@ -144,6 +146,8 @@ class PointsLayerController extends ChangeNotifier {
       clasSub: f.clasSub,
       cnaeCodes: f.cnaeCodes,
       bairroNames: f.bairroNames,
+      coverageLayers: f.coverageLayers,
+      candidateLayers: f.candidateLayers,
       countOnly: countOnly,
       clusterCell: clusterCell,
       limit: limit,

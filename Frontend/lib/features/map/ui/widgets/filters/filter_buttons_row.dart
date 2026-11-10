@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 import 'package:tecsys_app/features/map/data/constants/map_filter_options.dart';
 import 'package:tecsys_app/features/map/state/points_map_controller.dart';
@@ -19,7 +20,27 @@ class FilterButtonsRow extends StatelessWidget {
     final targetLayers = controller.targetLayers;
     final areas = controller.areas;
 
+    final candidatas = controller.candidateLayers;
+
     final botoes = <Widget>[
+      // Papel no cálculo (#TG-92): onde pode ir gateway. Os pontos a
+      // cobrir são sempre os consumidores (o nível de tensão já os filtra),
+      // então não têm seletor próprio.
+      DropdownFilterButton(
+        label: 'Candidatos a gateway (${candidatas.length})',
+        icon: Icons.cell_tower,
+        ativo: !listEquals(candidatas, MapFilterOptions.padraoCandidatos),
+        panelBuilder: (context, fechar) => ListenableBuilder(
+          listenable: controller,
+          builder: (context, _) => CheckboxFilterPanel(
+            title: 'Candidatos a gateway',
+            options: MapFilterOptions.camadasCandidatas,
+            selected: controller.candidateLayers,
+            labelOf: MapFilterOptions.camadaLabel,
+            onChanged: controller.setCandidateLayers,
+          ),
+        ),
+      ),
       // As áreas têm um notifier próprio (o mapa também mexe nelas).
       ListenableBuilder(
         listenable: areas,

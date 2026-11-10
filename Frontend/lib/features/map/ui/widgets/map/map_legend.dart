@@ -6,16 +6,17 @@ import 'package:tecsys_app/core/theme/app_theme.dart';
 import 'package:tecsys_app/features/map/ui/styles/map_styles.dart';
 import 'package:tecsys_app/features/map/ui/widgets/map/point_markers_layer.dart';
 
+/// Legenda do mapa: no zoom afastado, as faixas das bolhas; de perto, a
+/// cor e o formato de cada papel no cálculo (#TG-92).
 class MapLegend extends StatelessWidget {
   final bool agrupado;
 
   const MapLegend({super.key, this.agrupado = false});
 
-  static const _itens = [
+  static const _tensoes = [
     ('ALTO', 'Alta tensão'),
     ('MEDIO', 'Média tensão'),
     ('BAIXO', 'Baixa tensão'),
-    ('SUB', 'Subestação'),
   ];
 
   static Widget _linha(Widget marca, String rotulo) => Padding(
@@ -34,15 +35,14 @@ class MapLegend extends StatelessWidget {
         ),
       );
 
-  static Widget _bolinha(Color cor, {double fator = 1}) => Container(
-        width: MapStyles.legendDotSize * fator,
-        height: MapStyles.legendDotSize * fator,
+  static Widget _bolinha(Color cor) => Container(
+        width: MapStyles.legendDotSize,
+        height: MapStyles.legendDotSize,
         decoration: BoxDecoration(shape: BoxShape.circle, color: cor),
       );
 
   @override
   Widget build(BuildContext context) {
-    final neutro = AppColors.textSecondary;
     return Container(
       padding: MapStyles.coordsPadding,
       decoration: BoxDecoration(
@@ -61,9 +61,13 @@ class MapLegend extends StatelessWidget {
             for (final (_, c, r) in MapStyles.clusterFaixas)
               _linha(_bolinha(c), r),
           ] else ...[
-            Text('TIPO', style: MapStyles.coordsTitle),
+            Text('PONTO A COBRIR (TENSÃO)', style: MapStyles.coordsTitle),
             const SizedBox(height: 3),
-            _linha(_bolinha(neutro), 'Ponto a cobrir'),
+            for (final (l, r) in _tensoes)
+              _linha(_bolinha(MapStyles.corDaTensao(l)), r),
+            const SizedBox(height: 6),
+            Text('OUTROS', style: MapStyles.coordsTitle),
+            const SizedBox(height: 3),
             _linha(
               Transform.rotate(
                 angle: math.pi / 4,
@@ -71,23 +75,22 @@ class MapLegend extends StatelessWidget {
                   width: MapStyles.legendDotSize * 0.75,
                   height: MapStyles.legendDotSize * 0.75,
                   decoration: BoxDecoration(
-                    color: neutro,
+                    color: MapStyles.corCandidato,
                     border: Border.all(
                         color: PointMarkersLayer.bordaCandidato, width: 1),
                   ),
                 ),
               ),
-              'Local para gateway',
+              'Candidato a gateway',
             ),
             _linha(
-              _bolinha(neutro.withOpacity(PointMarkersLayer.opacidadeRede),
-                  fator: 0.55),
+              Container(
+                width: MapStyles.legendDotSize * 0.8,
+                height: MapStyles.legendDotSize * 0.8,
+                color: MapStyles.corRede,
+              ),
               'Rede elétrica',
             ),
-            const SizedBox(height: 6),
-            Text('TENSÃO', style: MapStyles.coordsTitle),
-            const SizedBox(height: 3),
-            for (final (l, r) in _itens) _linha(_bolinha(MapStyles.layerColor(l)), r),
           ],
         ],
       ),

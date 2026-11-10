@@ -6,6 +6,7 @@ import 'package:tecsys_app/features/projects/data/models/project_model.dart';
 import 'package:tecsys_app/features/projects/data/services/distribuidoras_service.dart';
 import 'package:tecsys_app/features/projects/state/projects_list_controller.dart';
 import 'package:tecsys_app/features/map/ui/screens/points_map_screen.dart';
+import 'package:tecsys_app/features/projects/ui/abrir_projeto_no_mapa.dart';
 import 'package:tecsys_app/features/projects/ui/widgets/new_project/new_project_dialog.dart';
 import 'package:tecsys_app/features/projects/ui/widgets/projects/projects_mobile_view.dart';
 import 'package:tecsys_app/features/projects/ui/widgets/projects/projects_web_view.dart';
@@ -78,6 +79,16 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
     await _goToNewProject(nomeInicial: refazer.name);
   }
 
+  /// Recentes (#TG-88, CA2): concluído abre o relatório; os demais abrem
+  /// o mapa com a última versão para ajustar e recalcular.
+  Future<void> _abrirRecente(Project project) async {
+    if (project.status == 'SUCESSO') return _openDetail(project);
+    _controller.registrarAtividade(project.id);
+    final recalculado = await abrirProjetoNoMapa(context, project);
+    // Recalculou: abre direto o relatório da versão nova.
+    if (recalculado != null && mounted) await _openDetail(recalculado);
+  }
+
   @override
   Widget build(BuildContext context) {
     return PageBody(
@@ -91,11 +102,13 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                     controller: _controller,
                     onNewProject: _goToNewProject,
                     onOpenProject: _openDetail,
+                    onOpenRecent: _abrirRecente,
                   )
                 : ProjectsMobileView(
                     controller: _controller,
                     onNewProject: _goToNewProject,
                     onOpenProject: _openDetail,
+                    onOpenRecent: _abrirRecente,
                   ),
           );
         },

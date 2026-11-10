@@ -14,8 +14,9 @@ import java.util.List;
 
 /**
  * Leitura do PostGIS com os mesmos filtros de {@code filter_params} usados pelo sistema.
- * Pontos: consumidores {@code ucat_pj}, {@code ucmt_pj} e {@code ucbt}. Candidatos: transformadores
- * {@code untrmt} e {@code untrat}.
+ * Pontos: as camadas de consumidores em {@code coverage_layers} (padrão: {@code ucat_pj},
+ * {@code ucmt_pj} e {@code ucbt}). Candidatos: as camadas de {@code candidate_layers} (padrão:
+ * transformadores {@code untrmt} e {@code untrat}; consumidores também podem ser, #TG-92).
  */
 @Repository
 public class DecisionRepository {
@@ -25,6 +26,17 @@ public class DecisionRepository {
             new TargetTable("ucmt_pj", VoltageLevel.MEDIO, "1"),
             // baixa tensão agregada por ponto de conexão: cada registro vale N consumidores (#TG-144)
             new TargetTable("ucbt", VoltageLevel.BAIXO, "u.qtd_consumidores"));
+
+    /** Tabela candidata: tipo no relatório, coluna de id e coluna de posto. */
+    private record CandidateTable(String tableName, CandidateType type, String idColumn, String postoColumn) {
+    }
+
+    private static final List<CandidateTable> CANDIDATE_TABLES = List.of(
+            new CandidateTable("untrmt", CandidateType.UNTRMT, "u.cod_id", "u.posto"),
+            new CandidateTable("untrat", CandidateType.UNTRAT, "u.cod_id", "NULL::text"),
+            new CandidateTable("ucat_pj", CandidateType.UCAT, "u.cod_id_encr", "NULL::text"),
+            new CandidateTable("ucmt_pj", CandidateType.UCMT, "u.cod_id_encr", "NULL::text"),
+            new CandidateTable("ucbt", CandidateType.UCBT, "u.cod_id_encr", "NULL::text"));
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
 
@@ -69,16 +81,17 @@ public class DecisionRepository {
         String inside = commonFilters(criteria, params);
 
         List<String> selects = new ArrayList<>();
-        for (String[] t : new String[][]{{"untrmt", "UNTRMT", "u.posto"}, {"untrat", "UNTRAT", "NULL::text"}}) {
+        for (CandidateTable t : CANDIDATE_TABLES) {
+            if (!criteria.isCandidateLayer(t.tableName())) continue;
             StringBuilder sql = new StringBuilder("""
-                    SELECT u.cod_id AS id, '%s' AS type, %s AS posto, u.sub, u.mun, u.conj,
+                    SELECT %s::text AS id, '%s' AS type, %s AS posto, u.sub, u.mun, u.conj,
                            ST_Y(ST_Transform(u.geom, 4326)) AS latitude,
                            ST_X(ST_Transform(u.geom, 4326)) AS longitude,
                            (TRUE %s) AS inside
                     FROM %s u
                     LEFT JOIN sub s ON s.cod_id = u.sub
                     WHERE u.geom IS NOT NULL
-                    """.formatted(t[1], t[2], inside, t[0]));
+                    """.formatted(t.idColumn(), t.type().name(), t.postoColumn(), inside, t.tableName()));
             if (neighbors) {
                 if (!criteria.distCodes().isEmpty()) sql.append(" AND s.dist IN (:distCodes) ");
                 sql.append(" AND ST_DWithin(u.geom::geography, (SELECT g FROM area)::geography, :radiusM) ");
@@ -88,6 +101,7 @@ public class DecisionRepository {
             selects.add(sql.toString());
         }
 
+        if (selects.isEmpty()) return List.of();
         String sql = String.join("\nUNION ALL\n", selects);
         if (neighbors) {
             String points = pointsSource(criteria, bairroLikeMap, params);
@@ -116,6 +130,7 @@ public class DecisionRepository {
     private String pointsSource(DecisionCriteria criteria, boolean bairroLikeMap, MapSqlParameterSource params) {
         List<String> parts = new ArrayList<>();
         for (TargetTable t : POINT_TABLES) {
+            if (!criteria.isCoverageLayer(t.tableName())) continue;
             if (!criteria.targetLevels().isEmpty() && !criteria.targetLevels().contains(t.level())) continue;
             StringBuilder sql = new StringBuilder("""
                     SELECT u.cod_id_encr AS id, '%s' AS level, u.mun, u.brr, u.sub, u.conj,

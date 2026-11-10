@@ -13,6 +13,7 @@ import 'package:tecsys_app/features/map/data/models/selected_area.dart';
 import 'package:tecsys_app/features/map/data/services/municipios_centro_service.dart';
 import 'package:tecsys_app/features/map/data/services/points_filter_service.dart';
 import 'package:tecsys_app/features/map/state/map_areas_controller.dart';
+import 'package:tecsys_app/features/projects/data/models/project_version.dart';
 import 'package:tecsys_app/features/projects/data/services/ibge_service.dart';
 import 'package:tecsys_app/features/projects/data/services/project_service.dart';
 import 'package:tecsys_app/features/projects/state/project_store.dart';
@@ -24,6 +25,8 @@ class PointsMapController extends ChangeNotifier {
     required this.distribuidoraLabel,
     required List<Municipio> municipios,
     this.onFocusPoint,
+    this.projetoId,
+    ProjectVersion? versaoInicial,
     this.focusDebounce = const Duration(milliseconds: 600),
     PointsFilterService? pointsService,
     MunicipiosCentroService? centroService,
@@ -38,6 +41,32 @@ class PointsMapController extends ChangeNotifier {
         _projects = projectsService ?? ProjectsService(),
         _store = store ?? ProjectsStore.instance {
     areas.addListener(_agendarContagemAreas);
+    if (versaoInicial != null) _carregarVersao(versaoInicial);
+  }
+
+  /// Projeto salvo aberto para ajustar e recalcular (#TG-86); null = novo.
+  final int? projetoId;
+
+  bool get editando => projetoId != null;
+
+  /// Aplica a área e os filtros de uma versão salva do projeto. As cidades
+  /// já chegam em `municipios` (as da mesma versão).
+  void _carregarVersao(ProjectVersion v) {
+    if (v.targetLayers.isNotEmpty) {
+      _targetLayers = _ajustarNiveis(const [], v.targetLayers);
+    }
+    _conjCodes = v.conjCodes;
+    _subCodes = v.subCodes;
+    _clasSub = v.clasSub.map(MapFilterOptions.clasSubRotulo).toList();
+    _cnaeCodes = v.cnaeCodes;
+    _bairroNames = v.bairroNames;
+    final cobertura = _soAs(v.lista('coverage_layers'), MapFilterOptions.camadasCobertura);
+    if (cobertura.isNotEmpty) _coverageLayers = cobertura;
+    final candidatas = _soAs(v.lista('candidate_layers'), MapFilterOptions.camadasCandidatas);
+    if (candidatas.isNotEmpty) _candidateLayers = candidatas;
+    for (final area in SelectedArea.fromGeoJson(v.polygon)) {
+      areas.adicionar(area);
+    }
   }
 
   final String nomeProjeto;
@@ -70,6 +99,8 @@ class PointsMapController extends ChangeNotifier {
   List<String> _clasSub = [];
   List<String> _cnaeCodes = [];
   List<String> _bairroNames = [];
+  List<String> _coverageLayers = List.of(MapFilterOptions.padraoCobertura);
+  List<String> _candidateLayers = List.of(MapFilterOptions.padraoCandidatos);
 
   ContagemPontos? _contagem;
   bool _zoomBaixoDemais = false;
@@ -96,6 +127,8 @@ class PointsMapController extends ChangeNotifier {
   List<String> get clasSub => _clasSub;
   List<String> get cnaeCodes => _cnaeCodes;
   List<String> get bairroNames => _bairroNames;
+  List<String> get coverageLayers => _coverageLayers;
+  List<String> get candidateLayers => _candidateLayers;
 
   /// Pontos a cobrir (consumidores) com os filtros atuais; null = contando.
   int? get totalPontos => _contagem?.pontos;
@@ -117,6 +150,15 @@ class PointsMapController extends ChangeNotifier {
   /// Centro das cidades escolhidas (média dos centros que vieram do
   /// backend). Sem esses dados ainda, usa o centro fixo antigo.
   LatLng get centroInicial {
+    // Projeto aberto com área: começa no meio das áreas salvas.
+    if (!areas.isEmpty) {
+      final a = areas.areas;
+      final norte = a.map((x) => x.north).reduce((p, q) => p > q ? p : q);
+      final sul = a.map((x) => x.south).reduce((p, q) => p < q ? p : q);
+      final oeste = a.map((x) => x.west).reduce((p, q) => p < q ? p : q);
+      final leste = a.map((x) => x.east).reduce((p, q) => p > q ? p : q);
+      return LatLng((norte + sul) / 2, (oeste + leste) / 2);
+    }
     final centros = [
       for (final m in _municipiosIniciais)
         if (_centros[m.codigoIbge] case final c?) c,
@@ -165,6 +207,8 @@ class PointsMapController extends ChangeNotifier {
         cnaeCodes: _cnaeCodes,
         bairroNames:
             _bairroNames.map((v) => normalizarTexto(v).toUpperCase()).toList(),
+        coverageLayers: _coverageLayers,
+        candidateLayers: _candidateLayers,
       );
 
 
@@ -209,6 +253,25 @@ class PointsMapController extends ChangeNotifier {
     if (especificos.isEmpty) return const [todos];
     return especificos;
   }
+
+  /// Camadas que são pontos a cobrir (#TG-92). Pelo menos uma.
+  void setCoverageLayers(List<String> valores) {
+    final camadas = _soAs(valores, MapFilterOptions.camadasCobertura);
+    if (camadas.isEmpty) return;
+    _alterarFiltro(() => _coverageLayers = camadas);
+  }
+
+  /// Camadas candidatas a gateway (#TG-92). Pelo menos uma.
+  void setCandidateLayers(List<String> valores) {
+    final camadas = _soAs(valores, MapFilterOptions.camadasCandidatas);
+    if (camadas.isEmpty) return;
+    _alterarFiltro(() => _candidateLayers = camadas);
+  }
+
+  /// Só as opções válidas, na ordem das opções (a mesma lista dá o mesmo
+  /// filtro, qualquer que seja a ordem em que foi marcada).
+  static List<String> _soAs(List<String> valores, List<String> opcoes) =>
+      [for (final o in opcoes) if (valores.contains(o)) o];
 
   void setConjCodes(List<String> valores) =>
       _alterarFiltro(() => _conjCodes = List.of(valores));
@@ -265,6 +328,8 @@ class PointsMapController extends ChangeNotifier {
           clasSub: f.clasSub,
           cnaeCodes: f.cnaeCodes,
           bairroNames: f.bairroNames,
+          coverageLayers: f.coverageLayers,
+          candidateLayers: f.candidateLayers,
           countOnly: true,
         );
         if (_disposed) return;
@@ -305,6 +370,8 @@ class PointsMapController extends ChangeNotifier {
       clasSub: f.clasSub,
       cnaeCodes: f.cnaeCodes,
       bairroNames: f.bairroNames,
+      coverageLayers: f.coverageLayers,
+      candidateLayers: f.candidateLayers,
       countOnly: countOnly,
     );
   }
@@ -336,6 +403,26 @@ class PointsMapController extends ChangeNotifier {
     onFocusPoint?.call(ponto);
   }
 
+  /// `filter_params` gravado no histórico do projeto e lido pelo motor.
+  Map<String, dynamic> get filterParams {
+    final f = filtros;
+    return {
+      'dist_codes': [distCode],
+      'mun_codes': munCodes,
+      'polygon_geojson': areas.geoJson,
+      'target_layers': f.targetLayers,
+      'conj_codes': f.conjCodes,
+      'sub_codes': f.subCodes,
+      'clas_sub': f.clasSub,
+      'cnae_codes': f.cnaeCodes,
+      'bairro_names': f.bairroNames,
+      'coverage_layers': f.coverageLayers,
+      'candidate_layers': f.candidateLayers,
+    };
+  }
+
+  /// Salva o projeto novo ou, se for um projeto aberto ([editando]),
+  /// recalcula gerando uma versão nova.
   Future<bool> salvarProjeto() async {
     if (!podeSalvar || _salvando) return false;
     _salvando = true;
@@ -352,26 +439,25 @@ class PointsMapController extends ChangeNotifier {
         notifyListeners();
         return false;
       }
-      final f = filtros;
-
       final geo = areas.geoJson;
-      final projetoCriado = await _projects.criar(
-        name: nomeProjeto,
-        distCode: distCode,
-        geometry: geo == null ? null : jsonEncode(geo),
-        filterParams: {
-          'dist_codes': [distCode],
-          'mun_codes': munCodes,
-          'polygon_geojson': geo,
-          'target_layers': f.targetLayers,
-          'conj_codes': f.conjCodes,
-          'sub_codes': f.subCodes,
-          'clas_sub': f.clasSub,
-          'cnae_codes': f.cnaeCodes,
-          'bairro_names': f.bairroNames,
-        },
-      );
-      _store.adicionar(projetoCriado);
+      final id = projetoId;
+      if (id == null) {
+        final projetoCriado = await _projects.criar(
+          name: nomeProjeto,
+          distCode: distCode,
+          geometry: geo == null ? null : jsonEncode(geo),
+          filterParams: filterParams,
+        );
+        _store.adicionar(projetoCriado);
+      } else {
+        // Projeto aberto (#TG-86): nova versão e novo cálculo (#TG-84).
+        final recalculado = await _projects.recalcular(
+          id: id,
+          geometry: geo == null ? null : jsonEncode(geo),
+          filterParams: filterParams,
+        );
+        _store.atualizar(recalculado);
+      }
 
       if (_disposed) return true;
       _totalFinal = resultadoPontos.totalPoints;

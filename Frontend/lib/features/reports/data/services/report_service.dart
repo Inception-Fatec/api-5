@@ -14,7 +14,7 @@ abstract class ReportService {
   /// como saber (aí vale o status que a lista já trazia). Necessário
   /// porque o motor grava SUCESSO/FALHA direto no banco e a lista de
   /// projetos do app pode estar desatualizada.
-  Future<String?> statusAtual(int projectId);
+  Future<StatusProjeto?> statusAtual(int projectId);
 
   Future<CoverageReport> carregar(int projectId);
 }
@@ -33,9 +33,13 @@ class ApiReportService implements ReportService {
   bool get requiresCompletedProject => true;
 
   @override
-  Future<String?> statusAtual(int projectId) async {
+  Future<StatusProjeto?> statusAtual(int projectId) async {
     final data = await _client.getJson('/projects/$projectId');
-    return data is Map ? data['status'] as String? : null;
+    if (data is! Map) return null;
+    return StatusProjeto(
+      data['status'] as String?,
+      (data['status_message'] as String?)?.trim(),
+    );
   }
 
   @override
@@ -45,4 +49,12 @@ class ApiReportService implements ReportService {
     // de pontos (na web o compute roda na própria thread, sem isolate).
     return compute(parseCoverageReportBytes, bytes);
   }
+}
+
+/// Status atual do projeto e, se falhou, o motivo (`status_message`).
+class StatusProjeto {
+  final String? status;
+  final String? mensagem;
+
+  const StatusProjeto(this.status, this.mensagem);
 }

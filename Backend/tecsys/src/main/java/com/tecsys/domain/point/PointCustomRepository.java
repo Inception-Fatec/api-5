@@ -31,38 +31,34 @@ public class PointCustomRepository {
         MapSqlParameterSource params = new MapSqlParameterSource();
         List<String> unionQueries = new ArrayList<>();
 
-        Set<TableMetadata> targetTables = resolveTablesFromTensionLevels(request.targetLayers());
+        List<Consulta> consultas = resolverConsultas(request);
 
         boolean temFiltroDeAtributo = (request.clasSub() != null && !request.clasSub().isEmpty())
                 || (request.cnaeCodes() != null && !request.cnaeCodes().isEmpty())
                 || (request.bairroNames() != null && !request.bairroNames().isEmpty());
-        if (temFiltroDeAtributo) {
-            // Classe, CNAE e bairro só existem nos consumidores: a rede some do
-            // desenho, mas os candidatos continuam (o motor também os usa).
-            targetTables = targetTables.stream()
-                    .filter(t -> t.hasAttributes || t.isCandidato())
-                    .collect(Collectors.toSet());
-        }
 
         // Rede e subestação são só desenho: só entram quando o mapa mostra os
         // elementos um a um (zoom de perto). Nas bolhas e na contagem elas
         // ficam de fora — as bolhas contam só pontos a cobrir, igual ao topo
-        // e ao relatório, e a consulta fica mais leve.
+        // e ao relatório, e a consulta fica mais leve. Com classe, CNAE ou
+        // bairro (que só existem nos consumidores) a rede também some.
         boolean countOnly = Boolean.TRUE.equals(request.countOnly());
         Double cell = request.clusterCell();
         boolean agrupado = !countOnly && cell != null && cell > 0;
-        if (countOnly || agrupado) {
-            targetTables = targetTables.stream()
-                    .filter(t -> !t.categoria().equals("rede"))
-                    .collect(Collectors.toSet());
+        if (countOnly || agrupado || temFiltroDeAtributo) {
+            consultas = consultas.stream()
+                    .filter(c -> !c.cat().equals(REDE))
+                    .toList();
         }
 
-        for (TableMetadata meta : targetTables) {
+        for (Consulta consulta : consultas) {
+            TableMetadata meta = consulta.meta();
             StringBuilder subQuery = new StringBuilder();
-            String suf = "_" + meta.tableName;
+            // Uma camada pode entrar duas vezes (ponto e candidato): sufixo por papel.
+            String suf = "_" + meta.tableName + "_" + consulta.cat();
 
             subQuery.append("SELECT '").append(meta.layerName).append("' AS layer, ")
-                    .append("'").append(meta.categoria()).append("' AS cat, ")
+                    .append("'").append(consulta.cat()).append("' AS cat, ")
                     .append(meta.idColumn).append(" AS id, ");
             for (String coluna : COLUNAS_EXTRAS) {
                 if (meta.colunasExtras.contains(coluna)) {
@@ -125,7 +121,9 @@ public class PointCustomRepository {
                 params.addValue("subCodes" + suf, request.subCodes());
             }
 
-            if (meta.hasAttributes) {
+            // Classe, CNAE e bairro filtram só os pontos a cobrir: os
+            // candidatos não dependem deles (igual ao motor).
+            if (meta.hasAttributes && consulta.cat().equals(PONTO)) {
                 if (request.clasSub() != null && !request.clasSub().isEmpty()) {
                     subQuery.append(" AND clas_sub IN (:clasSub").append(suf).append(") ");
                     params.addValue("clasSub" + suf, request.clasSub());
@@ -314,8 +312,64 @@ public class PointCustomRepository {
         return jdbcTemplate.queryForList(sql, params, String.class);
     }
 
-    private Set<TableMetadata> resolveTablesFromTensionLevels(List<String> targetLayers) {
-        List<TableMetadata> allTables = List.of(
+    static final String PONTO = "ponto";
+    static final String CANDIDATO = "candidato";
+    static final String REDE = "rede";
+
+    /** Camadas que podem ser pontos a cobrir (consumidores). */
+    static final List<String> CAMADAS_COBERTURA = List.of("ucat_pj", "ucmt_pj", "ucbt");
+    /** Camadas que podem ser candidatas a gateway (transformadores e consumidores). */
+    static final List<String> CAMADAS_CANDIDATAS = List.of("untrmt", "untrat", "ucat_pj", "ucmt_pj", "ucbt");
+    static final List<String> PADRAO_COBERTURA = CAMADAS_COBERTURA;
+    static final List<String> PADRAO_CANDIDATOS = List.of("untrmt", "untrat");
+
+    /** Uma subconsulta: a camada e o papel com que ela entra (ponto, candidato ou rede). */
+    record Consulta(TableMetadata meta, String cat) {
+    }
+
+    /** Camadas válidas pedidas para um papel; nada válido = padrão. */
+    static Set<String> camadas(List<String> pedidas, List<String> permitidas, List<String> padrao) {
+        if (pedidas != null) {
+            Set<String> validas = pedidas.stream()
+                    .filter(c -> c != null)
+                    .map(c -> c.trim().toLowerCase())
+                    .filter(permitidas::contains)
+                    .collect(Collectors.toSet());
+            if (!validas.isEmpty()) return validas;
+        }
+        return Set.copyOf(padrao);
+    }
+
+    /**
+     * O que entra no mapa e em que papel (#TG-92):
+     * <ul>
+     *   <li>ponto a cobrir: camada de {@code coverage_layers} no nível de tensão escolhido;</li>
+     *   <li>candidato: camada de {@code candidate_layers}, independente da tensão (igual ao motor);</li>
+     *   <li>rede: trechos, subestação e transformadores que não são candidatos (só desenho).</li>
+     * </ul>
+     * Consumidor sem papel não aparece. Uma camada nos dois papéis entra duas vezes.
+     */
+    static List<Consulta> resolverConsultas(PointFilterRequestDto request) {
+        Set<String> cobertura = camadas(request.coverageLayers(), CAMADAS_COBERTURA, PADRAO_COBERTURA);
+        Set<String> candidatas = camadas(request.candidateLayers(), CAMADAS_CANDIDATAS, PADRAO_CANDIDATOS);
+        Set<TableMetadata> noNivel = resolveTablesFromTensionLevels(request.targetLayers());
+
+        List<Consulta> consultas = new ArrayList<>();
+        for (TableMetadata t : TODAS_AS_TABELAS) {
+            boolean nivelOk = noNivel.contains(t);
+            if (t.hasAttributes) {
+                if (cobertura.contains(t.tableName) && nivelOk) consultas.add(new Consulta(t, PONTO));
+                if (candidatas.contains(t.tableName)) consultas.add(new Consulta(t, CANDIDATO));
+            } else if (candidatas.contains(t.tableName)) {
+                consultas.add(new Consulta(t, CANDIDATO));
+            } else if (nivelOk) {
+                consultas.add(new Consulta(t, REDE));
+            }
+        }
+        return consultas;
+    }
+
+    private static final List<TableMetadata> TODAS_AS_TABELAS = List.of(
                 new TableMetadata("sub", "cod_id", "SUB", false, false, false, Set.of("nome", "dist")),
                 new TableMetadata("ucat_pj", "cod_id_encr", "ALTO", true, true, true,
                         Set.of("mun", "brr", "sub", "conj", "clas_sub", "cnae", "car_inst", "dem_cont", "tip_sist",
@@ -332,26 +386,24 @@ public class PointCustomRepository {
                                 "uni_tr_mt", "qtd_consumidores")),
                 new TableMetadata("ssdbt", "cod_id", "BAIXO", false, true, false, Set.of("sub", "conj", "uni_tr_mt")));
 
+    /** Tabelas no nível de tensão pedido (a subestação sempre entra). */
+    private static Set<TableMetadata> resolveTablesFromTensionLevels(List<String> targetLayers) {
+        List<TableMetadata> allTables = TODAS_AS_TABELAS;
+
         if (targetLayers == null || targetLayers.isEmpty() || targetLayers.contains("all")) {
             return Set.copyOf(allTables);
         }
 
         Set<String> upperLayers = targetLayers.stream().map(String::toUpperCase).collect(Collectors.toSet());
         return allTables.stream()
-                .filter(t -> upperLayers.contains(t.layerName)
-                        || t.layerName.equals("SUB")
-                        || t.isCandidato())
+                .filter(t -> upperLayers.contains(t.layerName) || t.layerName.equals("SUB"))
                 .collect(Collectors.toSet());
     }
 
-    private record TableMetadata(
+    record TableMetadata(
             String tableName, String idColumn, String layerName,
             boolean hasMun, boolean hasConj, boolean hasAttributes,
             Set<String> colunasExtras) {
-
-        boolean isCandidato() {
-            return tableName.startsWith("untr");
-        }
 
         /**
          * Tabelas que guardam a distribuidora na própria linha. A SSDAT da BDGD não tem o
@@ -360,14 +412,6 @@ public class PointCustomRepository {
          */
         boolean temDistPropria() {
             return tableName.equals("ssdat");
-        }
-
-        String categoria() {
-            if (hasAttributes)
-                return "ponto";
-            if (isCandidato())
-                return "candidato";
-            return "rede";
         }
     }
 }

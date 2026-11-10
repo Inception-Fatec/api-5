@@ -15,7 +15,17 @@ class ReportHeader extends StatelessWidget {
     this.onExportPdf,
     this.exportingPdf = false,
     this.cidades = '',
+    this.onOpenMap,
+    this.abrindoMapa = false,
+    this.status,
+    this.onVersions,
   });
+
+  /// "Versões": histórico do projeto (#TG-85); nulo esconde.
+  final VoidCallback? onVersions;
+
+  /// Status atual (do servidor); null = o que veio com o projeto.
+  final String? status;
 
   final Project project;
 
@@ -26,9 +36,24 @@ class ReportHeader extends StatelessWidget {
   final VoidCallback? onExportPdf;
   final bool exportingPdf;
 
+  /// "Abrir no mapa" para ajustar os filtros e recalcular (#TG-86); nulo
+  /// esconde (projeto ainda calculando).
+  final VoidCallback? onOpenMap;
+  final bool abrindoMapa;
+
+  Widget _iconeMapa() => abrindoMapa
+      ? const SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        )
+      : const Icon(Icons.edit_location_alt_outlined, size: 18);
+
   @override
   Widget build(BuildContext context) {
-    final statusColor = ProjectStatusStyle.color(project.status);
+    final largo = MediaQuery.of(context).size.width >= AppBreakpoints.web;
+    final statusAtual = status ?? project.status;
+    final statusColor = ProjectStatusStyle.color(statusAtual);
     return Material(
       color: AppColors.surface,
       child: Container(
@@ -98,7 +123,7 @@ class ReportHeader extends StatelessWidget {
                               color: statusColor.withOpacity(0.12),
                               borderRadius: AppRadius.pill),
                           child: Text(
-                            ProjectStatusStyle.label(project.status),
+                            ProjectStatusStyle.label(statusAtual),
                             style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
@@ -109,6 +134,50 @@ class ReportHeader extends StatelessWidget {
                     ),
                   ),
                 ),
+                // Ações ao lado do PDF: com texto no web, só o ícone (com dica)
+                // em tela estreita, para não espremer o nome do projeto.
+                if (onOpenMap != null)
+                  Padding(
+                    padding: const EdgeInsets.only(
+                        top: AppSpacing.xs, left: AppSpacing.xs),
+                    child: largo
+                        ? ElevatedButton.icon(
+                            onPressed: abrindoMapa ? null : onOpenMap,
+                            style: AppButtonStyles.primary(flat: true),
+                            icon: _iconeMapa(),
+                            label: const Text('Editar no mapa e recalcular'),
+                          )
+                        : IconButton.filled(
+                            tooltip: 'Editar no mapa e recalcular',
+                            onPressed: abrindoMapa ? null : onOpenMap,
+                            style: IconButton.styleFrom(
+                                backgroundColor: AppColors.primary,
+                                foregroundColor: AppColors.onPrimary),
+                            icon: _iconeMapa(),
+                          ),
+                  ),
+                if (onVersions != null)
+                  Padding(
+                    padding: const EdgeInsets.only(
+                        top: AppSpacing.xs, left: AppSpacing.xs),
+                    child: largo
+                        ? OutlinedButton.icon(
+                            onPressed: onVersions,
+                            style: AppButtonStyles.outlinedPrimary(
+                                radius: AppRadius.md),
+                            icon: const Icon(Icons.history, size: 18),
+                            label: const Text('Versões'),
+                          )
+                        : IconButton.outlined(
+                            tooltip: 'Versões',
+                            onPressed: onVersions,
+                            style: IconButton.styleFrom(
+                                foregroundColor: AppColors.primary,
+                                side: const BorderSide(
+                                    color: AppColors.primary)),
+                            icon: const Icon(Icons.history),
+                          ),
+                  ),
                 if (onExportPdf != null)
                   exportingPdf
                       ? const SizedBox(

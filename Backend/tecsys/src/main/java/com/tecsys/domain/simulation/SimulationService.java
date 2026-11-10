@@ -19,6 +19,7 @@ public class SimulationService {
     private final ProjectHistoryRepository projectHistoryRepository;
     private final UserRepository userRepository;
     private final DecisionEngineClient decisionEngineClient;
+    private final ProjectService projectService;
 
     @Transactional
     public ProjectResponseDto startSimulation(SimulationRunRequestDto request, String userEmail) {
@@ -46,8 +47,9 @@ public class SimulationService {
         project.setStatus(ProjectStatus.ENVIADO);
         projectRepository.save(project);
 
-        // aciona o motor
-        decisionEngineClient.sendToEngineAsync(project.getId());
+        // aciona o motor depois do commit (#TG-96); fora do ar → FALHA com motivo
+        Long id = project.getId();
+        decisionEngineClient.sendAfterCommit(id, motivo -> projectService.marcarFalha(id, motivo));
 
         return toDto(project, request.filterParams());
     }
@@ -63,7 +65,9 @@ public class SimulationService {
                 project.getCreatedAt(),
                 project.getUpdatedAt(),
                 project.isActive(),
-                ProjectResponseDto.munCodesDe(filterParams)
+                ProjectResponseDto.munCodesDe(filterParams),
+                project.getStatusMessage(),
+                project.getLastActivityAt()
         );
     }
 }

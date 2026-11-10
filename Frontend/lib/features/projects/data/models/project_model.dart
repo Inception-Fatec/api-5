@@ -18,6 +18,13 @@ class Project {
   /// Municípios (IBGE) do último cálculo; vazio antes de calcular (#TG-148).
   final List<String> munCodes;
 
+  /// Motivo da falha quando o status é FALHA (ex.: motor fora do ar).
+  final String? statusMessage;
+
+  /// Atividade mais recente (criar, recalcular, abrir o relatório), para
+  /// os Recentes (#TG-88); null em respostas antigas.
+  final DateTime? lastActivityAt;
+
   const Project({
     required this.id,
     required this.name,
@@ -29,7 +36,26 @@ class Project {
     this.updatedAt,
     this.ativo = true,
     this.munCodes = const [],
+    this.statusMessage,
+    this.lastActivityAt,
   });
+
+  /// Quando o projeto teve atividade pela última vez (sem o dado, a criação).
+  DateTime get ultimaAtividade => lastActivityAt ?? createdAt;
+
+  Project copyWith({String? status, DateTime? lastActivityAt}) => Project(
+        id: id,
+        name: name,
+        distCode: distCode,
+        status: status ?? this.status,
+        createdById: createdById,
+        createdByName: createdByName,
+        createdAt: createdAt,
+        ativo: ativo,
+        munCodes: munCodes,
+        statusMessage: statusMessage,
+        lastActivityAt: lastActivityAt ?? this.lastActivityAt,
+      );
 
   factory Project.fromJson(Map<String, dynamic> json) {
     return Project(
@@ -48,6 +74,9 @@ class Project {
           .map((e) => e.toString().trim())
           .where((e) => e.isNotEmpty)
           .toList(),
+      statusMessage: (json['status_message'] as String?)?.trim(),
+      lastActivityAt:
+          DateTime.tryParse(json['last_activity_at']?.toString() ?? '')?.toLocal(),
     );
   }
 
