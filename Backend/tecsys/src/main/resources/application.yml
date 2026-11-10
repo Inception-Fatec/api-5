@@ -34,7 +34,7 @@ spring:
 etl:
   python-executable: ${ETL_PYTHON:python}
   script-path: ${ETL_SCRIPT_PATH:../api-5/modules/etl_cli.py}
-  timeout-minutes: 120
+  timeout-minutes: ${ETL_TIMEOUT_MINUTES:120}
 
 # URL do motor de decisão. Lida pelo DecisionEngineClient; nos scripts e no
 # docker-compose vem da variável ENGINE_URL.
