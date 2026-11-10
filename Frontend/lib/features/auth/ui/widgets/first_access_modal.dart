@@ -78,7 +78,8 @@ class _FirstAccessModalState extends State<FirstAccessModal> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 400),
-          child: Padding(
+          // Rola quando o teclado encolhe o diálogo.
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,

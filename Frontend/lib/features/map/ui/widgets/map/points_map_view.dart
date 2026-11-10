@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+import 'package:tecsys_app/features/map/data/services/points_filter_service.dart';
 import 'package:tecsys_app/features/map/data/constants/map_config.dart';
 import 'package:tecsys_app/features/map/data/models/filtros_pontos.dart';
 import 'package:tecsys_app/features/map/data/models/map_point.dart';
@@ -15,6 +16,7 @@ import 'package:tecsys_app/features/map/state/map_areas_controller.dart';
 import 'package:tecsys_app/features/map/state/points_layer_controller.dart';
 import 'package:tecsys_app/features/map/ui/styles/map_styles.dart';
 import 'package:tecsys_app/features/map/ui/widgets/map/area_selection_overlay.dart';
+import 'package:tecsys_app/features/map/ui/widgets/map/center_scroll_zoom.dart';
 import 'package:tecsys_app/features/map/ui/widgets/map/cluster_bubbles_layer.dart';
 import 'package:tecsys_app/features/map/ui/widgets/map/map_coordinates_panel.dart';
 import 'package:tecsys_app/features/map/ui/widgets/map/map_legend.dart';
@@ -32,7 +34,7 @@ class PointsMapView extends StatefulWidget {
   final MapAreasController areas;
   final LatLng initialCenter;
   final double initialZoom;
-  final ValueChanged<int>? onTotalChanged;
+  final ValueChanged<ContagemPontos>? onTotalChanged;
   final ValueChanged<bool>? onZoomMuitoBaixo;
 
   const PointsMapView({
@@ -208,9 +210,41 @@ class PointsMapViewState extends State<PointsMapView>
   Future<void> _abrir() async {
     try {
       await _enquadrarCidades();
-    } catch (_) {
-    }
+    } catch (_) {}
     if (mounted) _layer.agendarBusca();
+  }
+
+  /// Limites das bolhas sem as isoladas: a partir do centro (ponderado
+  /// pelo nº de pontos de cada bolha), junta as bolhas mais próximas até
+  /// somar 99% dos pontos. Algumas dezenas de pontos com coordenada errada
+  /// longe da cidade não puxam mais o enquadramento.
+  static LatLngBounds _limitesSemIsolados(List<MapPoint> celulas) {
+    if (celulas.length < 3) {
+      return LatLngBounds.fromPoints([for (final c in celulas) c.position]);
+    }
+    var total = 0.0, lat = 0.0, lon = 0.0;
+    for (final c in celulas) {
+      final peso = c.clusterCount.toDouble();
+      total += peso;
+      lat += c.position.latitude * peso;
+      lon += c.position.longitude * peso;
+    }
+    final cLat = lat / total, cLon = lon / total;
+    double dist2(MapPoint c) {
+      final dy = c.position.latitude - cLat;
+      final dx = c.position.longitude - cLon;
+      return dx * dx + dy * dy;
+    }
+
+    final ordenadas = [...celulas]..sort((a, b) => dist2(a).compareTo(dist2(b)));
+    final pontos = <LatLng>[];
+    var acumulado = 0.0;
+    for (final c in ordenadas) {
+      pontos.add(c.position);
+      acumulado += c.clusterCount;
+      if (acumulado >= total * 0.99) break;
+    }
+    return LatLngBounds.fromPoints(pontos);
   }
 
   Future<void> _enquadrarCidades() async {
@@ -221,9 +255,7 @@ class PointsMapViewState extends State<PointsMapView>
     } else {
       mapController.fitCamera(
         CameraFit.bounds(
-          bounds: LatLngBounds.fromPoints(
-            [for (final c in celulas) c.position],
-          ),
+          bounds: _limitesSemIsolados(celulas),
           padding: const EdgeInsets.all(MapConfig.overviewFitPadding),
           // Fica nas bolhas mesmo numa cidade pequena.
           maxZoom: MapConfig.minZoomToSearch - 0.5,
@@ -326,64 +358,77 @@ class PointsMapViewState extends State<PointsMapView>
           listenable: _layer,
           builder: (context, _) => Stack(
             children: [
-              FlutterMap(
-                mapController: mapController,
-                options: MapOptions(
-                  initialCenter: widget.initialCenter,
-                  initialZoom: widget.initialZoom,
-                  minZoom: MapConfig.minZoom,
-                  maxZoom: MapConfig.maxZoom,
-                  onMapReady: _abrir,
-                  onTap: _aoTocarMapa,
-                  // Rotação desligada: a conversão tela -> coordenada
-                  // assume o norte para cima. Selecionando, o mapa congela.
-                  interactionOptions: InteractionOptions(
-                    flags: _selecionando
-                        ? InteractiveFlag.none
-                        : InteractiveFlag.all & ~InteractiveFlag.rotate,
-                    // Touchpad no navegador: a pinça chega como rolagem, e
-                    // o padrão (0.005) responde devagar demais.
-                    scrollWheelVelocity: MapConfig.scrollWheelVelocity,
+              CenterScrollZoom(
+                controller: mapController,
+                enabled: !_selecionando,
+                onZoom: () {
+                  _camAnim.stop();
+                  _layer.agendarBusca(aguardar: MapConfig.scrollZoomSettle);
+                },
+                child: FlutterMap(
+                  mapController: mapController,
+                  options: MapOptions(
+                    initialCenter: widget.initialCenter,
+                    initialZoom: widget.initialZoom,
+                    minZoom: MapConfig.minZoom,
+                    maxZoom: MapConfig.maxZoom,
+                    onMapReady: _abrir,
+                    onTap: _aoTocarMapa,
+                    // Rotação desligada: a conversão tela -> coordenada
+                    // assume o norte para cima. Selecionando, o mapa congela.
+                    // No celular a roda fica com o CenterScrollZoom.
+                    interactionOptions: InteractionOptions(
+                      flags: _selecionando
+                          ? InteractiveFlag.none
+                          : InteractiveFlag.all &
+                              ~InteractiveFlag.rotate &
+                              (CenterScrollZoom.ativo
+                                  ? ~InteractiveFlag.scrollWheelZoom
+                                  : InteractiveFlag.all),
+                      // Touchpad no navegador: a pinça chega como rolagem, e
+                      // o padrão (0.005) responde devagar demais.
+                      scrollWheelVelocity: MapConfig.scrollWheelVelocity,
+                    ),
                   ),
-                ),
-                children: [
-                  TileLayer(
-                    urlTemplate: MapConfig.osmTileUrl,
-                    userAgentPackageName: MapConfig.userAgentPackage,
-                  ),
-                  if (_mostrarRelevo)
-                    Opacity(
-                      opacity: MapConfig.reliefOpacity,
-                      child: TileLayer(
-                        urlTemplate: MapConfig.reliefTileUrl,
-                        userAgentPackageName: MapConfig.userAgentPackage,
-                        maxNativeZoom: MapConfig.reliefMaxNativeZoom,
+                  children: [
+                    TileLayer(
+                      urlTemplate: MapConfig.osmTileUrl,
+                      userAgentPackageName: MapConfig.userAgentPackage,
+                    ),
+                    if (_mostrarRelevo)
+                      Opacity(
+                        opacity: MapConfig.reliefOpacity,
+                        child: TileLayer(
+                          urlTemplate: MapConfig.reliefTileUrl,
+                          userAgentPackageName: MapConfig.userAgentPackage,
+                          maxNativeZoom: MapConfig.reliefMaxNativeZoom,
+                        ),
+                      ),
+                    SelectedAreasLayer(
+                      areas: areas.areas,
+                      selecionada: areas.selecionada,
+                      destaque: _destaque,
+                    ),
+                    // Bolhas <-> pontos: cada camada esmaece no lugar da outra
+                    // (opacidade da camada inteira, não por marcador).
+                    _esmaecer(
+                      visivel: _layer.agrupado,
+                      child: ClusterBubblesLayer(
+                        agrupamento: _layer.agrupamento,
+                        visivel: _layer.agrupado,
+                        onTap: _aproximarBolha,
                       ),
                     ),
-                  SelectedAreasLayer(
-                    areas: areas.areas,
-                    selecionada: areas.selecionada,
-                    destaque: _destaque,
-                  ),
-                  // Bolhas <-> pontos: cada camada esmaece no lugar da outra
-                  // (opacidade da camada inteira, não por marcador).
-                  _esmaecer(
-                    visivel: _layer.agrupado,
-                    child: ClusterBubblesLayer(
-                      agrupamento: _layer.agrupamento,
-                      visivel: _layer.agrupado,
-                      onTap: _aproximarBolha,
+                    _esmaecer(
+                      visivel: !_layer.agrupado,
+                      child: PointMarkersLayer(
+                        pontos: _layer.pontos,
+                        onTap: _abrirDetalhe,
+                        destacado: areas.isEmpty ? null : areas.contemPonto,
+                      ),
                     ),
-                  ),
-                  _esmaecer(
-                    visivel: !_layer.agrupado,
-                    child: PointMarkersLayer(
-                      pontos: _layer.pontos,
-                      onTap: _abrirDetalhe,
-                      destacado: areas.isEmpty ? null : areas.contemPonto,
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               if (_selecionando)
                 Positioned.fill(
@@ -460,7 +505,8 @@ class PointsMapViewState extends State<PointsMapView>
                   ],
                 ),
               ),
-              if (_layer.erro case final erro? when !_layer.carregandoVisaoGeral)
+              if (_layer.erro case final erro?
+                  when !_layer.carregandoVisaoGeral)
                 Positioned(
                   left: MapStyles.zoomHintSideMargin,
                   right: MapStyles.zoomHintSideMargin,

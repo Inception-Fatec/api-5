@@ -1,4 +1,5 @@
 import 'package:tecsys_app/core/utils/distributors.dart';
+import 'package:tecsys_app/features/projects/data/services/ibge_service.dart';
 import 'package:tecsys_app/features/reports/data/models/coverage_report.dart';
 import 'package:tecsys_app/features/reports/ui/report_efficiency.dart';
 import 'package:tecsys_app/features/reports/ui/report_formatters.dart';
@@ -6,13 +7,6 @@ import 'package:tecsys_app/features/reports/ui/styles/report_styles.dart';
 
 /// Textos do relatório, montados a partir dos dados (sem widgets, para
 /// poderem ser testados direto).
-
-/// Municípios com dados carregados hoje (mesmos códigos IBGE de
-/// `MapRegions`). Código desconhecido aparece como o próprio código.
-const Map<String, String> _municipios = {
-  '3549904': 'São José dos Campos',
-  '3508504': 'Caçapava',
-};
 
 const Map<String, String> _niveis = {
   'ALTO': 'Alta',
@@ -30,7 +24,7 @@ String joinList(List<String> items) {
 /// Frase de abertura do relatório (o que o estudo responde).
 String reportIntro(ReportSummary summary) =>
     'Estudo simulado dos pontos onde instalar gateways para atender o maior '
-    'número de pontos de interesse com o menor número de equipamentos. '
+    'número de consumidores com o menor número de equipamentos. '
     'Cada gateway atende pontos a até ${formatRange(summary.gatewayRangeM)}.';
 
 /// Um parâmetro do estudo (rótulo + valor) para a ficha do relatório.
@@ -64,8 +58,7 @@ List<ReportParam> filterEntries(ReportFilters? f) {
       ReportParam('Distribuidora',
           joinList(f.distCodes.map(nomeDistribuidora).toList())),
     if (f.munCodes.isNotEmpty)
-      ReportParam('Municípios',
-          joinList(f.munCodes.map((c) => _municipios[c] ?? c).toList())),
+      ReportParam('Municípios', IbgeService.rotulosMunicipios(f.munCodes)),
     if (f.targetLevels.isNotEmpty)
       ReportParam('Tensão dos pontos',
           joinList(f.targetLevels.map((l) => _niveis[l] ?? l).toList())),
@@ -122,7 +115,7 @@ List<ReportInsight> buildInsights(CoverageReport report) {
     final gateways = n == 1 ? '1 gateway' : '$n gateways';
     insights.add(ReportInsight(
       s.uncoveredPoints == 0 ? InsightKind.success : InsightKind.info,
-      'Com $gateways, ${formatPercent(s.coveragePercentage)} dos pontos '
+      'Com $gateways, ${formatPercent(s.coveragePercentage)} dos consumidores '
       '(${formatInt(s.coveredPoints)} de ${formatInt(s.totalPoints)}) '
       'são atendidos (gateways com alcance de $range, relevo considerado).',
     ));
@@ -134,9 +127,9 @@ List<ReportInsight> buildInsights(CoverageReport report) {
     insights.add(ReportInsight(
       InsightKind.info,
       'O gateway ${first.order} sozinho atende '
-      '${formatPercent(first.cumulativeCoveragePercentage)} dos pontos; '
+      '${formatPercent(first.cumulativeCoveragePercentage)} dos consumidores; '
       'os outros ${n - 1} acrescentam '
-      '${formatInt(rest < 0 ? 0 : rest)} pontos.',
+      '${formatInt(rest < 0 ? 0 : rest)} consumidores.',
     ));
   }
 
@@ -149,7 +142,7 @@ List<ReportInsight> buildInsights(CoverageReport report) {
         InsightKind.info,
         'Os primeiros ${milestone.gatewayCount} gateways '
         '(${formatDecimal(100 * milestone.shareOfGateways)}% da rede) já '
-        'atendem ${formatPercent(milestone.achievedPercent)} dos pontos; os '
+        'atendem ${formatPercent(milestone.achievedPercent)} dos consumidores; os '
         'outros $rest acrescentam '
         '${formatDecimal(s.coveragePercentage - milestone.achievedPercent)} '
         'pontos percentuais.',
@@ -160,7 +153,7 @@ List<ReportInsight> buildInsights(CoverageReport report) {
       insights.add(ReportInsight(
         InsightKind.warning,
         '${formatInt(low)} ${low == 1 ? 'gateway atende' : 'gateways atendem'} '
-        'apenas 1 ponto novo cada: avalie se compensam o investimento.',
+        'apenas 1 consumidor novo cada: avalie se compensam o investimento.',
       ));
     }
   }
@@ -169,7 +162,7 @@ List<ReportInsight> buildInsights(CoverageReport report) {
   if (u > 0) {
     insights.add(ReportInsight(
       InsightKind.warning,
-      '${formatInt(u)} ${u == 1 ? 'ponto ficou' : 'pontos ficaram'} sem '
+      '${formatInt(u)} ${u == 1 ? 'consumidor ficou' : 'consumidores ficaram'} sem '
       'cobertura: nenhum dos ${formatInt(s.totalCandidates)} candidatos '
       'avaliados ${u == 1 ? 'o alcança' : 'os alcança'}. Avalie novos '
       'candidatos nessa região.',
@@ -197,12 +190,12 @@ List<ReportParam> dataRows(ReportSummary s) {
           '(${formatDecimal(100 * s.selectedGateways / s.totalCandidates)}%)'
       : formatInt(s.selectedGateways);
   return [
-    ReportParam('Pontos analisados', formatInt(s.totalPoints)),
-    ReportParam('Pontos atendidos', formatInt(s.coveredPoints)),
-    ReportParam('Pontos sem cobertura', formatInt(s.uncoveredPoints)),
+    ReportParam('Consumidores analisados', formatInt(s.totalPoints)),
+    ReportParam('Consumidores atendidos', formatInt(s.coveredPoints)),
+    ReportParam('Consumidores sem cobertura', formatInt(s.uncoveredPoints)),
     ReportParam('Candidatos avaliados', formatInt(s.totalCandidates)),
     ReportParam('Gateways selecionados', used),
-    ReportParam('Média de pontos por gateway', perGateway),
+    ReportParam('Média de consumidores por gateway', perGateway),
     ReportParam('Alcance do gateway', formatRange(s.gatewayRangeM)),
   ];
 }
@@ -222,9 +215,9 @@ List<DataStat> dataStats(ReportSummary s) {
           'candidatos'
       : null;
   return [
-    DataStat('Pontos analisados', formatInt(s.totalPoints)),
+    DataStat('Consumidores analisados', formatInt(s.totalPoints)),
     DataStat('Candidatos avaliados', formatInt(s.totalCandidates)),
-    DataStat('Pontos atendidos', formatInt(s.coveredPoints)),
+    DataStat('Consumidores atendidos', formatInt(s.coveredPoints)),
     DataStat('Sem cobertura', formatInt(s.uncoveredPoints)),
     DataStat('Gateways selecionados', formatInt(s.selectedGateways), share),
     DataStat(
@@ -232,7 +225,7 @@ List<DataStat> dataStats(ReportSummary s) {
         s.selectedGateways > 0
             ? formatDecimal(s.coveredPoints / s.selectedGateways)
             : '-',
-        'pontos atendidos'),
+        'consumidores atendidos'),
     DataStat('Alcance do gateway', formatRange(s.gatewayRangeM)),
   ];
 }

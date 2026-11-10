@@ -7,7 +7,6 @@ import com.tecsys.domain.simulation.dto.SimulationRunRequestDto;
 import com.tecsys.domain.user.User;
 import com.tecsys.domain.user.UserRepository;
 import com.tecsys.infrastructure.engine.DecisionEngineClient;
-import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,26 +49,21 @@ public class SimulationService {
         // aciona o motor
         decisionEngineClient.sendToEngineAsync(project.getId());
 
-        return toDto(project);
+        return toDto(project, request.filterParams());
     }
 
-    @Transactional
-    public void processWebhook(Long projectId, ProjectStatus newStatus) {
-        Project project = projectRepository.findById(projectId)
-                .orElseThrow(() -> new EntityNotFoundException("Projeto não encontrado."));
-
-        project.setStatus(newStatus);
-        projectRepository.save(project);
-    }
-
-    private ProjectResponseDto toDto(Project project) {
+    private ProjectResponseDto toDto(Project project, com.fasterxml.jackson.databind.JsonNode filterParams) {
         return new ProjectResponseDto(
                 project.getId(),
                 project.getName(),
                 project.getDistCode(),
                 project.getStatus(),
                 project.getCreatedBy().getId(),
-                project.getCreatedAt()
+                project.getCreatedBy().getName(),
+                project.getCreatedAt(),
+                project.getUpdatedAt(),
+                project.isActive(),
+                ProjectResponseDto.munCodesDe(filterParams)
         );
     }
 }

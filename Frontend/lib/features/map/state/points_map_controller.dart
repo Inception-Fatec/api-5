@@ -10,6 +10,7 @@ import 'package:tecsys_app/features/map/data/constants/map_regions.dart';
 import 'package:tecsys_app/features/map/data/models/filtros_pontos.dart';
 import 'package:tecsys_app/features/map/data/models/map_point.dart';
 import 'package:tecsys_app/features/map/data/models/selected_area.dart';
+import 'package:tecsys_app/features/map/data/services/municipios_centro_service.dart';
 import 'package:tecsys_app/features/map/data/services/points_filter_service.dart';
 import 'package:tecsys_app/features/map/state/map_areas_controller.dart';
 import 'package:tecsys_app/features/projects/data/services/ibge_service.dart';
@@ -25,12 +26,14 @@ class PointsMapController extends ChangeNotifier {
     this.onFocusPoint,
     this.focusDebounce = const Duration(milliseconds: 600),
     PointsFilterService? pointsService,
+    MunicipiosCentroService? centroService,
     IbgeService? ibgeService,
     ProjectsService? projectsService,
     ProjectsStore? store,
   })  : _municipiosIniciais = List.unmodifiable(municipios),
         _municipiosSelecionados = List.of(municipios),
         _points = pointsService ?? PointsFilterService(),
+        _centroService = centroService ?? MunicipiosCentroService(),
         _ibge = ibgeService ?? IbgeService(),
         _projects = projectsService ?? ProjectsService(),
         _store = store ?? ProjectsStore.instance {
@@ -48,6 +51,11 @@ class PointsMapController extends ChangeNotifier {
 
   final List<Municipio> _municipiosIniciais;
   final PointsFilterService _points;
+  final MunicipiosCentroService _centroService;
+
+  /// Centro de cada cidade da distribuidora (do backend); vazio até
+  /// carregar ou se a chamada falhar.
+  Map<int, LatLng> _centros = const {};
   final IbgeService _ibge;
   final ProjectsService _projects;
   final ProjectsStore _store;
@@ -63,7 +71,7 @@ class PointsMapController extends ChangeNotifier {
   List<String> _cnaeCodes = [];
   List<String> _bairroNames = [];
 
-  int? _totalPontos;
+  ContagemPontos? _contagem;
   bool _zoomBaixoDemais = false;
 
   bool _salvando = false;
@@ -73,7 +81,7 @@ class PointsMapController extends ChangeNotifier {
   Timer? _focusTimer;
   bool _disposed = false;
 
-  final Map<String, int> _totalPorArea = {};
+  final Map<String, ContagemPontos> _totalPorArea = {};
   final Set<String> _contando = {};
   Timer? _contagemTimer;
   static const _contagemDebounce = Duration(milliseconds: 600);
@@ -89,7 +97,11 @@ class PointsMapController extends ChangeNotifier {
   List<String> get cnaeCodes => _cnaeCodes;
   List<String> get bairroNames => _bairroNames;
 
-  int? get totalPontos => _totalPontos;
+  /// Pontos a cobrir (consumidores) com os filtros atuais; null = contando.
+  int? get totalPontos => _contagem?.pontos;
+
+  /// Pontos a cobrir e candidatos, para mostrar na barra do mapa.
+  ContagemPontos? get contagem => _contagem;
   bool get zoomBaixoDemais => _zoomBaixoDemais;
 
   bool get salvando => _salvando;
@@ -102,13 +114,45 @@ class PointsMapController extends ChangeNotifier {
   List<String> get munCodes =>
       _municipiosSelecionados.map((m) => m.codigoIbge.toString()).toList();
 
-  LatLng get centroInicial => MapRegions.centroInicial(
+  /// Centro das cidades escolhidas (média dos centros que vieram do
+  /// backend). Sem esses dados ainda, usa o centro fixo antigo.
+  LatLng get centroInicial {
+    final centros = [
+      for (final m in _municipiosIniciais)
+        if (_centros[m.codigoIbge] case final c?) c,
+    ];
+    if (centros.isEmpty) {
+      return MapRegions.centroInicial(
         _municipiosIniciais.map((m) => m.codigoIbge),
       );
+    }
+    final lat = centros.map((c) => c.latitude).reduce((a, b) => a + b);
+    final lon = centros.map((c) => c.longitude).reduce((a, b) => a + b);
+    return LatLng(lat / centros.length, lon / centros.length);
+  }
+
+  /// Busca os centros das cidades no backend. Sem eles (erro), o mapa
+  /// segue com os centros fixos antigos.
+  Future<void> carregarCentros() async {
+    try {
+      final centros = await _centroService.centros(distCode);
+      if (_disposed || centros.isEmpty) return;
+      _centros = centros;
+      notifyListeners();
+    } catch (_) {}
+  }
 
   double get zoomInicial => MapRegions.zoomInicial;
 
-  bool get podeSalvar => nomeProjeto.trim().isNotEmpty;
+  /// Já contou e não há nenhum ponto a cobrir com os filtros, cidades e
+  /// áreas atuais (RN02 da US #11): o projeto não pode ser salvo.
+  bool get semPontos => _contagem != null && _contagem!.pontos == 0;
+
+  /// Só salva com nome e com pelo menos um ponto a cobrir já contado.
+  bool get podeSalvar =>
+      nomeProjeto.trim().isNotEmpty &&
+      _contagem != null &&
+      _contagem!.pontos > 0;
 
   FiltrosPontos get filtros => FiltrosPontos(
         distCode: distCode,
@@ -126,7 +170,7 @@ class PointsMapController extends ChangeNotifier {
 
   Future<void> carregarCidadesDisponiveis() async {
     try {
-      final cidades = await _ibge.buscarCidadesComDados();
+      final cidades = await _ibge.buscarCidadesComDados(distCode);
       if (_disposed) return;
       _cidadesDisponiveis = cidades;
       notifyListeners();
@@ -146,7 +190,7 @@ class PointsMapController extends ChangeNotifier {
     _municipiosSelecionados = [..._municipiosSelecionados, m];
     notifyListeners();
     _agendarContagemAreas();
-    return MapRegions.centroFixoDe(m.codigoIbge);
+    return _centros[m.codigoIbge] ?? MapRegions.centroFixoDe(m.codigoIbge);
   }
 
 
@@ -191,7 +235,8 @@ class PointsMapController extends ChangeNotifier {
   String _chaveArea(SelectedArea a, FiltrosPontos f) =>
       '${a.north},${a.south},${a.west},${a.east}|${f.hashCode}|${munCodes.join(",")}';
 
-  int? totalNaArea(SelectedArea a) => _totalPorArea[_chaveArea(a, filtros)];
+  ContagemPontos? totalNaArea(SelectedArea a) =>
+      _totalPorArea[_chaveArea(a, filtros)];
 
   void _agendarContagemAreas() {
     _contagemTimer?.cancel();
@@ -223,7 +268,7 @@ class PointsMapController extends ChangeNotifier {
           countOnly: true,
         );
         if (_disposed) return;
-        _totalPorArea[chave] = r.totalPoints;
+        _totalPorArea[chave] = r.contagem;
         notifyListeners();
       } catch (_) {
       } finally {
@@ -234,9 +279,9 @@ class PointsMapController extends ChangeNotifier {
   }
 
 
-  void setTotalPontos(int total) {
-    if (_totalPontos == total) return;
-    _totalPontos = total;
+  void setTotalPontos(ContagemPontos contagem) {
+    if (_contagem == contagem) return;
+    _contagem = contagem;
     notifyListeners();
   }
 
@@ -299,6 +344,14 @@ class PointsMapController extends ChangeNotifier {
 
     try {
       final resultadoPontos = await _buscarPontosDosFiltros(countOnly: true);
+      // Confere de novo no servidor: sem ponto a cobrir não envia ao motor.
+      if (resultadoPontos.totalPoints == 0) {
+        _contagem = resultadoPontos.contagem;
+        if (_disposed) return false;
+        _salvando = false;
+        notifyListeners();
+        return false;
+      }
       final f = filtros;
 
       final geo = areas.geoJson;

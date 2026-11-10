@@ -56,6 +56,7 @@ class FiltersStyles {
   static const overlayMinWidth = 200.0;
   static const overlayMaxWidth = 320.0;
   static const overlayMaxHeight = 420.0;
+  static const overlayMinHeight = 120.0;
   static const overlayOffsetY = 6.0;
   static const overlayElevation = 8.0;
 

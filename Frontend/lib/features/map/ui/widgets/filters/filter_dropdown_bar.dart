@@ -33,7 +33,7 @@ class FilterDropdownBar extends StatelessWidget {
             child: ListenableBuilder(
               listenable: controller,
               builder: (context, _) {
-                final total = controller.totalPontos;
+                final contagem = controller.contagem;
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -41,9 +41,10 @@ class FilterDropdownBar extends StatelessWidget {
                       controller: controller,
                       onToggleCity: onToggleCity,
                     ),
-                    if (total != null) ...[
+                    if (contagem != null) ...[
                       const SizedBox(height: AppSpacing.xs),
-                      Text('$total ponto(s)', style: AppTextStyles.caption),
+                      // Mesmo número de "Pontos analisados" do relatório.
+                      Text(contagem.texto, style: AppTextStyles.caption),
                     ],
                     const SizedBox(height: AppSpacing.sm),
                     FilterButtonsRow(controller: controller),

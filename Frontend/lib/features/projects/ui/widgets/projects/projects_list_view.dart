@@ -27,7 +27,7 @@ class ProjectsListView extends StatelessWidget {
     return ProjectCard(
       key: ValueKey(p.id),
       data: p,
-      creatorName: controller.nomeCriador(p.createdById),
+      creatorName: p.criadoPorLabel,
       onOpen: () => onOpenProject(p),
       onDelete: () => controller.excluir(p.id),
     );

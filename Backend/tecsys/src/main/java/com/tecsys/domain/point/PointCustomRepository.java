@@ -20,11 +20,12 @@ public class PointCustomRepository {
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
 
+    private static final int MAX_POINTS_LIMIT = 20000;
+
     private static final List<String> COLUNAS_EXTRAS = List.of(
             "mun", "brr", "sub", "conj", "clas_sub", "cnae",
             "car_inst", "dem_cont", "tip_sist", "are_loc", "uni_tr_mt",
-            "uni_tr_at", "nome", "dist"
-    );
+            "uni_tr_at", "nome", "dist");
 
     public PointFilterResponseDto executeSpatialFilter(PointFilterRequestDto request) {
         MapSqlParameterSource params = new MapSqlParameterSource();
@@ -32,12 +33,28 @@ public class PointCustomRepository {
 
         Set<TableMetadata> targetTables = resolveTablesFromTensionLevels(request.targetLayers());
 
-
         boolean temFiltroDeAtributo = (request.clasSub() != null && !request.clasSub().isEmpty())
                 || (request.cnaeCodes() != null && !request.cnaeCodes().isEmpty())
                 || (request.bairroNames() != null && !request.bairroNames().isEmpty());
         if (temFiltroDeAtributo) {
-            targetTables = targetTables.stream().filter(t -> t.hasAttributes).collect(Collectors.toSet());
+            // Classe, CNAE e bairro só existem nos consumidores: a rede some do
+            // desenho, mas os candidatos continuam (o motor também os usa).
+            targetTables = targetTables.stream()
+                    .filter(t -> t.hasAttributes || t.isCandidato())
+                    .collect(Collectors.toSet());
+        }
+
+        // Rede e subestação são só desenho: só entram quando o mapa mostra os
+        // elementos um a um (zoom de perto). Nas bolhas e na contagem elas
+        // ficam de fora — as bolhas contam só pontos a cobrir, igual ao topo
+        // e ao relatório, e a consulta fica mais leve.
+        boolean countOnly = Boolean.TRUE.equals(request.countOnly());
+        Double cell = request.clusterCell();
+        boolean agrupado = !countOnly && cell != null && cell > 0;
+        if (countOnly || agrupado) {
+            targetTables = targetTables.stream()
+                    .filter(t -> !t.categoria().equals("rede"))
+                    .collect(Collectors.toSet());
         }
 
         for (TableMetadata meta : targetTables) {
@@ -45,6 +62,7 @@ public class PointCustomRepository {
             String suf = "_" + meta.tableName;
 
             subQuery.append("SELECT '").append(meta.layerName).append("' AS layer, ")
+                    .append("'").append(meta.categoria()).append("' AS cat, ")
                     .append(meta.idColumn).append(" AS id, ");
             for (String coluna : COLUNAS_EXTRAS) {
                 if (meta.colunasExtras.contains(coluna)) {
@@ -56,10 +74,11 @@ public class PointCustomRepository {
             subQuery.append("geom FROM ").append(meta.tableName).append(" WHERE 1=1 ");
 
             if (request.distCodes() != null && !request.distCodes().isEmpty()) {
-                if (meta.tableName.equals("sub")) {
+                if (meta.tableName.equals("sub") || meta.temDistPropria()) {
                     subQuery.append(" AND dist IN (:distCodes").append(suf).append(") ");
                 } else {
-                    subQuery.append(" AND sub IN (SELECT cod_id FROM sub WHERE dist IN (:distCodes").append(suf).append(")) ");
+                    subQuery.append(" AND sub IN (SELECT cod_id FROM sub WHERE dist IN (:distCodes").append(suf)
+                            .append(")) ");
                 }
                 params.addValue("distCodes" + suf, request.distCodes());
             }
@@ -70,16 +89,20 @@ public class PointCustomRepository {
                 } else {
                     switch (meta.tableName) {
                         case "ssdat":
-                            subQuery.append(" AND conj IN (SELECT conj FROM untrat WHERE mun IN (:munCodes").append(suf).append(")) ");
+                            subQuery.append(" AND conj IN (SELECT conj FROM untrat WHERE mun IN (:munCodes").append(suf)
+                                    .append(")) ");
                             break;
                         case "ssdmt":
-                            subQuery.append(" AND uni_tr_at IN (SELECT cod_id FROM untrat WHERE mun IN (:munCodes").append(suf).append(")) ");
+                            subQuery.append(" AND uni_tr_at IN (SELECT cod_id FROM untrat WHERE mun IN (:munCodes")
+                                    .append(suf).append(")) ");
                             break;
                         case "ssdbt":
-                            subQuery.append(" AND uni_tr_mt IN (SELECT cod_id FROM untrmt WHERE mun IN (:munCodes").append(suf).append(")) ");
+                            subQuery.append(" AND uni_tr_mt IN (SELECT cod_id FROM untrmt WHERE mun IN (:munCodes")
+                                    .append(suf).append(")) ");
                             break;
                         case "sub":
-                            subQuery.append(" AND cod_id IN (SELECT sub FROM untrat WHERE mun IN (:munCodes").append(suf).append(")) ");
+                            subQuery.append(" AND cod_id IN (SELECT sub FROM untrat WHERE mun IN (:munCodes")
+                                    .append(suf).append(")) ");
                             break;
                     }
                 }
@@ -91,7 +114,9 @@ public class PointCustomRepository {
                 params.addValue("conjCodes" + suf, request.conjCodes());
             }
 
-            if (request.subCodes() != null && !request.subCodes().isEmpty()) {
+            // A SSDAT não tem SUB (só a distribuidora, por temDistPropria): o filtro de
+            // subestação não se aplica a ela, senão ela some do mapa (#120).
+            if (request.subCodes() != null && !request.subCodes().isEmpty() && !meta.temDistPropria()) {
                 if (meta.tableName.equals("sub")) {
                     subQuery.append(" AND cod_id IN (:subCodes").append(suf).append(") ");
                 } else {
@@ -110,13 +135,8 @@ public class PointCustomRepository {
                     params.addValue("cnaeCodes" + suf, request.cnaeCodes());
                 }
                 if (request.bairroNames() != null && !request.bairroNames().isEmpty()) {
-                    List<String> condicoesBairro = new ArrayList<>();
-                    for (int i = 0; i < request.bairroNames().size(); i++) {
-                        String nomeParametro = "bairro" + i + suf;
-                        condicoesBairro.add("brr ILIKE :" + nomeParametro);
-                        params.addValue(nomeParametro, "%" + request.bairroNames().get(i) + "%");
-                    }
-                    subQuery.append(" AND (").append(String.join(" OR ", condicoesBairro)).append(") ");
+                    subQuery.append(" AND brr IN (:bairroNames").append(suf).append(") ");
+                    params.addValue("bairroNames" + suf, request.bairroNames());
                 }
             }
 
@@ -137,43 +157,52 @@ public class PointCustomRepository {
         }
 
         if (unionQueries.isEmpty()) {
-            return new PointFilterResponseDto(0L, emptyFeatureCollection());
+            return new PointFilterResponseDto(0L, 0L, 0L, emptyFeatureCollection());
         }
 
-        boolean countOnly = Boolean.TRUE.equals(request.countOnly());
         String unionSql = String.join(" UNION ALL ", unionQueries);
 
-        Double cell = request.clusterCell();
-        if (!countOnly && cell != null && cell > 0) {
+        if (agrupado) {
             String clusterSql = """
-                WITH filtered_points AS (
-                    %s
-                ), celulas AS (
-                    SELECT count(*) AS n,
-                           ST_Transform(ST_Centroid(ST_Collect(ST_PointOnSurface(f.geom))), 4326) AS c
-                    FROM filtered_points f
-                    GROUP BY ST_SnapToGrid(ST_PointOnSurface(f.geom), :clusterCell)
-                )
-                SELECT COALESCE(SUM(n), 0) AS total_points,
-                       jsonb_build_object(
-                           'type', 'FeatureCollection',
-                           'features', COALESCE(jsonb_agg(
+                        WITH filtered_points AS (
+                            %s
+                        ), totais AS (
+                            SELECT count(*) FILTER (WHERE f.cat = 'ponto') AS np,
+                                   count(*) FILTER (WHERE f.cat = 'candidato') AS nc
+                            FROM filtered_points f
+                        ), celulas AS (
+                            -- Cada bolha conta só pontos a cobrir (consumidores).
+                            SELECT count(*) AS n,
+                                   ST_Transform(ST_Centroid(ST_Collect(ST_PointOnSurface(f.geom))), 4326) AS c
+                            FROM filtered_points f
+                            WHERE f.cat = 'ponto'
+                            GROUP BY ST_SnapToGrid(ST_PointOnSurface(f.geom), :clusterCell)
+                        )
+                        SELECT (SELECT np FROM totais) AS total_points,
+                               (SELECT nc FROM totais) AS total_candidates,
+                               0 AS total_network,
                                jsonb_build_object(
-                                   'type', 'Feature',
-                                   'geometry', ST_AsGeoJSON(c, 6)::jsonb,
-                                   'properties', jsonb_build_object('count', n, 'cluster', true)
-                               )
-                           ), '[]'::jsonb)
-                       ) AS geojson_features
-                FROM celulas;
-            """.formatted(unionSql);
+                                   'type', 'FeatureCollection',
+                                   'features', COALESCE(jsonb_agg(
+                                       jsonb_build_object(
+                                           'type', 'Feature',
+                                           'geometry', ST_AsGeoJSON(c, 6)::jsonb,
+                                           'properties', jsonb_build_object('count', n, 'cluster', true)
+                                       )
+                                   ), '[]'::jsonb)
+                               ) AS geojson_features
+                        FROM celulas;
+                    """.formatted(unionSql);
             params.addValue("clusterCell", cell);
 
             return jdbcTemplate.queryForObject(clusterSql, params, (rs, rowNum) -> {
                 try {
-                    Long total = rs.getLong("total_points");
                     String geojsonStr = rs.getString("geojson_features");
-                    return new PointFilterResponseDto(total, objectMapper.readTree(geojsonStr));
+                    return new PointFilterResponseDto(
+                            rs.getLong("total_points"),
+                            rs.getLong("total_candidates"),
+                            rs.getLong("total_network"),
+                            objectMapper.readTree(geojsonStr));
                 } catch (Exception e) {
                     throw new RuntimeException("Falha ao serializar o agrupamento do PostGIS", e);
                 }
@@ -182,51 +211,69 @@ public class PointCustomRepository {
 
         if (countOnly) {
             String countSql = """
-                SELECT COUNT(*) AS total_points FROM (
-                    %s
-                ) f;
-            """.formatted(unionSql);
+                        SELECT COUNT(*) FILTER (WHERE f.cat = 'ponto') AS total_points,
+                               COUNT(*) FILTER (WHERE f.cat = 'candidato') AS total_candidates,
+                               COUNT(*) FILTER (WHERE f.cat = 'rede') AS total_network
+                        FROM (
+                            %s
+                        ) f;
+                    """.formatted(unionSql);
 
-            Long total = jdbcTemplate.queryForObject(countSql, params, Long.class);
-            return new PointFilterResponseDto(total == null ? 0L : total, emptyFeatureCollection());
+            return jdbcTemplate.queryForObject(countSql, params, (rs, rowNum) -> new PointFilterResponseDto(
+                    rs.getLong("total_points"),
+                    rs.getLong("total_candidates"),
+                    rs.getLong("total_network"),
+                    emptyFeatureCollection()));
         }
 
-        StringBuilder propriedadesSql = new StringBuilder("jsonb_build_object('id', f.id, 'layer', f.layer");
+        StringBuilder propriedadesSql = new StringBuilder(
+                "jsonb_build_object('id', f.id, 'layer', f.layer, 'categoria', f.cat");
         for (String coluna : COLUNAS_EXTRAS) {
             propriedadesSql.append(", '").append(coluna).append("', f.extra_").append(coluna);
         }
         propriedadesSql.append(")");
 
-        String limitSql = "";
-        if (request.limit() != null && request.limit() > 0) {
-            limitSql = " LIMIT :limit";
-            params.addValue("limit", request.limit());
-        }
+        int limitToApply = (request.limit() != null && request.limit() > 0)
+                ? Math.min(request.limit(), MAX_POINTS_LIMIT)
+                : MAX_POINTS_LIMIT;
+
+        String limitSql = " LIMIT :limit";
+        params.addValue("limit", limitToApply);
 
         String finalSql = """
-            WITH filtered_points AS (
-                %s
-            )
-            SELECT 
-                (SELECT COUNT(*) FROM filtered_points) AS total_points,
-                jsonb_build_object(
-                    'type', 'FeatureCollection',
-                    'features', COALESCE(jsonb_agg(
+                    WITH filtered_points AS (
+                        %s
+                    )
+                    SELECT
+                        (SELECT COUNT(*) FROM filtered_points WHERE cat = 'ponto') AS total_points,
+                        (SELECT COUNT(*) FROM filtered_points WHERE cat = 'candidato') AS total_candidates,
+                        (SELECT COUNT(*) FROM filtered_points WHERE cat = 'rede') AS total_network,
                         jsonb_build_object(
-                            'type', 'Feature',
-                            'geometry', ST_AsGeoJSON(ST_Transform(f.geom, 4326))::jsonb,
-                            'properties', %s
-                        )
-                    ), '[]'::jsonb)
-                ) AS geojson_features
-            FROM (SELECT * FROM filtered_points%s) f;
-        """.formatted(unionSql, propriedadesSql, limitSql);
+                            'type', 'FeatureCollection',
+                            'features', COALESCE(jsonb_agg(
+                                jsonb_build_object(
+                                    'type', 'Feature',
+                                    'geometry', ST_AsGeoJSON(ST_Transform(f.geom, 4326))::jsonb,
+                                    'properties', %s
+                                )
+                            ), '[]'::jsonb)
+                        ) AS geojson_features
+                    FROM (
+                        -- No limite de elementos, consumidores primeiro, depois
+                        -- candidatos e por último a rede (que é só desenho).
+                        SELECT * FROM filtered_points
+                        ORDER BY CASE cat WHEN 'ponto' THEN 0 WHEN 'candidato' THEN 1 ELSE 2 END%s
+                    ) f;
+                """.formatted(unionSql, propriedadesSql, limitSql);
 
         return jdbcTemplate.queryForObject(finalSql, params, (rs, rowNum) -> {
             try {
-                Long total = rs.getLong("total_points");
                 String geojsonStr = rs.getString("geojson_features");
-                return new PointFilterResponseDto(total, objectMapper.readTree(geojsonStr));
+                return new PointFilterResponseDto(
+                        rs.getLong("total_points"),
+                        rs.getLong("total_candidates"),
+                        rs.getLong("total_network"),
+                        objectMapper.readTree(geojsonStr));
             } catch (Exception e) {
                 throw new RuntimeException("Falha ao serializar o retorno GeoJSON do PostGIS", e);
             }
@@ -241,7 +288,8 @@ public class PointCustomRepository {
     }
 
     public List<String> buscarBairros(List<String> munCodes, String q) {
-        if (munCodes == null || munCodes.isEmpty()) return List.of();
+        if (munCodes == null || munCodes.isEmpty())
+            return List.of();
 
         MapSqlParameterSource params = new MapSqlParameterSource();
         params.addValue("munCodesUcbt", munCodes);
@@ -252,16 +300,16 @@ public class PointCustomRepository {
         params.addValue("qUcat", "%" + (q == null ? "" : q) + "%");
 
         String sql = """
-            SELECT DISTINCT brr FROM (
-                SELECT brr FROM ucbt WHERE mun IN (:munCodesUcbt) AND brr ILIKE :qUcbt
-                UNION
-                SELECT brr FROM ucmt_pj WHERE mun IN (:munCodesUcmt) AND brr ILIKE :qUcmt
-                UNION
-                SELECT brr FROM ucat_pj WHERE mun IN (:munCodesUcat) AND brr ILIKE :qUcat
-            ) todos
-            ORDER BY brr
-            LIMIT 20
-        """;
+                    SELECT DISTINCT brr FROM (
+                        SELECT brr FROM ucbt WHERE mun IN (:munCodesUcbt) AND brr ILIKE :qUcbt
+                        UNION
+                        SELECT brr FROM ucmt_pj WHERE mun IN (:munCodesUcmt) AND brr ILIKE :qUcmt
+                        UNION
+                        SELECT brr FROM ucat_pj WHERE mun IN (:munCodesUcat) AND brr ILIKE :qUcat
+                    ) todos
+                    ORDER BY brr
+                    LIMIT 20
+                """;
 
         return jdbcTemplate.queryForList(sql, params, String.class);
     }
@@ -270,20 +318,19 @@ public class PointCustomRepository {
         List<TableMetadata> allTables = List.of(
                 new TableMetadata("sub", "cod_id", "SUB", false, false, false, Set.of("nome", "dist")),
                 new TableMetadata("ucat_pj", "cod_id_encr", "ALTO", true, true, true,
-                        Set.of("mun", "brr", "sub", "conj", "clas_sub", "cnae", "car_inst", "dem_cont", "tip_sist", "are_loc")),
-                // Redes e transformadores: só as colunas que as próprias consultas
-                // deste arquivo já usam (sub, conj, mun, uni_tr_*), então sabemos
-                // que existem. Antes era Set.of() e o detalhe vinha todo vazio.
+                        Set.of("mun", "brr", "sub", "conj", "clas_sub", "cnae", "car_inst", "dem_cont", "tip_sist",
+                                "are_loc")),
                 new TableMetadata("ssdat", "cod_id", "ALTO", false, true, false, Set.of("sub", "conj")),
                 new TableMetadata("untrat", "cod_id", "ALTO", true, true, false, Set.of("mun", "sub", "conj")),
                 new TableMetadata("ucmt_pj", "cod_id_encr", "MEDIO", true, true, true,
-                        Set.of("mun", "brr", "sub", "conj", "clas_sub", "cnae", "car_inst", "dem_cont", "tip_sist", "are_loc")),
+                        Set.of("mun", "brr", "sub", "conj", "clas_sub", "cnae", "car_inst", "dem_cont", "tip_sist",
+                                "are_loc")),
                 new TableMetadata("ssdmt", "cod_id", "MEDIO", false, true, false, Set.of("sub", "conj", "uni_tr_at")),
                 new TableMetadata("untrmt", "cod_id", "MEDIO", true, true, false, Set.of("mun", "sub", "conj")),
                 new TableMetadata("ucbt", "cod_id_encr", "BAIXO", true, true, true,
-                        Set.of("mun", "brr", "sub", "conj", "clas_sub", "cnae", "car_inst", "tip_sist", "are_loc", "uni_tr_mt")),
-                new TableMetadata("ssdbt", "cod_id", "BAIXO", false, true, false, Set.of("sub", "conj", "uni_tr_mt"))
-        );
+                        Set.of("mun", "brr", "sub", "conj", "clas_sub", "cnae", "car_inst", "tip_sist", "are_loc",
+                                "uni_tr_mt", "qtd_consumidores")),
+                new TableMetadata("ssdbt", "cod_id", "BAIXO", false, true, false, Set.of("sub", "conj", "uni_tr_mt")));
 
         if (targetLayers == null || targetLayers.isEmpty() || targetLayers.contains("all")) {
             return Set.copyOf(allTables);
@@ -291,13 +338,36 @@ public class PointCustomRepository {
 
         Set<String> upperLayers = targetLayers.stream().map(String::toUpperCase).collect(Collectors.toSet());
         return allTables.stream()
-                .filter(t -> upperLayers.contains(t.layerName) || t.layerName.equals("SUB"))
+                .filter(t -> upperLayers.contains(t.layerName)
+                        || t.layerName.equals("SUB")
+                        || t.isCandidato())
                 .collect(Collectors.toSet());
     }
 
     private record TableMetadata(
             String tableName, String idColumn, String layerName,
             boolean hasMun, boolean hasConj, boolean hasAttributes,
-            Set<String> colunasExtras
-    ) {}
+            Set<String> colunasExtras) {
+
+        boolean isCandidato() {
+            return tableName.startsWith("untr");
+        }
+
+        /**
+         * Tabelas que guardam a distribuidora na própria linha. A SSDAT da BDGD não tem o
+         * campo SUB, então não dá para chegar à distribuidora pela subestação.
+         * Precisa estar em sincronia com TABELAS_COM_DIST do ETL (geodatabase_edp_sp.py).
+         */
+        boolean temDistPropria() {
+            return tableName.equals("ssdat");
+        }
+
+        String categoria() {
+            if (hasAttributes)
+                return "ponto";
+            if (isCandidato())
+                return "candidato";
+            return "rede";
+        }
+    }
 }

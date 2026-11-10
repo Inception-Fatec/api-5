@@ -35,7 +35,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
   void initState() {
     super.initState();
     _nomeController.text = widget.nomeInicial ?? '';
-    _controller.carregarCidades();
+    _controller.carregar();
   }
 
   @override
@@ -50,6 +50,30 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
     if (resultado != null) Navigator.of(context).pop(resultado);
   }
 
+  /// Lista para escolher a distribuidora; nenhuma vem escolhida (#TG-147).
+  Widget _campoDistribuidora() {
+    final lista = _controller.distribuidoras;
+    return DropdownButtonFormField<String>(
+      initialValue: _controller.distCode,
+      isExpanded: true,
+      style: AppTextStyles.input,
+      hint: const Text('Selecione a distribuidora', style: AppTextStyles.bodyMuted),
+      decoration: AppDecorations.filledInput(
+        contentPadding: NewProjectDialogStyles.fieldPadding,
+        borderRadius: AppRadius.sm,
+      ),
+      items: [
+        for (final d in lista)
+          DropdownMenuItem(value: d.codigo, child: Text(d.rotulo)),
+      ],
+      onChanged: lista.isEmpty
+          ? null
+          : (codigo) {
+              if (codigo != null) _controller.escolherDistribuidora(codigo);
+            },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final larguraTela = MediaQuery.of(context).size.width;
@@ -61,64 +85,59 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
           padding: NewProjectDialogStyles.padding,
           child: ListenableBuilder(
             listenable: _controller,
-            builder: (context, _) => Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Expanded(
-                      child: Text('Novo Projeto',
-                          style: NewProjectDialogStyles.title),
+            // Rola quando o teclado encolhe o diálogo.
+            builder: (context, _) => SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text('Novo Projeto',
+                            style: NewProjectDialogStyles.title),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  const FieldLabel('Nome do Projeto'),
+                  TextField(
+                    controller: _nomeController,
+                    autofocus: true,
+                    decoration: AppDecorations.filledInput(
+                      hint: 'ex: Cobertura RF - Zona Leste SJC',
+                      hintStyle: AppTextStyles.bodyMuted,
+                      contentPadding: NewProjectDialogStyles.fieldPadding,
+                      borderRadius: AppRadius.sm,
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  const FieldLabel('Empresa / Distribuidora'),
+                  _campoDistribuidora(),
+                  const SizedBox(height: AppSpacing.md),
+                  const FieldLabel('Cidade(s)'),
+                  NewProjectCitiesField(controller: _controller),
+                  if (_controller.erro != null) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(_controller.erro!, style: AppTextStyles.captionError),
                   ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-                const FieldLabel('Nome do Projeto'),
-                TextField(
-                  controller: _nomeController,
-                  autofocus: true,
-                  decoration: AppDecorations.filledInput(
-                    hint: 'ex: Cobertura RF - Zona Leste SJC',
-                    hintStyle: AppTextStyles.bodyMuted,
-                    contentPadding: NewProjectDialogStyles.fieldPadding,
-                    borderRadius: AppRadius.sm,
+                  const SizedBox(height: AppSpacing.lg),
+                  SizedBox(
+                    width: double.infinity,
+                    height: NewProjectDialogStyles.submitHeight,
+                    child: ElevatedButton(
+                      onPressed: _controller.carregando ? null : _confirmar,
+                      style: AppButtonStyles.primary(),
+                      child:
+                          const Text('Buscar', style: AppTextStyles.buttonText),
+                    ),
                   ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                const FieldLabel('Empresa / Distribuidora'),
-                Container(
-                  width: double.infinity,
-                  padding: NewProjectDialogStyles.fieldPadding,
-                  decoration: NewProjectDialogStyles.readonlyFieldDecoration,
-                  child: Text(
-                    _controller.distribuidoraLabel,
-                    style: AppTextStyles.input,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                const FieldLabel('Cidade(s)'),
-                NewProjectCitiesField(controller: _controller),
-                if (_controller.erro != null) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(_controller.erro!, style: AppTextStyles.captionError),
                 ],
-                const SizedBox(height: AppSpacing.lg),
-                SizedBox(
-                  width: double.infinity,
-                  height: NewProjectDialogStyles.submitHeight,
-                  child: ElevatedButton(
-                    onPressed: _controller.carregando ? null : _confirmar,
-                    style: AppButtonStyles.primary(),
-                    child:
-                        const Text('Buscar', style: AppTextStyles.buttonText),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
