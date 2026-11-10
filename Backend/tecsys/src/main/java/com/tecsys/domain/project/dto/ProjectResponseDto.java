@@ -22,12 +22,14 @@ public record ProjectResponseDto(
         @JsonFormat(pattern = "dd/MM/yyyy HH:mm:ss", timezone = "America/Sao_Paulo")
         Instant createdAt,
 
+        @JsonProperty("updated_at")
+        @JsonFormat(pattern = "dd/MM/yyyy HH:mm:ss", timezone = "America/Sao_Paulo")
+        Instant updatedAt,
+
         boolean active,
 
-        // municípios (IBGE) do último cálculo do projeto, para o card mostrar as cidades (#TG-148)
         @JsonProperty("mun_codes") List<String> munCodes
 ) {
-    /** mun_codes de um filter_params salvo em project_history (vazio se não houver). */
     public static List<String> munCodesDe(JsonNode filterParams) {
         if (filterParams == null || !filterParams.path("mun_codes").isArray()) {
             return List.of();

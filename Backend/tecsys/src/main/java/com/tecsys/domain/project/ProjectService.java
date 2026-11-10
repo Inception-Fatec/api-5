@@ -7,6 +7,8 @@ import com.tecsys.domain.user.User;
 import com.tecsys.domain.user.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,7 +38,22 @@ public class ProjectService {
     }
 
     @Transactional(readOnly = true)
-    public List<ProjectResponseDto> findAll() {
+    public List<ProjectResponseDto> findAll(String sort, Integer limit) {
+        if ("recent".equalsIgnoreCase(sort)) {
+            Sort sortByUpdated = Sort.by(Sort.Direction.DESC, "updatedAt");
+
+            if (limit != null && limit > 0) {
+                return projectRepository.findAllByActiveTrue(PageRequest.of(0, limit, sortByUpdated))
+                        .stream()
+                        .map(this::toDto)
+                        .toList();
+            }
+            return projectRepository.findAllByActiveTrue(sortByUpdated)
+                    .stream()
+                    .map(this::toDto)
+                    .toList();
+        }
+
         return projectRepository.findAllByActiveTrue().stream()
                 .map(this::toDto)
                 .toList();
@@ -77,6 +94,7 @@ public class ProjectService {
                 project.getCreatedBy().getId(),
                 project.getCreatedBy().getName(),
                 project.getCreatedAt(),
+                project.getUpdatedAt(),
                 project.isActive(),
                 projectHistoryRepository.findFirstByProject_IdOrderByCreatedAtDescIdDesc(project.getId())
                         .map(h -> ProjectResponseDto.munCodesDe(h.getFilterParams()))

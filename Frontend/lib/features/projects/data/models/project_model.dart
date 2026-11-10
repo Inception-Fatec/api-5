@@ -10,6 +10,7 @@ class Project {
   /// Nome de quem criou (`created_by_name`); vazio em respostas antigas.
   final String createdByName;
   final DateTime createdAt;
+  final DateTime? updatedAt;
 
   /// Falso quando o projeto foi excluído (soft delete) no backend.
   final bool ativo;
@@ -25,6 +26,7 @@ class Project {
     required this.createdById,
     this.createdByName = '',
     required this.createdAt,
+    this.updatedAt,
     this.ativo = true,
     this.munCodes = const [],
   });
@@ -39,6 +41,7 @@ class Project {
       createdByName: (json['created_by_name'] as String? ?? '').trim(),
       createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
           DateTime.now(),
+      updatedAt: DateTime.tryParse(json['updated_at']?.toString() ?? ''),
       // Ausente em respostas antigas: conta como ativo.
       ativo: json['active'] as bool? ?? true,
       munCodes: (json['mun_codes'] as List? ?? const [])
