@@ -1,6 +1,7 @@
 package com.tecsys.domain.etl;
 
 import com.tecsys.domain.etl.dto.EtlJobResponseDto;
+import com.tecsys.domain.etl.dto.ExternalPointsImportResponseDto;
 import com.tecsys.domain.user.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -9,7 +10,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import com.tecsys.domain.etl.dto.ExternalPointsImportResponseDto;
 
 import java.util.List;
 
@@ -30,6 +30,18 @@ public class EtlController {
             @AuthenticationPrincipal User currentUser) {
         EtlJobResponseDto response = etlService.startGdbUpload(file, municipios, incluirConsumidores, currentUser.getId());
         return ResponseEntity.accepted().body(response);
+    }
+
+    /** Importação de pontos externos por CSV (#89, RF-07): candidato, ponto_a_cobrir ou interesse. */
+    @PostMapping(value = "/upload-csv", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('ADM')")
+    public ResponseEntity<ExternalPointsImportResponseDto> uploadCsv(
+            @RequestPart("file") MultipartFile file,
+            @RequestParam("distribuidora") String distribuidora,
+            @RequestParam("municipio") String municipio,
+            @AuthenticationPrincipal User currentUser) {
+        return ResponseEntity.ok(
+                externalPointsImportService.importar(file, distribuidora, municipio, currentUser.getId()));
     }
 
     @GetMapping("/jobs")

@@ -10,8 +10,12 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.StringReader;
 import java.math.BigDecimal;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.Charset;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -26,7 +30,7 @@ import java.util.regex.Pattern;
 public class ExternalPointsImportService {
 
     private static final Pattern CODIGO_IBGE = Pattern.compile("^\\d{7}$");
-    private static final String SEPARADOR = ";";
+    private static final char SEPARADOR = ';';
     private static final int TAMANHO_MAX_ID = 100;
     private static final Set<String> PAPEIS_VALIDOS = Set.of("candidato", "ponto_a_cobrir", "interesse");
     private static final List<String> COLUNAS_OBRIGATORIAS = List.of("id", "latitude", "longitude", "papel");
@@ -48,8 +52,7 @@ public class ExternalPointsImportService {
         Map<String, Integer> idsAceitos = new HashMap<>();
         int total = 0;
 
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8))) {
+        try (BufferedReader reader = new BufferedReader(new StringReader(decodificar(file)))) {
 
             Cabecalho cabecalho = lerCabecalho(reader.readLine());
 
@@ -77,9 +80,46 @@ public class ExternalPointsImportService {
         return new ExternalPointsImportResponseDto(total, importadas, jaExistentes, rejeicoes.size(), rejeicoes);
     }
 
+    /** UTF-8 primeiro; se o arquivo não for UTF-8 válido (ex.: Excel em português), lê como Windows-1252. */
+    private String decodificar(MultipartFile file) throws IOException {
+        byte[] bytes = file.getBytes();
+        try {
+            return StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(bytes)).toString();
+        } catch (CharacterCodingException e) {
+            return Charset.forName("windows-1252").decode(ByteBuffer.wrap(bytes)).toString();
+        }
+    }
+
+    private static String[] dividirLinha(String linha) {
+        List<String> campos = new ArrayList<>();
+        StringBuilder atual = new StringBuilder();
+        boolean entreAspas = false;
+        for (int i = 0; i < linha.length(); i++) {
+            char ch = linha.charAt(i);
+            if (ch == '"') {
+                if (entreAspas && i + 1 < linha.length() && linha.charAt(i + 1) == '"') {
+                    atual.append('"');
+                    i++;
+                } else {
+                    entreAspas = !entreAspas;
+                }
+            } else if (ch == SEPARADOR && !entreAspas) {
+                campos.add(atual.toString());
+                atual.setLength(0);
+            } else {
+                atual.append(ch);
+            }
+        }
+        campos.add(atual.toString());
+        return campos.toArray(new String[0]);
+    }
+
     private void validarLinha(String linha, int numeroLinha, Cabecalho cab, Map<String, Integer> idsAceitos,
                             List<ExternalPointRow> validos, List<CsvRejectionDto> rejeicoes) {
-        String[] c = linha.split(SEPARADOR, -1);
+        String[] c = dividirLinha(linha);
 
         if (c.length != cab.totalColunas()) {
             String idBruto = c.length > cab.id() ? c[cab.id()].trim() : "";
@@ -149,7 +189,7 @@ public class ExternalPointsImportService {
         if (linha.charAt(0) == '\uFEFF') {
             linha = linha.substring(1);
         }
-        String[] nomes = linha.split(SEPARADOR, -1);
+        String[] nomes = dividirLinha(linha);
         Map<String, Integer> posicoes = new HashMap<>();
         for (int i = 0; i < nomes.length; i++) {
             posicoes.putIfAbsent(nomes[i].trim().toLowerCase(Locale.ROOT), i);
