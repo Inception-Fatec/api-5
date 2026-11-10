@@ -66,16 +66,38 @@ public class UserService {
                 .toList();
     }
 
-    @Transactional
-    public void deleteUser(Long id, Long currentUserId) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new BusinessRuleException("Utilizador não encontrado."));
+    
+@Transactional
+public void deleteUser(Long id, Long currentUserId) {
+    User user = userRepository.findById(id)
+            .orElseThrow(() ->
+                    new BusinessRuleException("Utilizador não encontrado."));
 
-        if (user.getRole() == UserRole.ADM && !user.getId().equals(currentUserId)) {
-            throw new AccessDeniedException("Ação não permitida: Não pode eliminar a conta de outro administrador.");
-        }
-
-        user.setActive(false);
-        userRepository.save(user);
+    // Mantém a regra existente: ADM não pode desativar outro ADM.
+    if (user.getRole() == UserRole.ADM
+            && !user.getId().equals(currentUserId)) {
+        throw new AccessDeniedException(
+                "Ação não permitida: Não pode eliminar a conta de outro administrador."
+        );
     }
+
+    // Impede desativar o último administrador ativo.
+    if (user.getRole() == UserRole.ADM && user.isActive()) {
+        // Serializa as operações envolvendo administradores.
+        userRepository.lockAdministradores(UserRole.ADM);
+
+        long administradoresAtivos =
+                userRepository.countByRoleAndIsActiveTrue(UserRole.ADM);
+
+        if (administradoresAtivos <= 1) {
+            throw new BusinessRuleException(
+                    "Não é possível desativar o último administrador ativo."
+            );
+        }
+    }
+
+    user.setActive(false);
+    userRepository.save(user);
+}
+
 }
