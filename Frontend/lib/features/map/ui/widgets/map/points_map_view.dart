@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -12,12 +13,14 @@ import 'package:tecsys_app/features/map/data/models/map_point.dart';
 import 'package:tecsys_app/features/map/data/models/map_viewport.dart';
 import 'package:tecsys_app/features/map/data/models/point_cluster.dart';
 import 'package:tecsys_app/features/map/data/models/selected_area.dart';
+import 'package:tecsys_app/features/map/state/desenho_poligono.dart';
 import 'package:tecsys_app/features/map/state/map_areas_controller.dart';
 import 'package:tecsys_app/features/map/state/points_layer_controller.dart';
 import 'package:tecsys_app/features/map/ui/styles/map_styles.dart';
 import 'package:tecsys_app/features/map/ui/widgets/map/area_selection_overlay.dart';
 import 'package:tecsys_app/features/map/ui/widgets/map/center_scroll_zoom.dart';
 import 'package:tecsys_app/features/map/ui/widgets/map/cluster_bubbles_layer.dart';
+import 'package:tecsys_app/features/map/ui/widgets/map/drawing_controls.dart';
 import 'package:tecsys_app/features/map/ui/widgets/map/map_coordinates_panel.dart';
 import 'package:tecsys_app/features/map/ui/widgets/map/map_legend.dart';
 import 'package:tecsys_app/features/map/ui/widgets/map/map_loading_indicator.dart';
@@ -25,6 +28,7 @@ import 'package:tecsys_app/features/map/ui/widgets/map/map_overview_loading.dart
 import 'package:tecsys_app/features/map/ui/widgets/map/map_toolbar.dart';
 import 'package:tecsys_app/features/map/ui/widgets/map/point_detail_sheet.dart';
 import 'package:tecsys_app/features/map/ui/widgets/map/point_markers_layer.dart';
+import 'package:tecsys_app/features/map/ui/widgets/map/polygon_drawing_layer.dart';
 import 'package:tecsys_app/features/map/ui/widgets/map/selected_areas_layer.dart';
 
 class PointsMapView extends StatefulWidget {
@@ -62,6 +66,16 @@ class PointsMapViewState extends State<PointsMapView>
   bool _selecionando = false;
 
   final _selecao = ValueNotifier<Rect?>(null);
+
+  // Desenho por vértices (#TG-146). O retângulo continua como atalho.
+  ModoDesenho _modo = ModoDesenho.poligono;
+  final _desenho = DesenhoPoligono();
+  final _focoTeclado = FocusNode(debugLabel: 'desenho-area');
+  DateTime? _ultimoClique;
+  Offset? _ultimoCliqueTela;
+
+  bool get _desenhandoPoligono =>
+      _selecionando && _modo == ModoDesenho.poligono;
 
   late final _centro = ValueNotifier<LatLng>(widget.initialCenter);
 
@@ -167,6 +181,8 @@ class PointsMapViewState extends State<PointsMapView>
     _camAnim.dispose();
     _layer.dispose();
     _selecao.dispose();
+    _desenho.dispose();
+    _focoTeclado.dispose();
     _centro.dispose();
     _destaque.dispose();
     mapController.dispose();
@@ -318,7 +334,11 @@ class PointsMapViewState extends State<PointsMapView>
     _destaque.value = null;
   }
 
-  void _aoTocarMapa(TapPosition _, LatLng ponto) {
+  void _aoTocarMapa(TapPosition toque, LatLng ponto) {
+    if (_desenhandoPoligono) {
+      _cliqueDesenho(toque.relative, ponto);
+      return;
+    }
     if (_selecionando) return;
     final i = widget.areas.indiceEm(ponto);
     if (i != null) {
@@ -331,12 +351,107 @@ class PointsMapViewState extends State<PointsMapView>
   void _alternarSelecao() {
     setState(() => _selecionando = !_selecionando);
     _selecao.value = null;
+    _desenho.limpar();
+    if (_selecionando) _focoTeclado.requestFocus();
   }
 
   void _confirmarArea(SelectedArea area) {
     setState(() => _selecionando = false);
     _selecao.value = null;
+    _desenho.limpar();
     widget.areas.adicionar(area);
+  }
+
+  void _trocarModo(ModoDesenho modo) {
+    setState(() => _modo = modo);
+    _selecao.value = null;
+    _desenho.limpar();
+    _focoTeclado.requestFocus();
+  }
+
+  static const _intervaloDuploClique = Duration(milliseconds: 350);
+  static const _distanciaDuploClique = 8.0;
+
+  /// Clique no mapa desenhando polígono: adiciona vértice, ou fecha se caiu
+  /// no primeiro vértice ou foi o 2º clique de um duplo clique.
+  void _cliqueDesenho(Offset? tela, LatLng ponto) {
+    _focoTeclado.requestFocus();
+    final agora = DateTime.now();
+    final anterior = _ultimoClique, anteriorTela = _ultimoCliqueTela;
+    final duplo = tela != null &&
+        anterior != null &&
+        anteriorTela != null &&
+        agora.difference(anterior) < _intervaloDuploClique &&
+        (tela - anteriorTela).distance < _distanciaDuploClique;
+    _ultimoClique = duplo ? null : agora;
+    _ultimoCliqueTela = tela;
+
+    var noPrimeiro = false;
+    if (tela != null && _desenho.podeConcluir) {
+      final p =
+          mapController.camera.latLngToScreenPoint(_desenho.vertices.first);
+      noPrimeiro = (Offset(p.x, p.y) - tela).distance <=
+          PolygonDrawingLayer.raioFechar;
+    }
+
+    switch (_desenho.clicar(ponto, noPrimeiro: noPrimeiro, duplo: duplo)) {
+      case CliqueDesenho.fechou:
+        _concluirPoligono();
+      case CliqueDesenho.cruzaria:
+        _avisar('Esse ponto faria a área se cruzar. Escolha outro lugar.');
+      case CliqueDesenho.poucosVertices:
+        _avisar('Marque pelo menos ${SelectedArea.minVertices} vértices '
+            'para fechar a área.');
+      case CliqueDesenho.adicionado:
+        break;
+    }
+  }
+
+  void _concluirPoligono() {
+    if (!_desenho.podeConcluir) {
+      _avisar('Marque pelo menos ${SelectedArea.minVertices} vértices '
+          'para fechar a área.');
+      return;
+    }
+    final area = _desenho.concluir();
+    if (area == null) {
+      _avisar('Polígono inválido: os lados se cruzam. Desfaça e redesenhe.');
+      return;
+    }
+    _confirmarArea(area);
+  }
+
+  void _avisar(String mensagem) {
+    ScaffoldMessenger.maybeOf(context)
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(mensagem)));
+  }
+
+  /// Esc cancela o desenho (ou sai da seleção, se não há nada desenhado);
+  /// Backspace desfaz o último vértice; Enter conclui.
+  KeyEventResult _teclaDesenho(FocusNode _, KeyEvent e) {
+    if (!_selecionando || e is! KeyDownEvent) return KeyEventResult.ignored;
+    final k = e.logicalKey;
+    if (k == LogicalKeyboardKey.escape) {
+      if (_desenhandoPoligono && !_desenho.vazio) {
+        _desenho.limpar();
+      } else if (_selecao.value != null) {
+        _selecao.value = null;
+      } else {
+        _alternarSelecao();
+      }
+      return KeyEventResult.handled;
+    }
+    if (!_desenhandoPoligono) return KeyEventResult.ignored;
+    if (k == LogicalKeyboardKey.backspace || k == LogicalKeyboardKey.delete) {
+      _desenho.desfazer();
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.numpadEnter) {
+      _concluirPoligono();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   Widget _esmaecer({required bool visivel, required Widget child}) {
@@ -344,7 +459,9 @@ class PointsMapViewState extends State<PointsMapView>
       opacity: visivel ? 1.0 : 0.0,
       duration: MapStyles.modeFadeDuration,
       curve: Curves.easeInOut,
-      child: IgnorePointer(ignoring: !visivel, child: child),
+      // Desenhando polígono, o clique em ponto/bolha vira vértice.
+      child: IgnorePointer(
+          ignoring: !visivel || _desenhandoPoligono, child: child),
     );
   }
 
@@ -354,13 +471,16 @@ class PointsMapViewState extends State<PointsMapView>
     return LayoutBuilder(
       builder: (context, constraints) {
         _tamanhoMapa = Size(constraints.maxWidth, constraints.maxHeight);
-        return ListenableBuilder(
+        return Focus(
+          focusNode: _focoTeclado,
+          onKeyEvent: _teclaDesenho,
+          child: ListenableBuilder(
           listenable: _layer,
           builder: (context, _) => Stack(
             children: [
               CenterScrollZoom(
                 controller: mapController,
-                enabled: !_selecionando,
+                enabled: !_selecionando || _desenhandoPoligono,
                 onZoom: () {
                   _camAnim.stop();
                   _layer.agendarBusca(aguardar: MapConfig.scrollZoomSettle);
@@ -374,14 +494,23 @@ class PointsMapViewState extends State<PointsMapView>
                     maxZoom: MapConfig.maxZoom,
                     onMapReady: _abrir,
                     onTap: _aoTocarMapa,
+                    onPointerHover: (_, ponto) {
+                      if (_desenhandoPoligono) _desenho.cursor = ponto;
+                    },
                     // Rotação desligada: a conversão tela -> coordenada
                     // assume o norte para cima. Selecionando, o mapa congela.
                     // No celular a roda fica com o CenterScrollZoom.
                     interactionOptions: InteractionOptions(
-                      flags: _selecionando
+                      // Polígono: o mapa continua navegável entre um clique e
+                      // outro; só o duplo clique deixa de dar zoom (ele fecha
+                      // a área). Retângulo: o arrasto desenha, o mapa congela.
+                      flags: _selecionando && !_desenhandoPoligono
                           ? InteractiveFlag.none
                           : InteractiveFlag.all &
                               ~InteractiveFlag.rotate &
+                              (_desenhandoPoligono
+                                  ? ~InteractiveFlag.doubleTapZoom
+                                  : InteractiveFlag.all) &
                               (CenterScrollZoom.ativo
                                   ? ~InteractiveFlag.scrollWheelZoom
                                   : InteractiveFlag.all),
@@ -409,6 +538,8 @@ class PointsMapViewState extends State<PointsMapView>
                       selecionada: areas.selecionada,
                       destaque: _destaque,
                     ),
+                    if (_desenhandoPoligono)
+                      PolygonDrawingLayer(desenho: _desenho),
                     // Bolhas <-> pontos: cada camada esmaece no lugar da outra
                     // (opacidade da camada inteira, não por marcador).
                     _esmaecer(
@@ -430,7 +561,7 @@ class PointsMapViewState extends State<PointsMapView>
                   ],
                 ),
               ),
-              if (_selecionando)
+              if (_selecionando && _modo == ModoDesenho.retangulo)
                 Positioned.fill(
                   child: AreaSelectionOverlay(
                     selecao: _selecao,
@@ -534,9 +665,26 @@ class PointsMapViewState extends State<PointsMapView>
                     ),
                   ),
                 ),
+              if (_selecionando)
+                Positioned(
+                  left: MapStyles.zoomHintSideMargin,
+                  right: MapStyles.zoomHintSideMargin,
+                  bottom: MapStyles.selectionHintBottom,
+                  child: Center(
+                    child: DrawingControls(
+                      modo: _modo,
+                      onModo: _trocarModo,
+                      desenho: _desenho,
+                      onDesfazer: _desenho.desfazer,
+                      onCancelar: _desenho.limpar,
+                      onConcluir: _concluirPoligono,
+                    ),
+                  ),
+                ),
               if (_layer.carregandoVisaoGeral)
                 const Positioned.fill(child: MapOverviewLoading()),
             ],
+          ),
           ),
         );
       },

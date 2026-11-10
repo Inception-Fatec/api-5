@@ -118,12 +118,6 @@ class _AreaSelectionOverlayState extends State<AreaSelectionOverlay> {
                 );
               },
             ),
-            const Positioned(
-              left: 0,
-              right: 0,
-              bottom: MapStyles.selectionHintBottom,
-              child: IgnorePointer(child: Center(child: _DicaSelecao())),
-            ),
           ],
         );
       },
@@ -137,7 +131,8 @@ class _AreaSelectionOverlayState extends State<AreaSelectionOverlay> {
     final left = (r.right - largura)
         .clamp(folga, math.max(folga, _tamanho.width - largura - folga))
         .toDouble();
-    final top = (r.top - tam - folga < folga) ? r.bottom + folga : r.top - tam - folga;
+    final top =
+        (r.top - tam - folga < folga) ? r.bottom + folga : r.top - tam - folga;
 
     return Positioned(
       left: left,
@@ -228,27 +223,6 @@ class _AlcaCanto extends StatelessWidget {
           color: MapStyles.corArea,
           width: MapStyles.selectionStrokeWidth,
         ),
-      ),
-    );
-  }
-}
-
-class _DicaSelecao extends StatelessWidget {
-  const _DicaSelecao();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: MapStyles.selectionHintPadding,
-      decoration: MapStyles.selectionHintDecoration,
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.highlight_alt, size: 16, color: AppColors.onPrimary),
-          SizedBox(width: AppSpacing.sm),
-          Text('Arraste para selecionar uma área',
-              style: MapStyles.selectionHintText),
-        ],
       ),
     );
   }

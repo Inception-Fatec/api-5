@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
 
 import 'package:tecsys_app/core/theme/app_theme.dart';
 import 'package:tecsys_app/features/map/data/models/selected_area.dart';
 import 'package:tecsys_app/features/map/data/services/points_filter_service.dart';
 import 'package:tecsys_app/features/map/ui/styles/filters_styles.dart';
-
 
 class AreasFilterPanel extends StatelessWidget {
   final List<SelectedArea> areas;
@@ -37,12 +37,14 @@ class AreasFilterPanel extends StatelessWidget {
   static String _km(double v) =>
       v.toStringAsFixed(v < 10 ? 1 : 0).replaceAll('.', ',');
 
+  // Área do polígono em km² (#TG-146); antes era largura × altura do retângulo.
   static String _tamanho(SelectedArea a) =>
-      '${_km(a.widthKm)} × ${_km(a.heightKm)} km';
+      '${_km(a.areaKm2)} km² · ${a.vertices.length} vértices';
 
   static String _coordenadas(SelectedArea a) {
     String f(double v) => v.toStringAsFixed(4);
-    return '${f(a.north)}, ${f(a.west)}  →  ${f(a.south)}, ${f(a.east)}';
+    final c = LatLng((a.north + a.south) / 2, (a.west + a.east) / 2);
+    return 'centro ${f(c.latitude)}, ${f(c.longitude)}';
   }
 
   @override
@@ -69,7 +71,8 @@ class AreasFilterPanel extends StatelessWidget {
                         child: _CartaoArea(
                           numero: i + 1,
                           selecionada: i == selecionada,
-                          titulo: 'Área ${i + 1}  ·  ${_pontos(totalDe(areas[i]))}',
+                          titulo:
+                              'Área ${i + 1}  ·  ${_pontos(totalDe(areas[i]))}',
                           coordenadas:
                               '${_tamanho(areas[i])}  ·  ${_coordenadas(areas[i])}',
                           onTap: () => onFocar(i),
