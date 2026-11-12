@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:tecsys_app/core/network/api_client.dart';
 import 'package:tecsys_app/features/auth/data/services/auth_service.dart';
 
+import '../models/csv_import_resumo.dart';
 import '../models/etl_carga.dart';
 import 'arquivo_local.dart';
 
@@ -49,6 +50,8 @@ class EtlService {
   static const String uploadPath = '/etl/upload-gdb';
   static const Duration timeout = Duration(minutes: 10);
   static const String jobsPath = '/etl/jobs';
+  static const String uploadCsvPath = '/etl/upload-csv';
+  static const Duration csvTimeout = Duration(minutes: 2);
 
   static const String _falhaConexao =
       'Falha na conexão com o servidor de processamento ETL. '
@@ -242,6 +245,76 @@ class EtlService {
 
     return EtlCarga.fromJson(dados,
         nomeFallback: nomeArquivo, tamanhoFallback: tamanho);
+  }
+
+  /// POST multipart de pontos externos por CSV (#TG-89 / #TG-90). Síncrono:
+  /// o backend valida linha a linha e já devolve o resumo. O CSV é pequeno,
+  /// então vai em bytes em todas as plataformas (inclusive na web).
+  ///
+  /// [client] existe para os testes; no app fica `null` (cliente padrão).
+  static Future<CsvImportResumo> enviarCsv({
+    required Uint8List bytes,
+    required String nomeArquivo,
+    required String distribuidora,
+    required String municipio,
+    required void Function(double progresso) onProgress,
+    http.Client? client,
+  }) async {
+    final request = _ProgressMultipartRequest(
+        'POST', Uri.parse('${ApiConfig.baseUrl}$uploadCsvPath'),
+        onProgress: onProgress)
+      ..fields['distribuidora'] = distribuidora
+      ..fields['municipio'] = municipio
+      ..files.add(http.MultipartFile.fromBytes('file', bytes,
+          filename: nomeArquivo));
+
+    final String? token = AuthService.instance.token;
+    if (token != null) request.headers['Authorization'] = 'Bearer $token';
+
+    final http.Response resposta;
+    try {
+      final http.StreamedResponse streamed =
+          await (client?.send(request) ?? request.send()).timeout(csvTimeout);
+      resposta = await http.Response.fromStream(streamed);
+    } on TimeoutException {
+      throw const EtlUploadException(
+          'O servidor demorou demais para responder. Tente de novo.');
+    } on SocketException {
+      throw const EtlUploadException(_falhaConexao);
+    } on http.ClientException {
+      throw const EtlUploadException(_falhaConexao);
+    }
+    return resumoCsvDaResposta(resposta.statusCode, _tentarJson(resposta));
+  }
+
+  /// Monta o resumo da importação ou lança o erro com a mensagem para o ADM.
+  static CsvImportResumo resumoCsvDaResposta(
+      int status, Map<String, dynamic>? json) {
+    if (status == 403) {
+      // Só desloga se o token venceu (regra do AuthService); com o token
+      // válido é falta de permissão mesmo.
+      _verificarSessao(status);
+      throw const EtlUploadException(
+          'Apenas administradores podem importar pontos.');
+    }
+    if (status < 200 || status >= 300) {
+      _verificarSessao(status);
+      // 422 (BusinessRuleException) traz o motivo em `message`, ex.:
+      // "Cabeçalho inválido: faltam as colunas [papel]...".
+      final Object? msg = json?['message'] ??
+          json?['mensagem'] ??
+          json?['error'] ??
+          json?['detail'];
+      throw EtlUploadException(status == 401
+          ? 'Sua sessão expirou. Entre novamente para importar os pontos.'
+          : (msg?.toString() ??
+              'O servidor respondeu com o código HTTP $status.'));
+    }
+    if (json == null) {
+      throw const EtlUploadException(
+          'Resposta inesperada do servidor ao importar o CSV.');
+    }
+    return CsvImportResumo.fromJson(json);
   }
 
   /// GET /api/v1/etl/jobs/{id}: devolve a carga com o status atual do processamento.

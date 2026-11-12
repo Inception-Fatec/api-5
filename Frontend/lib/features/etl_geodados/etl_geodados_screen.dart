@@ -9,7 +9,11 @@ import 'package:tecsys_app/core/widgets/list_card.dart';
 import 'package:tecsys_app/core/widgets/page_body.dart';
 import 'package:tecsys_app/core/widgets/status_badge.dart';
 
+import 'package:tecsys_app/features/auth/data/services/auth_service.dart';
+
 import 'carga_detalhes_dialog.dart';
+import 'csv_import_dialog.dart';
+import 'models/csv_import_resumo.dart';
 import 'models/etl_carga.dart';
 import 'services/etl_service.dart';
 import 'upload_modal_dialog.dart';
@@ -113,6 +117,16 @@ class _EtlGeodadosScreenState extends State<EtlGeodadosScreen> {
         _mostrarToast('Carga de ${nova.nomeArquivo} iniciada.');
         _iniciarPolling();
     }
+  }
+
+  /// Importação de pontos externos por CSV (#TG-90). Não entra no histórico
+  /// de cargas: a resposta é síncrona e o resumo já aparece no modal.
+  Future<void> _abrirImportacaoCsv() async {
+    final CsvImportResumo? resumo = await CsvImportDialog.show(context);
+    if (resumo == null || !mounted || resumo.importadas == 0) return;
+    _mostrarToast(resumo.importadas == 1
+        ? '1 ponto importado do CSV.'
+        : '${resumo.importadas} pontos importados do CSV.');
   }
 
   void _abrirCard(EtlCarga carga) => carga.status == EtlCargaStatus.aguardandoEscolha
@@ -220,9 +234,13 @@ class _EtlGeodadosScreenState extends State<EtlGeodadosScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _PageHeader(
+                          EtlPageHeader(
                             mobile: mobile,
                             onUpload: _abrirUpload,
+                            onImportarCsv: podeImportarPontosCsv(
+                                    AuthService.instance.role)
+                                ? _abrirImportacaoCsv
+                                : null,
                           ),
                           const SizedBox(height: AppSpacing.lg),
                           _CargaList(
@@ -255,11 +273,26 @@ class _EtlGeodadosScreenState extends State<EtlGeodadosScreen> {
   }
 }
 
-class _PageHeader extends StatelessWidget {
-  const _PageHeader({required this.mobile, required this.onUpload});
+/// Só ADM importa pontos por CSV (o endpoint responde 403 para os demais).
+/// A aba de ETL já é só de ADM (#107), mas o botão confere de novo para não
+/// depender só do menu.
+bool podeImportarPontosCsv(String? role) => role == 'ADM';
+
+/// Cabeçalho da tela: título e os botões de upload do .zip e, para ADM,
+/// de importação de pontos por CSV (#TG-90). Público para o teste de widget.
+class EtlPageHeader extends StatelessWidget {
+  const EtlPageHeader({
+    super.key,
+    required this.mobile,
+    required this.onUpload,
+    this.onImportarCsv,
+  });
 
   final bool mobile;
   final VoidCallback onUpload;
+
+  /// `null` esconde o botão "Importar pontos (CSV)".
+  final VoidCallback? onImportarCsv;
 
   @override
   Widget build(BuildContext context) {
@@ -271,8 +304,11 @@ class _PageHeader extends StatelessWidget {
           style: AppTextStyles.pageTitle(mobile ? 24 : 26),
         ),
         const SizedBox(height: AppSpacing.xs),
-        const Text(
-          'Envie arquivos .zip para processamento geoespacial e validação dos dados.',
+        Text(
+          onImportarCsv == null
+              ? 'Envie arquivos .zip para processamento geoespacial e validação dos dados.'
+              : 'Envie arquivos .zip para processamento geoespacial e validação dos dados, '
+                  'ou importe pontos externos (candidatos, pontos a cobrir e de interesse) por CSV.',
           style: AppTextStyles.bodyMuted,
         ),
       ],
@@ -287,6 +323,18 @@ class _PageHeader extends StatelessWidget {
       ),
     );
 
+    final VoidCallback? importar = onImportarCsv;
+    final Widget? botaoCsv = importar == null
+        ? null
+        : SizedBox(
+            width: mobile ? double.infinity : null,
+            child: OutlinedButton.icon(
+              onPressed: importar,
+              icon: const Icon(Icons.add_location_alt_outlined),
+              label: const Text('Importar pontos (CSV)'),
+            ),
+          );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -294,12 +342,20 @@ class _PageHeader extends StatelessWidget {
           title,
           const SizedBox(height: AppSpacing.md),
           button,
+          if (botaoCsv != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            botaoCsv,
+          ],
         ] else
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(child: title),
               const SizedBox(width: AppSpacing.lg),
+              if (botaoCsv != null) ...[
+                botaoCsv,
+                const SizedBox(width: AppSpacing.sm),
+              ],
               button,
             ],
           ),
