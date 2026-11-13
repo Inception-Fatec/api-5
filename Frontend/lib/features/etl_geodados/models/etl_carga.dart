@@ -1,5 +1,14 @@
+import 'package:tecsys_app/core/utils/distributors.dart';
+
+import 'csv_import_resumo.dart';
+import 'leitura_json.dart';
+
 /// Estado de uma carga ETL.
 enum EtlCargaStatus { concluido, processando, erro, aguardandoEscolha, cancelado }
+
+/// Origem do item do histórico: carga da BDGD (.zip) ou importação de pontos
+/// externos por CSV (#TG-90), que o backend grava no mesmo histórico.
+enum EtlCargaTipo { etl, csv }
 
 /// Município presente na .gdb, com as quantidades lidas na inspeção (#TG-143).
 class MunicipioNoArquivo {
@@ -37,8 +46,8 @@ class InspecaoGdb {
           for (final Map m in lista.whereType<Map>())
             MunicipioNoArquivo(
               codigo: (m['codigo'] ?? '').toString(),
-              transformadores: EtlCarga._asInt(m['transformadores']) ?? 0,
-              consumidoresBt: EtlCarga._asInt(m['consumidores_bt']) ?? 0,
+              transformadores: jsonInt(m['transformadores']) ?? 0,
+              consumidoresBt: jsonInt(m['consumidores_bt']) ?? 0,
             ),
       ],
     );
@@ -76,7 +85,7 @@ class EtlCamada {
   final int consumidores;
 
   factory EtlCamada.fromMetricas(String nome, Map<String, dynamic> m) {
-    int i(String k) => EtlCarga._asInt(m[k]) ?? 0;
+    int i(String k) => jsonInt(m[k]) ?? 0;
 
     final bool consumidor = m.containsKey('retidos'); // ucat_pj / ucmt_pj
     // ucbt: da .gdb agregada por ponto (registros) ou, em cargas antigas, da ucbt_raw
@@ -118,7 +127,28 @@ class EtlCarga {
     this.municipios = const <String>[],
     this.etapa,
     this.inspecao,
+    this.tipo = EtlCargaTipo.etl,
+    this.csv,
+    this.distribuidora,
   });
+
+  /// Carga do .zip ou importação de CSV (summary.tipo == "csv").
+  final EtlCargaTipo tipo;
+
+  /// Resumo da importação de CSV (importadas, rejeitadas e motivos). Nulo nas
+  /// cargas do .zip e na importação que falhou antes de ler as linhas.
+  final CsvImportResumo? csv;
+
+  /// Código da distribuidora da importação de CSV.
+  final String? distribuidora;
+
+  bool get ehCsv => tipo == EtlCargaTipo.csv;
+
+  /// "Pontos externos (CSV) · EDP São Paulo (391)" (card e detalhes).
+  String get origemCsv {
+    final String? dist = distribuidora;
+    return dist == null ? 'Pontos externos (CSV)' : 'Pontos externos (CSV) · ${rotuloDistribuidora(dist)}';
+  }
 
   final String id;
   final String nomeArquivo;
@@ -164,6 +194,8 @@ class EtlCarga {
     // O tamanho só é conhecido na carga enviada nesta sessão; no histórico
     // vindo do backend ele não existe e não deve aparecer como "0 B".
     final partes = <String>[if (tamanhoBytes > 0) tamanhoFormatado];
+    final CsvImportResumo? resumoCsv = csv;
+    if (resumoCsv != null) partes.add(resumoCsv.texto);
     if (totalCamadas > 0) {
       partes.add('$totalCamadas ${totalCamadas == 1 ? 'Camada' : 'Camadas'} PostGIS');
     }
@@ -197,15 +229,20 @@ class EtlCarga {
       ..._camadasDe(_mapa(summary['consumidores'])),
     ];
     final int totalCamadas = camadas.length;
+    final bool ehCsv = summary['tipo']?.toString().toLowerCase() == 'csv';
 
     return EtlCarga(
+      tipo: ehCsv ? EtlCargaTipo.csv : EtlCargaTipo.etl,
+      // Sem "total" a importação falhou antes de ler as linhas (ex.: cabeçalho).
+      csv: ehCsv && summary['total'] != null ? CsvImportResumo.fromJson(summary) : null,
+      distribuidora: ehCsv ? _textoOuNulo(summary['distribuidora']) : null,
       id: primeiro(json, const ['id', 'cargaId', 'carga_id'])?.toString() ??
           DateTime.now().microsecondsSinceEpoch.toString(),
       nomeArquivo: primeiro(json, const ['nomeArquivo', 'nome_arquivo', 'originalFilename', 'filename', 'fileName', 'name'])
               ?.toString() ??
           nomeFallback ??
           'arquivo.zip',
-      tamanhoBytes: _asInt(primeiro(json, const ['tamanhoBytes', 'tamanho_bytes', 'fileSizeBytes', 'tamanho', 'size', 'sizeBytes'])) ??
+      tamanhoBytes: jsonInt(primeiro(json, const ['tamanhoBytes', 'tamanho_bytes', 'fileSizeBytes', 'tamanho', 'size', 'sizeBytes'])) ??
           tamanhoFallback ??
           0,
       totalCamadas: totalCamadas,
@@ -300,12 +337,6 @@ class EtlCarga {
     if (d == null) return v.toString();
     String p(int n) => n.toString().padLeft(2, '0');
     return '${p(d.day)}/${p(d.month)}/${d.year} às ${p(d.hour)}:${p(d.minute)}';
-  }
-
-  static int? _asInt(Object? v) {
-    if (v is num) return v.toInt();
-    if (v is String) return int.tryParse(v);
-    return null;
   }
 
   static EtlCargaStatus _parseStatus(String? s) {

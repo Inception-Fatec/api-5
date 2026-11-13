@@ -4,10 +4,13 @@ import 'arquivo_local.dart';
 /// funções só existem no navegador.
 const bool envioPeloNavegador = false;
 
-Future<ArquivoLocal?> escolherZipNoNavegador() =>
+Future<ArquivoLocal?> escolherArquivoNoNavegador({String aceitos = '.zip'}) =>
     throw UnsupportedError('Disponível só na web.');
 
 void prepararArquivosSoltos() {}
+
+/// Só é chamado na web (ver arquivo_local_web.dart).
+void Function(List<ArquivoLocal> arquivos)? aoSoltarNoNavegador;
 
 Future<ArquivoLocal> arquivoDeUrlBlob(String url, String nome) =>
     throw UnsupportedError('Disponível só na web.');

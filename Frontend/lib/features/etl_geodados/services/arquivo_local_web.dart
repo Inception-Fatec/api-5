@@ -29,12 +29,13 @@ class _ArquivoNavegador implements ArquivoLocal {
   }
 }
 
-/// Abre o seletor de arquivos do navegador (só .zip). Null se cancelar.
-Future<ArquivoLocal?> escolherZipNoNavegador() {
+/// Abre o seletor de arquivos do navegador. [aceitos] filtra as extensões
+/// (ex.: `.zip,.csv`, #TG-90). Null se cancelar.
+Future<ArquivoLocal?> escolherArquivoNoNavegador({String aceitos = '.zip'}) {
   final completer = Completer<ArquivoLocal?>();
   final input = web.document.createElement('input') as web.HTMLInputElement
     ..type = 'file'
-    ..accept = '.zip';
+    ..accept = aceitos;
 
   void concluir(ArquivoLocal? arquivo) {
     if (!completer.isCompleted) completer.complete(arquivo);
@@ -59,6 +60,15 @@ Future<ArquivoLocal?> escolherZipNoNavegador() {
 final Map<String, web.File> _soltos = <String, web.File>{};
 bool _ouvindoSoltos = false;
 
+/// Chamado a cada "soltar" na janela com os arquivos que o navegador
+/// entregou; lista vazia quando não veio arquivo nenhum (#TG-90).
+///
+/// O desktop_drop falha em silêncio quando o item solto não é um arquivo
+/// (ex.: arrastar do painel de downloads do Opera, que entrega só um link):
+/// `webkitGetAsEntry()` volta null e o DropDone nunca chega. Por isso o
+/// modal recebe o arquivo direto do evento do navegador.
+void Function(List<ArquivoLocal> arquivos)? aoSoltarNoNavegador;
+
 /// Escuta o evento `drop` da janela antes do desktop_drop (fase de captura)
 /// e guarda os `File` originais: assim o arquivo solto é enviado direto do
 /// disco, como no seletor, sem depender de reler a URL `blob:`.
@@ -69,12 +79,15 @@ void prepararArquivosSoltos() {
     'drop',
     (web.DragEvent e) {
       final web.FileList? files = e.dataTransfer?.files;
-      if (files == null) return;
       _soltos.clear();
-      for (int i = 0; i < files.length; i++) {
-        final web.File? f = files.item(i);
-        if (f != null) _soltos[f.name] = f;
+      final List<ArquivoLocal> arquivos = <ArquivoLocal>[];
+      for (int i = 0; i < (files?.length ?? 0); i++) {
+        final web.File? f = files!.item(i);
+        if (f == null) continue;
+        _soltos[f.name] = f;
+        arquivos.add(_ArquivoNavegador(f, f.name));
       }
+      aoSoltarNoNavegador?.call(arquivos);
     }.toJS,
     true.toJS,
   );
