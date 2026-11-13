@@ -69,6 +69,16 @@ public class PointCustomRepository {
             }
             subQuery.append("geom FROM ").append(meta.tableName).append(" WHERE 1=1 ");
 
+            // Filtra os registros externos pelo papel definido no CSV.
+            if (meta.tableName.equals("external_points")) {
+                if (consulta.cat().equals(CANDIDATO)) {
+                    subQuery.append(" AND papel = 'candidato' ");
+                } else {
+                    subQuery.append(" AND papel = 'ponto_a_cobrir' ");
+                }
+            }
+
+
             if (request.distCodes() != null && !request.distCodes().isEmpty()) {
                 if (meta.tableName.equals("sub") || meta.temDistPropria()) {
                     subQuery.append(" AND dist IN (:distCodes").append(suf).append(") ");
@@ -317,10 +327,16 @@ public class PointCustomRepository {
     static final String REDE = "rede";
 
     /** Camadas que podem ser pontos a cobrir (consumidores). */
-    static final List<String> CAMADAS_COBERTURA = List.of("ucat_pj", "ucmt_pj", "ucbt");
+    static final List<String> CAMADAS_COBERTURA =
+        List.of("ucat_pj", "ucmt_pj", "ucbt", "external_points");
+
     /** Camadas que podem ser candidatas a gateway (transformadores e consumidores). */
-    static final List<String> CAMADAS_CANDIDATAS = List.of("untrmt", "untrat", "ucat_pj", "ucmt_pj", "ucbt");
-    static final List<String> PADRAO_COBERTURA = CAMADAS_COBERTURA;
+    static final List<String> CAMADAS_CANDIDATAS =
+        List.of("untrmt", "untrat", "ucat_pj", "ucmt_pj", "ucbt", "external_points");
+
+    static final List<String> PADRAO_COBERTURA =
+        List.of("ucat_pj", "ucmt_pj", "ucbt");
+
     static final List<String> PADRAO_CANDIDATOS = List.of("untrmt", "untrat");
 
     /** Uma subconsulta: a camada e o papel com que ela entra (ponto, candidato ou rede). */
@@ -356,6 +372,18 @@ public class PointCustomRepository {
 
         List<Consulta> consultas = new ArrayList<>();
         for (TableMetadata t : TODAS_AS_TABELAS) {
+
+            // Pontos CSV não dependem do nível de tensão BDGD.
+            if (t.tableName.equals("external_points")) {
+                if (cobertura.contains(t.tableName)) {
+                    consultas.add(new Consulta(t, PONTO));
+                }
+                if (candidatas.contains(t.tableName)) {
+                    consultas.add(new Consulta(t, CANDIDATO));
+                }
+                continue;
+            }
+
             boolean nivelOk = noNivel.contains(t);
             if (t.hasAttributes) {
                 if (cobertura.contains(t.tableName) && nivelOk) consultas.add(new Consulta(t, PONTO));
@@ -384,7 +412,17 @@ public class PointCustomRepository {
                 new TableMetadata("ucbt", "cod_id_encr", "BAIXO", true, true, true,
                         Set.of("mun", "brr", "sub", "conj", "clas_sub", "cnae", "car_inst", "tip_sist", "are_loc",
                                 "uni_tr_mt", "qtd_consumidores")),
-                new TableMetadata("ssdbt", "cod_id", "BAIXO", false, true, false, Set.of("sub", "conj", "uni_tr_mt")));
+                new TableMetadata("ssdbt", "cod_id", "BAIXO", false, true, false,
+                        Set.of("sub", "conj", "uni_tr_mt")),
+                new TableMetadata(
+                        "external_points",
+                        "CONCAT('CSV:', dist, ':', external_id)",
+                        "EXTERNO",
+                        true,
+                        false,
+                        false,
+                        Set.of("mun", "dist")
+                ));
 
     /** Tabelas no nível de tensão pedido (a subestação sempre entra). */
     private static Set<TableMetadata> resolveTablesFromTensionLevels(List<String> targetLayers) {
@@ -411,7 +449,8 @@ public class PointCustomRepository {
          * Precisa estar em sincronia com TABELAS_COM_DIST do ETL (geodatabase_edp_sp.py).
          */
         boolean temDistPropria() {
-            return tableName.equals("ssdat");
+            return tableName.equals("ssdat")
+                    || tableName.equals("external_points");
         }
     }
 }

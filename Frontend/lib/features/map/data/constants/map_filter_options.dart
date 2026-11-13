@@ -18,21 +18,33 @@ class MapFilterOptions {
       };
 
   /// Camadas BDGD que podem ser pontos a cobrir (#TG-92): consumidores.
-  static const camadasCobertura = ['ucbt', 'ucmt_pj', 'ucat_pj'];
+  /// Camadas que podem ser pontos a cobrir.
+  static const camadasCobertura = [
+    'ucbt',
+    'ucmt_pj',
+    'ucat_pj',
+    'external_points',
+  ];
 
-  /// Camadas BDGD que podem ser candidatas a gateway (#TG-92):
-  /// transformadores e, se o usuário quiser, consumidores.
+  /// Camadas que podem ser candidatas a gateway.
   static const camadasCandidatas = [
     'untrmt',
     'untrat',
     'ucbt',
     'ucmt_pj',
     'ucat_pj',
+    'external_points',
   ];
 
-  /// Padrão do sistema: consumidores são pontos, transformadores candidatos.
-  static const padraoCobertura = camadasCobertura;
+  /// Padrões antigos preservados para projetos existentes.
+  static const padraoCobertura = [
+    'ucbt',
+    'ucmt_pj',
+    'ucat_pj',
+  ];
+
   static const padraoCandidatos = ['untrmt', 'untrat'];
+
 
   /// Rótulo de uma camada BDGD nos seletores de papel.
   static String camadaLabel(String camada) => switch (camada) {
@@ -41,6 +53,7 @@ class MapFilterOptions {
         'ucat_pj' => 'Consumidores de alta tensão',
         'untrmt' => 'Transformadores de média tensão',
         'untrat' => 'Transformadores de alta tensão',
+        'external_points' => 'Pontos externos (CSV)',
         _ => camada,
       };
 

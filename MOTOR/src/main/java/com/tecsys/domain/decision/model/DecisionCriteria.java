@@ -24,10 +24,19 @@ public record DecisionCriteria(
 ) {
 
     /** Camadas que podem ser pontos a cobrir (consumidores). */
-    public static final List<String> CAMADAS_COBERTURA = List.of("ucat_pj", "ucmt_pj", "ucbt");
+    public static final List<String> CAMADAS_COBERTURA =
+        List.of("ucat_pj", "ucmt_pj", "ucbt", "external_points");
+
+    public static final List<String> PADRAO_COBERTURA =
+        List.of("ucat_pj", "ucmt_pj", "ucbt");
+
     /** Camadas que podem ser candidatas a gateway. */
-    public static final List<String> CAMADAS_CANDIDATAS = List.of("untrmt", "untrat", "ucat_pj", "ucmt_pj", "ucbt");
-    public static final List<String> PADRAO_CANDIDATOS = List.of("untrmt", "untrat");
+    public static final List<String> CAMADAS_CANDIDATAS =
+            List.of("untrmt", "untrat", "ucat_pj", "ucmt_pj", "ucbt", "external_points");
+
+    public static final List<String> PADRAO_CANDIDATOS =
+        List.of("untrmt", "untrat");
+
 
     public DecisionCriteria {
         distCodes = safeList(distCodes);
@@ -38,7 +47,7 @@ public record DecisionCriteria(
         clasSub = safeList(clasSub);
         cnaeCodes = safeList(cnaeCodes);
         bairroNames = safeList(bairroNames);
-        coverageLayers = camadas(coverageLayers, CAMADAS_COBERTURA, CAMADAS_COBERTURA);
+        coverageLayers = camadas(coverageLayers, CAMADAS_COBERTURA, PADRAO_COBERTURA);
         candidateLayers = camadas(candidateLayers, CAMADAS_CANDIDATAS, PADRAO_CANDIDATOS);
     }
 

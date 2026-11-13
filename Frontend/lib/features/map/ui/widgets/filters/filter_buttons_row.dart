@@ -20,12 +20,33 @@ class FilterButtonsRow extends StatelessWidget {
     final targetLayers = controller.targetLayers;
     final areas = controller.areas;
 
+    final cobertura = controller.coverageLayers;
     final candidatas = controller.candidateLayers;
 
     final botoes = <Widget>[
-      // Papel no cálculo (#TG-92): onde pode ir gateway. Os pontos a
-      // cobrir são sempre os consumidores (o nível de tensão já os filtra),
-      // então não têm seletor próprio.
+
+      // TG-91: seleção independente das camadas de cobertura.
+      DropdownFilterButton(
+        label: 'Pontos a cobrir (${cobertura.length})',
+        icon: Icons.location_on_outlined,
+        ativo: !listEquals(
+          cobertura,
+          MapFilterOptions.padraoCobertura,
+        ),
+        panelBuilder: (context, fechar) => ListenableBuilder(
+          listenable: controller,
+          builder: (context, _) => CheckboxFilterPanel(
+            title: 'Pontos a cobrir',
+            options: MapFilterOptions.camadasCobertura,
+            selected: controller.coverageLayers,
+            labelOf: MapFilterOptions.camadaLabel,
+            onChanged: controller.setCoverageLayers,
+          ),
+        ),
+      ),
+
+      // TG-91/TG-92: seleção das camadas candidatas a gateway,
+// independente das camadas utilizadas como pontos a cobrir.
       DropdownFilterButton(
         label: 'Candidatos a gateway (${candidatas.length})',
         icon: Icons.cell_tower,
