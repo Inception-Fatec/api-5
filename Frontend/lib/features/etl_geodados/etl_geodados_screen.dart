@@ -9,11 +9,7 @@ import 'package:tecsys_app/core/widgets/list_card.dart';
 import 'package:tecsys_app/core/widgets/page_body.dart';
 import 'package:tecsys_app/core/widgets/status_badge.dart';
 
-import 'package:tecsys_app/features/auth/data/services/auth_service.dart';
-
 import 'carga_detalhes_dialog.dart';
-import 'csv_import_dialog.dart';
-import 'models/csv_import_resumo.dart';
 import 'models/etl_carga.dart';
 import 'services/etl_service.dart';
 import 'upload_modal_dialog.dart';
@@ -94,11 +90,24 @@ class _EtlGeodadosScreenState extends State<EtlGeodadosScreen> {
 
   Future<void> _abrirUpload() => _abrirModal(null);
 
-  /// Abre o upload (novo) ou retoma a escolha de municípios de uma carga
-  /// que ficou "Aguardando escolha" (#TG-143).
+  /// Abre o modal único de envio (.zip ou .csv, #TG-90) ou retoma a escolha
+  /// de municípios de uma carga que ficou "Aguardando escolha" (#TG-143).
   Future<void> _abrirModal(EtlCarga? aguardando) async {
-    final nova = await UploadModalDialog.show(context, aguardando: aguardando);
-    if (nova == null || !mounted) return;
+    final ResultadoEnvio? resultado =
+        await UploadModalDialog.show(context, aguardando: aguardando);
+    if (resultado == null || !mounted) return;
+
+    // Pontos do CSV não entram no histórico de cargas: a importação é
+    // síncrona e o resumo já apareceu no modal.
+    final int pontos = resultado.pontosImportados;
+    if (pontos > 0) {
+      _mostrarToast(pontos == 1
+          ? '1 ponto importado do CSV.'
+          : '$pontos pontos importados do CSV.');
+    }
+
+    final EtlCarga? nova = resultado.carga;
+    if (nova == null) return;
     setState(() {
       final int i = _cargas.indexWhere((c) => c.id == nova.id);
       if (i >= 0) {
@@ -117,16 +126,6 @@ class _EtlGeodadosScreenState extends State<EtlGeodadosScreen> {
         _mostrarToast('Carga de ${nova.nomeArquivo} iniciada.');
         _iniciarPolling();
     }
-  }
-
-  /// Importação de pontos externos por CSV (#TG-90). Não entra no histórico
-  /// de cargas: a resposta é síncrona e o resumo já aparece no modal.
-  Future<void> _abrirImportacaoCsv() async {
-    final CsvImportResumo? resumo = await CsvImportDialog.show(context);
-    if (resumo == null || !mounted || resumo.importadas == 0) return;
-    _mostrarToast(resumo.importadas == 1
-        ? '1 ponto importado do CSV.'
-        : '${resumo.importadas} pontos importados do CSV.');
   }
 
   void _abrirCard(EtlCarga carga) => carga.status == EtlCargaStatus.aguardandoEscolha
@@ -237,10 +236,6 @@ class _EtlGeodadosScreenState extends State<EtlGeodadosScreen> {
                           EtlPageHeader(
                             mobile: mobile,
                             onUpload: _abrirUpload,
-                            onImportarCsv: podeImportarPontosCsv(
-                                    AuthService.instance.role)
-                                ? _abrirImportacaoCsv
-                                : null,
                           ),
                           const SizedBox(height: AppSpacing.lg),
                           _CargaList(
@@ -273,26 +268,14 @@ class _EtlGeodadosScreenState extends State<EtlGeodadosScreen> {
   }
 }
 
-/// Só ADM importa pontos por CSV (o endpoint responde 403 para os demais).
-/// A aba de ETL já é só de ADM (#107), mas o botão confere de novo para não
-/// depender só do menu.
-bool podeImportarPontosCsv(String? role) => role == 'ADM';
-
-/// Cabeçalho da tela: título e os botões de upload do .zip e, para ADM,
-/// de importação de pontos por CSV (#TG-90). Público para o teste de widget.
+/// Cabeçalho da tela: título e o botão "Enviar arquivo", que abre o modal
+/// único (.zip da BDGD ou .csv de pontos externos, #TG-90). Público para o
+/// teste de widget.
 class EtlPageHeader extends StatelessWidget {
-  const EtlPageHeader({
-    super.key,
-    required this.mobile,
-    required this.onUpload,
-    this.onImportarCsv,
-  });
+  const EtlPageHeader({super.key, required this.mobile, required this.onUpload});
 
   final bool mobile;
   final VoidCallback onUpload;
-
-  /// `null` esconde o botão "Importar pontos (CSV)".
-  final VoidCallback? onImportarCsv;
 
   @override
   Widget build(BuildContext context) {
@@ -304,11 +287,9 @@ class EtlPageHeader extends StatelessWidget {
           style: AppTextStyles.pageTitle(mobile ? 24 : 26),
         ),
         const SizedBox(height: AppSpacing.xs),
-        Text(
-          onImportarCsv == null
-              ? 'Envie arquivos .zip para processamento geoespacial e validação dos dados.'
-              : 'Envie arquivos .zip para processamento geoespacial e validação dos dados, '
-                  'ou importe pontos externos (candidatos, pontos a cobrir e de interesse) por CSV.',
+        const Text(
+          'Envie o .zip da BDGD para processamento geoespacial e validação dos dados, '
+          'ou um .csv de pontos externos (candidatos, pontos a cobrir e de interesse).',
           style: AppTextStyles.bodyMuted,
         ),
       ],
@@ -319,21 +300,9 @@ class EtlPageHeader extends StatelessWidget {
       child: FilledButton.icon(
         onPressed: onUpload,
         icon: const Icon(Icons.upload_file_outlined),
-        label: const Text('Novo upload (.zip)'),
+        label: const Text('Enviar arquivo'),
       ),
     );
-
-    final VoidCallback? importar = onImportarCsv;
-    final Widget? botaoCsv = importar == null
-        ? null
-        : SizedBox(
-            width: mobile ? double.infinity : null,
-            child: OutlinedButton.icon(
-              onPressed: importar,
-              icon: const Icon(Icons.add_location_alt_outlined),
-              label: const Text('Importar pontos (CSV)'),
-            ),
-          );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -342,20 +311,12 @@ class EtlPageHeader extends StatelessWidget {
           title,
           const SizedBox(height: AppSpacing.md),
           button,
-          if (botaoCsv != null) ...[
-            const SizedBox(height: AppSpacing.sm),
-            botaoCsv,
-          ],
         ] else
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(child: title),
               const SizedBox(width: AppSpacing.lg),
-              if (botaoCsv != null) ...[
-                botaoCsv,
-                const SizedBox(width: AppSpacing.sm),
-              ],
               button,
             ],
           ),
@@ -448,7 +409,7 @@ class _EmptyState extends StatelessWidget {
               style: AppTextStyles.sectionLabel, textAlign: TextAlign.center),
           const SizedBox(height: AppSpacing.xs),
           const Text(
-            'Envie um arquivo .zip com uma geodatabase para iniciar o processamento.',
+            'Envie um .zip com a BDGD para iniciar o processamento, ou um .csv de pontos externos.',
             style: AppTextStyles.bodySmallMuted,
             textAlign: TextAlign.center,
           ),

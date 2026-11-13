@@ -331,6 +331,8 @@ class EtlDropZone extends StatefulWidget {
     required this.onDrop,
     required this.titulo,
     required this.legenda,
+    this.recebeSoltar = true,
+    this.destacado = false,
   });
 
   final bool enabled;
@@ -338,6 +340,14 @@ class EtlDropZone extends StatefulWidget {
   final ValueChanged<DropItem> onDrop;
   final String titulo;
   final String legenda;
+
+  /// `false` quando quem recebe o arquivo solto é um DropTarget maior em
+  /// volta (ex.: o modal inteiro, #TG-90); dois alvos receberiam o mesmo
+  /// arquivo duas vezes.
+  final bool recebeSoltar;
+
+  /// Destaque vindo de fora (arquivo sendo arrastado sobre o modal).
+  final bool destacado;
 
   @override
   State<EtlDropZone> createState() => _EtlDropZoneState();
@@ -349,10 +359,11 @@ class _EtlDropZoneState extends State<EtlDropZone> {
 
   @override
   Widget build(BuildContext context) {
-    final bool ativo = widget.enabled && (_hover || _arrastando);
+    final bool ativo =
+        widget.enabled && (_hover || _arrastando || widget.destacado);
 
     return DropTarget(
-      enable: widget.enabled,
+      enable: widget.enabled && widget.recebeSoltar,
       onDragEntered: (_) => setState(() => _arrastando = true),
       onDragExited: (_) => setState(() => _arrastando = false),
       onDragDone: (detalhe) {
@@ -778,6 +789,35 @@ class EtlCaixaErro extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ──────────────────────────────── Link ────────────────────────────────
+
+/// Botão discreto com ícone, em verde (ex.: "Baixar modelo CSV").
+class EtlBotaoLink extends StatelessWidget {
+  const EtlBotaoLink(
+      {super.key, required this.icone, required this.label, required this.onTap});
+
+  final IconData icone;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton.icon(
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        foregroundColor: EtlColors.teal700,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        minimumSize: const Size(0, 32),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      icon: Icon(icone, size: 16),
+      label: Text(label,
+          style: etlText(12,
+              weight: FontWeight.w600, color: EtlColors.teal700, lineHeight: 16)),
     );
   }
 }

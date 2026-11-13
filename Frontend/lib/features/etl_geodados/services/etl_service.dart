@@ -247,6 +247,11 @@ class EtlService {
         nomeFallback: nomeArquivo, tamanhoFallback: tamanho);
   }
 
+  /// Lê um arquivo pequeno do disco (o .csv escolhido ou solto fora da
+  /// web; na web o arquivo vem como [ArquivoLocal]).
+  static Future<Uint8List> lerArquivo(String caminho) =>
+      File(caminho).readAsBytes();
+
   /// POST multipart de pontos externos por CSV (#TG-89 / #TG-90). Síncrono:
   /// o backend valida linha a linha e já devolve o resumo. O CSV é pequeno,
   /// então vai em bytes em todas as plataformas (inclusive na web).

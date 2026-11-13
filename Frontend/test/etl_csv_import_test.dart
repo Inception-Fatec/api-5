@@ -1,20 +1,25 @@
-// #TG-90: modal de importação de pontos externos por CSV (RF-07, US #11).
-// Prévia lida no front, resumo devolvido pelo POST /etl/upload-csv (#TG-89),
-// mensagens de erro e botão visível só para ADM.
+// #TG-90: envio de pontos externos por CSV (RF-07, US #11) pelo modal único
+// da tela de ETL, que aceita .zip (BDGD) ou .csv e segue o fluxo certo pela
+// extensão. Prévia lida no front, resumo devolvido pelo POST
+// /etl/upload-csv (#TG-89), mensagens de erro e aba de ETL só para ADM.
 
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-import 'package:tecsys_app/features/etl_geodados/csv_import_dialog.dart';
+import 'package:tecsys_app/app/navigation/nav_items.dart';
 import 'package:tecsys_app/features/etl_geodados/etl_geodados_screen.dart';
 import 'package:tecsys_app/features/etl_geodados/models/csv_import_resumo.dart';
 import 'package:tecsys_app/features/etl_geodados/services/csv_preview.dart';
 import 'package:tecsys_app/features/etl_geodados/services/etl_service.dart';
+import 'package:tecsys_app/features/etl_geodados/upload_modal_dialog.dart';
+import 'package:tecsys_app/features/etl_geodados/widgets/etl_modal.dart';
 import 'package:tecsys_app/features/projects/data/services/distribuidoras_service.dart';
 
 Uint8List _utf8(String s) => Uint8List.fromList(utf8.encode(s));
@@ -250,78 +255,137 @@ void main() {
     });
   });
 
-  group('botão "Importar pontos (CSV)" (caso de teste 3)', () {
-    test('só o perfil ADM pode importar', () {
-      expect(podeImportarPontosCsv('ADM'), isTrue);
-      expect(podeImportarPontosCsv('USER'), isFalse);
-      expect(podeImportarPontosCsv(null), isFalse);
+  group('tipo do arquivo pela extensão', () {
+    test('.zip e .csv (sem diferenciar maiúsculas); o resto não', () {
+      expect(tipoDoArquivo('EDP_SP.gdb.zip'), TipoArquivoEnvio.zip);
+      expect(tipoDoArquivo('PONTOS.CSV'), TipoArquivoEnvio.csv);
+      expect(tipoDoArquivo('pontos.txt'), isNull);
+      expect(tipoDoArquivo('pontos.xlsx'), isNull);
+    });
+  });
+
+  group('tela de ETL: um botão só (caso de teste 3)', () {
+    test('usuário comum não vê a aba de ETL (e com ela o envio de CSV)', () {
+      expect(NavItems.forRole('USER'), isNot(contains(NavItems.etlGeodados)));
+      expect(NavItems.forRole(null), isNot(contains(NavItems.etlGeodados)));
+      expect(NavItems.forRole('ADM'), contains(NavItems.etlGeodados));
     });
 
-    Future<void> montar(WidgetTester tester, {required bool mobile, VoidCallback? csv}) {
-      // Largura de desktop (a fonte de teste é bem mais larga que a Inter).
+    Future<void> montar(WidgetTester tester, {required bool mobile, VoidCallback? onUpload}) {
       tester.view.physicalSize = Size(mobile ? 400 : 1600, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       return tester.pumpWidget(MaterialApp(
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: EtlPageHeader(mobile: mobile, onUpload: () {}, onImportarCsv: csv),
-            ),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: EtlPageHeader(mobile: mobile, onUpload: onUpload ?? () {}),
           ),
-        ));
+        ),
+      ));
     }
 
-    testWidgets('usuário comum não vê a opção', (tester) async {
-      await montar(tester, mobile: false);
-      expect(find.text('Novo upload (.zip)'), findsOneWidget);
-      expect(find.text('Importar pontos (CSV)'), findsNothing);
-    });
-
-    testWidgets('ADM vê a opção (desktop e mobile)', (tester) async {
+    testWidgets('"Enviar arquivo" abre o modal; não há botão separado de CSV', (tester) async {
       int cliques = 0;
-      await montar(tester, mobile: false, csv: () => cliques++);
-      await tester.tap(find.text('Importar pontos (CSV)'));
+      await montar(tester, mobile: false, onUpload: () => cliques++);
+      await tester.tap(find.text('Enviar arquivo'));
       expect(cliques, 1);
+      expect(find.text('Importar pontos (CSV)'), findsNothing);
+      expect(find.text('Novo upload (.zip)'), findsNothing);
 
-      await montar(tester, mobile: true, csv: () {});
-      expect(find.text('Importar pontos (CSV)'), findsOneWidget);
+      await montar(tester, mobile: true);
+      expect(find.text('Enviar arquivo'), findsOneWidget);
     });
   });
 
-  group('CsvImportDialog', () {
-    testWidgets('pré-seleciona distribuidora e município únicos; sem arquivo não envia',
-        (tester) async {
+  group('modal único "Enviar arquivo"', () {
+    late Directory pasta;
+    setUp(() => pasta = Directory.systemTemp.createTempSync('tg90_'));
+    tearDown(() => pasta.deleteSync(recursive: true));
+
+    Future<void> abrir(WidgetTester tester,
+        {List<Distribuidora> distribuidoras = const [Distribuidora(codigo: '391', nome: 'EDP SP')],
+        List<int> municipios = const [3549904]}) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
-          body: CsvImportDialog(
-            distribuidorasService: _DistribuidorasFalsas(
-              const [Distribuidora(codigo: '391', nome: 'EDP SP')],
-              const [3549904],
-            ),
+          body: UploadModalDialog(
+            distribuidorasService: _DistribuidorasFalsas(distribuidoras, municipios),
           ),
         ),
       ));
-      await tester.pumpAndSettle();
+    }
 
-      expect(find.text('Importar pontos (CSV)'), findsOneWidget);
-      expect(find.textContaining('Baixar modelo'), findsOneWidget);
-      expect(find.textContaining('(391)'), findsOneWidget);
-      expect(find.textContaining('3549904'), findsOneWidget);
-      // Botão primário presente, mas desabilitado sem arquivo.
-      await tester.tap(find.text('Importar pontos'));
-      await tester.pump();
-      expect(find.textContaining('Enviando'), findsNothing);
+    /// Solta o arquivo na área de arrastar, como no desktop (pelo caminho).
+    Future<void> soltar(WidgetTester tester, String nome, List<int> bytes) async {
+      final File arquivo = File('${pasta.path}${Platform.pathSeparator}$nome')
+        ..writeAsBytesSync(bytes);
+      final EtlDropZone zona = tester.widget<EtlDropZone>(find.byType(EtlDropZone));
+      // Leitura do disco de verdade: fora do relógio falso do teste.
+      await tester.runAsync(() async {
+        zona.onDrop(DropItemFile(arquivo.path));
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      });
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('abre com o título "Enviar arquivo", diretrizes e modelo CSV', (tester) async {
+      await abrir(tester);
+      expect(find.text('Enviar arquivo'), findsOneWidget);
+      expect(find.text('Baixar modelo CSV'), findsOneWidget);
+      expect(find.textContaining('.zip ou .csv'), findsOneWidget);
     });
 
-    testWidgets('sem distribuidora no banco pede a carga do .zip antes', (tester) async {
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-          body: CsvImportDialog(
-            distribuidorasService: _DistribuidorasFalsas(const [], const []),
-          ),
-        ),
-      ));
+    testWidgets('.zip vai para o fluxo da BDGD', (tester) async {
+      await abrir(tester);
+      await soltar(tester, 'EDP_SP.zip',
+          [0x50, 0x4B, 0x03, 0x04, ...ascii.encode('EDP_SP.gdb/a00000000000000000000000000')]);
+      expect(find.text('Geodatabase (.zip)'), findsOneWidget);
+      expect(find.text('Pronto para processamento'), findsOneWidget);
+      expect(find.text('Enviar e analisar'), findsOneWidget);
+      expect(find.text('Pontos externos (CSV)'), findsNothing);
+    });
+
+    testWidgets('.csv vai para o fluxo de pontos, com o arquivo já escolhido', (tester) async {
+      await abrir(tester);
+      await soltar(tester, 'pontos.csv',
+          utf8.encode('id;latitude;longitude;papel\nP1;-23,1;-45,8;candidato\n'));
+      expect(find.text('Pontos externos (CSV)'), findsOneWidget);
+      expect(find.text('pontos.csv'), findsOneWidget);
+      expect(find.byType(EtlDropZone), findsNothing);
+      // Distribuidora e município únicos já vêm escolhidos.
+      expect(find.textContaining('(391)'), findsOneWidget);
+      expect(find.textContaining('3549904'), findsOneWidget);
+      expect(find.text('Prévia do arquivo'), findsOneWidget);
+      expect(find.text('Importar pontos'), findsOneWidget);
+
+      // "Trocar arquivo" volta para a área que aceita os dois tipos.
+      await tester.tap(find.byIcon(Icons.sync));
       await tester.pumpAndSettle();
+      expect(find.text('Enviar arquivo'), findsOneWidget);
+      expect(find.byType(EtlDropZone), findsOneWidget);
+    });
+
+    testWidgets('.txt mostra a mensagem de formato', (tester) async {
+      await abrir(tester);
+      await soltar(tester, 'pontos.txt', utf8.encode('id;latitude;longitude;papel\n'));
+      expect(find.text(kMensagemFormatoInvalido), findsOneWidget);
+      expect(find.text('Enviar arquivo'), findsOneWidget);
+      expect(find.text('Pontos externos (CSV)'), findsNothing);
+    });
+
+    testWidgets('.csv vazio mostra mensagem e não troca o fluxo', (tester) async {
+      await abrir(tester);
+      await soltar(tester, 'vazio.csv', const <int>[]);
+      expect(find.textContaining('está vazio'), findsOneWidget);
+      expect(find.text('Pontos externos (CSV)'), findsNothing);
+    });
+
+    testWidgets('.csv sem distribuidora no banco pede o .zip antes', (tester) async {
+      await abrir(tester, distribuidoras: const [], municipios: const []);
+      await soltar(tester, 'pontos.csv',
+          utf8.encode('id;latitude;longitude;papel\nP1;-23;-45;candidato\n'));
       expect(find.textContaining('Nenhuma distribuidora com dados'), findsOneWidget);
     });
   });
