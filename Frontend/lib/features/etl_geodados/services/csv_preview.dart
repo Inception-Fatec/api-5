@@ -209,3 +209,8 @@ PreviaCsv analisarCsv(String texto, {int maxLinhas = 5}) {
     pareceSeparadorVirgula: cabecalho.length == 1 && cabecalho.first.contains(','),
   );
 }
+
+/// Célula de CSV com `;`: entre aspas (e `"` dobrada) quando o texto tem
+/// `;`, aspas ou quebra de linha, como o backend espera ao ler.
+String celulaCsv(String s) =>
+    RegExp(r'[;"\r\n]').hasMatch(s) ? '"${s.replaceAll('"', '""')}"' : s;

@@ -1,9 +1,13 @@
 package com.tecsys.domain.etl;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tecsys.core.exception.BusinessRuleException;
 import com.tecsys.domain.etl.dto.CsvRejectionDto;
 import com.tecsys.domain.etl.dto.ExternalPointsImportResponseDto;
+import com.tecsys.domain.etl.dto.ExternalPointsListResponseDto;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -17,14 +21,17 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ExternalPointsImportService {
@@ -36,7 +43,19 @@ public class ExternalPointsImportService {
     private static final List<String> COLUNAS_OBRIGATORIAS = List.of("id", "latitude", "longitude", "papel");
     private static final Pattern CODIGO_DISTRIBUIDORA = Pattern.compile("^\\d{1,10}$");
 
+    /** Rejeições guardadas no histórico de cada importação. */
+    static final int MAX_REJEICOES_HISTORICO = 500;
+
+    /** Pontos devolvidos nos detalhes de uma importação. */
+    static final int LIMITE_PONTOS_PADRAO = 1000;
+    static final int LIMITE_PONTOS_MAXIMO = 5000;
+
+    /** Chave do summary com os ids gravados pela importação. */
+    public static final String CHAVE_IMPORTADOS = "importados";
+
     private final ExternalPointJdbcRepository repository;
+    private final EtlJobRepository jobRepository;
+    private final ObjectMapper objectMapper;
 
     private record Cabecalho(int totalColunas, int id, int latitude, int longitude, int papel, int descricao) {
     }
@@ -47,6 +66,99 @@ public class ExternalPointsImportService {
         String mun = validarMunicipio(municipio);
         validarArquivo(file);
 
+        // Cada importação entra no histórico de cargas da tela de ETL (#TG-90),
+        // como um job já terminado: sucesso com o resumo, ou falha com o motivo.
+        Instant inicio = Instant.now();
+        try {
+            Resultado r = processar(file, dist, mun, userId);
+            registrarNoHistorico(file, dist, mun, userId, inicio, EtlJobStatus.SUCCESS, r.resposta(), r.inseridos(), null);
+            return r.resposta();
+        } catch (BusinessRuleException e) {
+            registrarNoHistorico(file, dist, mun, userId, inicio, EtlJobStatus.FAILED, null, List.of(), e.getMessage());
+            throw e;
+        }
+    }
+
+    /**
+     * Pontos gravados por uma importação (detalhes do item no histórico de
+     * cargas), pelos ids guardados no summary do job — sem coluna nova em
+     * external_points. {@code limite} vai de 1 a 5000 (padrão 1000).
+     */
+    public ExternalPointsListResponseDto listarPontosDaImportacao(long jobId, Integer limite) {
+        int lim = limite == null ? LIMITE_PONTOS_PADRAO : Math.max(1, Math.min(limite, LIMITE_PONTOS_MAXIMO));
+        JsonNode resumo = jobRepository.findById(jobId).map(this::lerResumo).orElse(null);
+        if (resumo == null || !"csv".equals(resumo.path("tipo").asText()) || !resumo.has(CHAVE_IMPORTADOS)) {
+            // .zip, job inexistente ou importação anterior ao histórico guardar os ids.
+            return new ExternalPointsListResponseDto(0, lim, List.of());
+        }
+        List<String> ids = new ArrayList<>();
+        resumo.get(CHAVE_IMPORTADOS).forEach(n -> ids.add(n.asText()));
+        long total = resumo.path("importadas").asLong(ids.size());
+        return new ExternalPointsListResponseDto(total, lim,
+                repository.listarPorIds(resumo.path("distribuidora").asText(), ids.subList(0, Math.min(lim, ids.size()))));
+    }
+
+    private JsonNode lerResumo(EtlJob job) {
+        try {
+            return job.getSummaryJson() == null ? null : objectMapper.readTree(job.getSummaryJson());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Grava a importação em etl_jobs (já concluída), com {@code "tipo": "csv"} no
+     * summary para a tela diferenciar das cargas da .gdb, e os ids gravados agora
+     * (para os detalhes listarem as linhas importadas). Falhar aqui não desfaz a
+     * importação: os pontos já foram gravados e o histórico é só informativo.
+     */
+    private EtlJob registrarNoHistorico(MultipartFile file, String dist, String mun, Long userId, Instant inicio,
+                                        EtlJobStatus status, ExternalPointsImportResponseDto resposta,
+                                        List<String> inseridos, String erro) {
+        try {
+            Map<String, Object> resumo = new LinkedHashMap<>();
+            resumo.put("tipo", "csv");
+            resumo.put("distribuidora", dist);
+            resumo.put("municipio", mun);
+            if (resposta != null) {
+                resumo.put("total", resposta.total());
+                resumo.put("importadas", resposta.importadas());
+                resumo.put("jaExistentes", resposta.jaExistentes());
+                resumo.put("rejeitadas", resposta.rejeitadas());
+                // O histórico lista 30 jobs com o summary: guarda só as primeiras
+                // rejeições para a resposta não crescer sem limite.
+                List<CsvRejectionDto> rejeicoes = resposta.rejeicoes();
+                resumo.put("rejeicoes", rejeicoes.subList(0, Math.min(rejeicoes.size(), MAX_REJEICOES_HISTORICO)));
+                if (rejeicoes.size() > MAX_REJEICOES_HISTORICO) {
+                    resumo.put("rejeicoesOmitidas", rejeicoes.size() - MAX_REJEICOES_HISTORICO);
+                }
+                // Até o máximo que os detalhes mostram; a listagem do histórico
+                // não devolve esta chave (ver EtlJobResponseDto).
+                resumo.put(CHAVE_IMPORTADOS, inseridos.subList(0, Math.min(inseridos.size(), LIMITE_PONTOS_MAXIMO)));
+            }
+            return jobRepository.save(EtlJob.builder()
+                    .status(status)
+                    .originalFilename(StringUtils.cleanPath(
+                            file.getOriginalFilename() == null ? "" : file.getOriginalFilename()))
+                    .fileSizeBytes(file.getSize())
+                    .municipios(mun)
+                    .summaryJson(objectMapper.writeValueAsString(resumo))
+                    .errorMessage(erro)
+                    .createdBy(userId)
+                    .startedAt(inicio)
+                    .finishedAt(Instant.now())
+                    .build());
+        } catch (Exception e) {
+            log.warn("Não foi possível registrar a importação de CSV no histórico: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /** Resposta da importação e os ids gravados agora (para ligar ao histórico). */
+    private record Resultado(ExternalPointsImportResponseDto resposta, List<String> inseridos) {
+    }
+
+    private Resultado processar(MultipartFile file, String dist, String mun, Long userId) {
         List<ExternalPointRow> validos = new ArrayList<>();
         List<CsvRejectionDto> rejeicoes = new ArrayList<>();
         Map<String, Integer> idsAceitos = new HashMap<>();
@@ -74,10 +186,13 @@ public class ExternalPointsImportService {
             throw new BusinessRuleException("O CSV não possui linhas de dados.");
         }
 
-        int importadas = validos.isEmpty() ? 0 : repository.inserirNovos(dist, mun, validos, userId);
+        List<String> inseridos = validos.isEmpty() ? List.of() : repository.inserirNovos(dist, mun, validos, userId);
+        int importadas = inseridos.size();
         int jaExistentes = validos.size() - importadas;
 
-        return new ExternalPointsImportResponseDto(total, importadas, jaExistentes, rejeicoes.size(), rejeicoes);
+        return new Resultado(
+                new ExternalPointsImportResponseDto(total, importadas, jaExistentes, rejeicoes.size(), rejeicoes),
+                inseridos);
     }
 
     /** UTF-8 primeiro; se o arquivo não for UTF-8 válido (ex.: Excel em português), lê como Windows-1252. */

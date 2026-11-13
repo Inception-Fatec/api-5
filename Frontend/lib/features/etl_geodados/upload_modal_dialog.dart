@@ -51,9 +51,18 @@ TipoArquivoEnvio? tipoDoArquivo(String nome) {
 /// O que o modal devolve: a carga do .zip e/ou o resultado dos CSVs
 /// importados (dá para importar mais de um arquivo antes de fechar).
 class ResultadoEnvio {
-  const ResultadoEnvio({this.carga, this.csv, this.pontosImportados = 0});
+  const ResultadoEnvio({
+    this.carga,
+    this.csv,
+    this.pontosImportados = 0,
+    this.houveCsv = false,
+  });
 
   final EtlCarga? carga;
+
+  /// Algum CSV foi enviado (com sucesso ou falha): a importação entrou no
+  /// histórico de cargas e a tela recarrega a lista.
+  final bool houveCsv;
 
   /// Resumo do último CSV importado.
   final CsvImportResumo? csv;
@@ -110,6 +119,9 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
   final CsvImportController _csv = CsvImportController();
   CsvImportResumo? _ultimoResumo;
   int _pontosImportados = 0;
+
+  /// Algum CSV foi enviado (com sucesso ou não) nesta abertura do modal.
+  bool _houveCsv = false;
   String? _avisoModelo;
 
   /// Arquivo sendo arrastado sobre o modal (destaca a área tracejada).
@@ -159,8 +171,9 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
 
   ResultadoEnvio? _resultado({EtlCarga? carga}) {
     final EtlCarga? c = carga ?? _carga;
-    if (c == null && _ultimoResumo == null) return null;
-    return ResultadoEnvio(carga: c, csv: _ultimoResumo, pontosImportados: _pontosImportados);
+    if (c == null && _ultimoResumo == null && !_houveCsv) return null;
+    return ResultadoEnvio(
+        carga: c, csv: _ultimoResumo, pontosImportados: _pontosImportados, houveCsv: _houveCsv);
   }
 
   /// Fechar na etapa de escolha mantém o upload no histórico como
@@ -494,6 +507,7 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
           distribuidorasService: widget.distribuidorasService,
           onTrocarArquivo: _voltarParaArquivo,
           onImportado: _aoImportarCsv,
+          onEnviado: () => _houveCsv = true,
         ),
       ],
       rodape: comResumo

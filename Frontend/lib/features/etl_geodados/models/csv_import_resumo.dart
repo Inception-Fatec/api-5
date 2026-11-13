@@ -1,3 +1,6 @@
+import '../services/csv_preview.dart';
+import 'leitura_json.dart';
+
 /// Resposta de `POST /api/v1/etl/upload-csv` (#TG-89), mostrada no resumo
 /// do modal de importação de pontos (#TG-90).
 ///
@@ -12,7 +15,12 @@ class CsvImportResumo {
     required this.jaExistentes,
     required this.rejeitadas,
     required this.rejeicoes,
+    this.rejeicoesOmitidas = 0,
   });
+
+  /// No histórico de cargas o backend guarda só as primeiras rejeições;
+  /// aqui vem quantas ficaram de fora.
+  final int rejeicoesOmitidas;
 
   /// Linhas de dados não vazias do arquivo.
   final int total;
@@ -33,14 +41,15 @@ class CsvImportResumo {
         if (r is Map) CsvRejeicao.fromJson(Map<String, dynamic>.from(r)),
     ];
     return CsvImportResumo(
-      total: _int(json['total']),
-      importadas: _int(json['importadas']),
-      jaExistentes: _int(json['jaExistentes']),
+      total: _inteiro(json['total']),
+      importadas: _inteiro(json['importadas']),
+      jaExistentes: _inteiro(json['jaExistentes']),
       // Se o campo faltar, a própria lista diz quantas foram.
       rejeitadas: json['rejeitadas'] == null
           ? rejeicoes.length
-          : _int(json['rejeitadas']),
+          : _inteiro(json['rejeitadas']),
       rejeicoes: rejeicoes,
+      rejeicoesOmitidas: _inteiro(json['rejeicoesOmitidas']),
     );
   }
 
@@ -60,18 +69,13 @@ class CsvImportResumo {
   String rejeicoesCsv() {
     final StringBuffer b = StringBuffer('linha;id;motivo\r\n');
     for (final CsvRejeicao r in rejeicoes) {
-      b.write('${r.linha};${_celula(r.id)};${_celula(r.motivo)}\r\n');
+      b.write('${r.linha};${celulaCsv(r.id)};${celulaCsv(r.motivo)}\r\n');
     }
     return b.toString();
   }
 
   static String _plural(int n, String um, String varios) =>
       '$n ${n == 1 ? um : varios}';
-
-  /// Aspas quando o texto tem `;`, aspas ou quebra de linha (os motivos do
-  /// backend juntam vários erros com "; ").
-  static String _celula(String s) =>
-      RegExp(r'[;"\r\n]').hasMatch(s) ? '"${s.replaceAll('"', '""')}"' : s;
 }
 
 /// Linha recusada pelo backend, com o motivo.
@@ -86,14 +90,10 @@ class CsvRejeicao {
   final String motivo;
 
   factory CsvRejeicao.fromJson(Map<String, dynamic> json) => CsvRejeicao(
-        linha: _int(json['linha']),
+        linha: _inteiro(json['linha']),
         id: (json['id'] ?? '').toString(),
         motivo: (json['motivo'] ?? '').toString(),
       );
 }
 
-int _int(Object? v) {
-  if (v is num) return v.toInt();
-  if (v is String) return int.tryParse(v.trim()) ?? 0;
-  return 0;
-}
+int _inteiro(Object? v) => jsonInt(v) ?? 0;

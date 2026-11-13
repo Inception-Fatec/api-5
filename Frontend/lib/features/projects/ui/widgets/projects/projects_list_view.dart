@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:tecsys_app/core/theme/app_theme.dart';
+import 'package:tecsys_app/core/widgets/card_grid.dart';
 import 'package:tecsys_app/features/projects/data/models/project_model.dart';
 import 'package:tecsys_app/features/projects/state/projects_list_controller.dart';
 import 'package:tecsys_app/features/projects/ui/styles/projects_styles.dart';
@@ -69,21 +70,9 @@ class ProjectsListView extends StatelessWidget {
       );
     }
     if (grid) {
-      return LayoutBuilder(
-        builder: (context, gridConstraints) {
-          final columns =
-              gridConstraints.maxWidth >= AppBreakpoints.wideGrid ? 3 : 2;
-          const spacing = ProjectsStyles.gridSpacing;
-          final cardWidth =
-              (gridConstraints.maxWidth - spacing * (columns - 1)) / columns;
-          return Wrap(
-            spacing: spacing,
-            runSpacing: spacing,
-            children: projetos
-                .map((p) => SizedBox(width: cardWidth, child: _card(p)))
-                .toList(),
-          );
-        },
+      return CardGrid(
+        spacing: ProjectsStyles.gridSpacing,
+        children: projetos.map(_card).toList(),
       );
     }
     return Column(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:tecsys_app/core/theme/app_theme.dart';
+import 'package:tecsys_app/core/widgets/card_grid.dart';
 import 'package:tecsys_app/features/users/data/models/user_model.dart';
 import 'package:tecsys_app/features/users/ui/styles/users_styles.dart';
 import 'package:tecsys_app/features/users/ui/widgets/users/user_card.dart';
@@ -54,21 +55,9 @@ class UsersListView extends StatelessWidget {
     }
 
     if (grid) {
-      return LayoutBuilder(
-        builder: (context, constraints) {
-          final columns =
-              constraints.maxWidth >= AppBreakpoints.wideGrid ? 3 : 2;
-          const spacing = UsersStyles.gridSpacing;
-          final cardWidth =
-              (constraints.maxWidth - spacing * (columns - 1)) / columns;
-          return Wrap(
-            spacing: spacing,
-            runSpacing: spacing,
-            children: members
-                .map((m) => SizedBox(width: cardWidth, child: _card(m)))
-                .toList(),
-          );
-        },
+      return CardGrid(
+        spacing: UsersStyles.gridSpacing,
+        children: members.map(_card).toList(),
       );
     }
 

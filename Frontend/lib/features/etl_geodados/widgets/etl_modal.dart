@@ -14,7 +14,10 @@ import '../etl_theme.dart';
 /// viraram parâmetros.
 
 /// Abre [modal] com o overlay escuro + blur usado nos modais do ETL.
-Future<T?> mostrarModalEtl<T>(BuildContext context, Widget modal) {
+/// [fecharAoClicarFora]: clicar no fundo fecha (detalhes de uma carga); nos
+/// modais de envio fica desligado para não perder o arquivo escolhido.
+Future<T?> mostrarModalEtl<T>(BuildContext context, Widget modal,
+    {bool fecharAoClicarFora = false}) {
   return showGeneralDialog<T>(
     context: context,
     barrierDismissible: false,
@@ -28,7 +31,13 @@ Future<T?> mostrarModalEtl<T>(BuildContext context, Widget modal) {
           Positioned.fill(
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-              child: const ColoredBox(color: Color(0x00000000)),
+              child: fecharAoClicarFora
+                  ? GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => Navigator.of(ctx).pop(),
+                      child: const SizedBox.expand(),
+                    )
+                  : const ColoredBox(color: Color(0x00000000)),
             ),
           ),
           // showGeneralDialog não desvia do teclado: o cartão sobe e
@@ -65,12 +74,16 @@ class EtlModalCard extends StatelessWidget {
     required this.cabecalho,
     required this.conteudo,
     required this.rodape,
+    this.larguraMaxima = 576,
   });
 
   final VoidCallback onEsc;
   final Widget cabecalho;
   final List<Widget> conteudo;
   final List<Widget> rodape;
+
+  /// Largura do cartão (sem a margem de 16 de cada lado).
+  final double larguraMaxima;
 
   @override
   Widget build(BuildContext context) {
@@ -81,7 +94,7 @@ class EtlModalCard extends StatelessWidget {
         child: Material(
           type: MaterialType.transparency,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 576 + 32),
+            constraints: BoxConstraints(maxWidth: larguraMaxima + 32),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Container(

@@ -10,6 +10,7 @@ import 'package:tecsys_app/features/auth/data/services/auth_service.dart';
 
 import '../models/csv_import_resumo.dart';
 import '../models/etl_carga.dart';
+import '../models/ponto_importado.dart';
 import 'arquivo_local.dart';
 
 class EtlUploadException implements Exception {
@@ -229,12 +230,8 @@ class EtlService {
       {required String nomeArquivo, required int tamanho}) {
     if (status < 200 || status >= 300) {
       _verificarSessao(status);
-      final Object? msg = json?['message'] ??
-          json?['mensagem'] ??
-          json?['error'] ??
-          json?['detail'];
       throw EtlUploadException(
-        msg?.toString() ??
+        _mensagemDoBackend(json) ??
             'O servidor respondeu com o código HTTP $status.',
       );
     }
@@ -306,13 +303,9 @@ class EtlService {
       _verificarSessao(status);
       // 422 (BusinessRuleException) traz o motivo em `message`, ex.:
       // "Cabeçalho inválido: faltam as colunas [papel]...".
-      final Object? msg = json?['message'] ??
-          json?['mensagem'] ??
-          json?['error'] ??
-          json?['detail'];
       throw EtlUploadException(status == 401
           ? 'Sua sessão expirou. Entre novamente para importar os pontos.'
-          : (msg?.toString() ??
+          : (_mensagemDoBackend(json) ??
               'O servidor respondeu com o código HTTP $status.'));
     }
     if (json == null) {
@@ -397,12 +390,39 @@ class EtlService {
     }
   }
 
+  /// GET /api/v1/etl/jobs/{id}/pontos: pontos gravados por uma importação de
+  /// CSV do histórico (#TG-90). [client] existe para os testes.
+  static Future<PontosDaImportacao> listarPontosDaImportacao(String cargaId,
+      {int limite = 1000, http.Client? client}) async {
+    final String? token = AuthService.instance.token;
+    final http.Response resposta;
+    try {
+      resposta = await (client?.get ?? http.get)(
+        Uri.parse('${ApiConfig.baseUrl}$jobsPath/$cargaId/pontos?limite=$limite'),
+        headers: <String, String>{if (token != null) 'Authorization': 'Bearer $token'},
+      ).timeout(const Duration(seconds: 30));
+    } catch (_) {
+      throw const EtlUploadException(_falhaConexao);
+    }
+    final Map<String, dynamic>? json = _tentarJson(resposta);
+    if (resposta.statusCode < 200 || resposta.statusCode >= 300 || json == null) {
+      _verificarSessao(resposta.statusCode);
+      throw EtlUploadException(_mensagemDoBackend(json) ??
+          'Não foi possível carregar os pontos importados (HTTP ${resposta.statusCode}).');
+    }
+    return PontosDaImportacao.fromJson(json);
+  }
+
+  /// Motivo do erro no corpo do backend (StandardError usa `message`).
+  static String? _mensagemDoBackend(Map<String, dynamic>? json) =>
+      (json?['message'] ?? json?['mensagem'] ?? json?['error'] ?? json?['detail'])?.toString();
+
   static Map<String, dynamic>? _tentarJson(http.Response r) {
     try {
-      final Object? d = jsonDecode(utf8.decode(r.bodyBytes));
-      if (d is Map) return Map<String, dynamic>.from(d);
-    } catch (_) {}
-    return null;
+      return _jsonDe(utf8.decode(r.bodyBytes));
+    } catch (_) {
+      return null;
+    }
   }
 
   static Map<String, dynamic>? _jsonDe(String corpo) {
