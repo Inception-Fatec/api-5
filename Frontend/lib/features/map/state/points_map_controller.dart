@@ -296,7 +296,7 @@ class PointsMapController extends ChangeNotifier {
 
 
   String _chaveArea(SelectedArea a, FiltrosPontos f) =>
-      '${a.north},${a.south},${a.west},${a.east}|${f.hashCode}|${munCodes.join(",")}';
+      '${a.toRing().map((c) => '${c[0]},${c[1]}').join(';')}|${f.hashCode}|${munCodes.join(",")}';
 
   ContagemPontos? totalNaArea(SelectedArea a) =>
       _totalPorArea[_chaveArea(a, filtros)];
