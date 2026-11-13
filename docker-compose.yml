@@ -1,10 +1,18 @@
-# Alternativa "sobe tudo de uma vez" — os scripts em scripts/ continuam
-# sendo o jeito principal (cada serviço sobe/para sozinho).
+# Alternativa "sobe tudo de uma vez". Os scripts em scripts/ continuam sendo o
+# jeito principal (cada serviço sobe e para sozinho).
 #
 #   docker compose up --build        # db + backend + motor + frontend
 #   docker compose up --build db     # só um serviço
+#   docker compose ps                # estado e saúde (healthy) de cada serviço
+#   docker compose logs -f motor     # acompanha o log de um serviço
 #   docker compose down              # para tudo (volumes tecsys-pgdata e tecsys-dem-cache preservados)
 #   docker compose down -v           # CUIDADO: apaga também os caches tecsys-dem-cache e tecsys-aneel-cache
+#
+# Endereços após a subida:
+#   frontend  http://localhost:8080
+#   backend   http://localhost:8081  (Swagger em /swagger-ui.html)
+#   motor     http://127.0.0.1:8082  (sem autenticação; só acessível pela própria máquina)
+#   banco     localhost:5433         (tecsys / tecsys)
 #
 # Segredo do JWT (obrigatório, #TG-94): vem do ambiente ou do arquivo .env na
 # raiz do repositório (gitignored), por exemplo:
@@ -12,9 +20,10 @@
 # Relevo do motor: Copernicus GLO-30 baixado da AWS, sem chave (#TG-139). Os
 # tiles ficam no volume tecsys-dem-cache, o mesmo do scripts/run-motor.sh.
 #
-# Banco local (PostGIS 17). Para usar o Supabase no backend, suba o
-# backend pelo script (./scripts/run-backend.sh --db supabase) em vez
-# de pelo compose.
+# Banco local (PostGIS 17). O banco do compose nasce vazio: para carregar a
+# rede do dump, suba o db e rode ./scripts/run-db.sh (ver scripts/README.md).
+# Para usar o Supabase no backend, suba o backend pelo script
+# (./scripts/run-backend.sh --db supabase) em vez de pelo compose.
 name: tecsys
 
 services:
@@ -59,6 +68,13 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # Porta aberta = Spring subiu (as migrations do Flyway rodam antes disso).
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8081"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 40s
 
   motor:
     build: ./MOTOR
@@ -70,20 +86,33 @@ services:
       # Escuta em todas as interfaces do container para o backend alcançar;
       # no host, a porta só é publicada em 127.0.0.1 (o motor não tem login).
       MOTOR_BIND_ADDRESS: 0.0.0.0
+      # Ajustes opcionais (valor vazio mantém o do perfil). Lista completa em MOTOR/README.md.
+      # MOTOR_PROFILE: tecsys            # tecsys | compat-preciso | compat
+      # MOTOR_EXACT_SECONDS: "180"       # tempo do solver exato (0 = só heurística)
+      # Mirror local/NAS do relevo (opcional): descomente também o volume abaixo.
+      # DEM_MIRROR_DIR: /var/cache/tecsys-dem-mirror
     ports:
       - "127.0.0.1:8082:8082"
     volumes:
       - tecsys-dem-cache:/var/cache/tecsys-dem
+      # - /mnt/tecsys-dem-mirror:/var/cache/tecsys-dem-mirror:ro
     # O motor só consulta o banco sob demanda (chamado pelo backend), que é
     # quem roda as migrações Flyway (project_coverage) no startup.
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8082"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
 
   frontend:
     build:
       context: ./Frontend
       args:
+        # A URL da API é embutida no build: trocar estes valores exige --build.
         API_HOST: localhost
         API_PORT: "8081"
     container_name: tecsys-frontend
@@ -91,6 +120,11 @@ services:
       - "8080:80"
     depends_on:
       - backend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
 volumes:
   tecsys-pgdata:
