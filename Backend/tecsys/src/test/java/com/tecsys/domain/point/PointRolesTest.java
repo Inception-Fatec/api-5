@@ -63,4 +63,33 @@ class PointRolesTest {
         assertTrue(r.contains("untrmt:candidato"));
         assertTrue(r.contains("ssdat:rede"));
     }
+
+
+    @Test
+    void pontosExternosNaoEntramNoPadrao() {
+        Set<String> r = papeis(
+                pedido(List.of("all"), null, null)
+        );
+
+        assertFalse(r.contains("external_points:ponto"));
+        assertFalse(r.contains("external_points:candidato"));
+        assertFalse(r.contains("external_points:rede"));
+    }
+
+    @Test
+    void pontosExternosPodemTerPapeisIndependentesDaTensao() {
+        Set<String> r = papeis(
+                pedido(
+                        List.of("baixo"),
+                        List.of("external_points"),
+                        List.of("external_points")
+                )
+        );
+
+        assertTrue(r.contains("external_points:ponto"));
+        assertTrue(r.contains("external_points:candidato"));
+
+        assertFalse(r.contains("external_points:rede"));
+        assertFalse(r.contains("ucbt:ponto"));
+    }
 }

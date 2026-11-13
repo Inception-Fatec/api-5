@@ -75,8 +75,11 @@ public class DecisionRepository {
      *                  true: qualquer trafo da distribuidora a até {@code radiusM} da área dos pontos
      *                  (#TG-138). {@code insideFilters} diz se ele passaria nos filtros.
      */
-    public List<GatewayCandidate> findGatewayCandidates(DecisionCriteria criteria, boolean neighbors,
-                                                        double radiusM, boolean bairroLikeMap) {
+    public List<GatewayCandidate> findGatewayCandidates(
+            DecisionCriteria criteria,
+            boolean neighbors,
+            double radiusM,
+            boolean bairroLikeMap){
         MapSqlParameterSource params = new MapSqlParameterSource();
         String inside = commonFilters(criteria, params);
 
@@ -100,6 +103,65 @@ public class DecisionRepository {
             }
             selects.add(sql.toString());
         }
+
+
+        // Candidatos externos importados por CSV (#TG-91).
+        if (criteria.isCandidateLayer("external_points")) {
+            StringBuilder csvInside = new StringBuilder();
+
+            if (!criteria.distCodes().isEmpty()) {
+                csvInside.append(" AND u.dist IN (:distCodes) ");
+                params.addValue("distCodes", criteria.distCodes());
+            }
+
+            if (!criteria.munCodes().isEmpty()) {
+                csvInside.append(" AND u.mun IN (:munCodes) ");
+                params.addValue("munCodes", criteria.munCodes());
+            }
+
+            if (criteria.hasPolygon()) {
+                csvInside.append("""
+                         AND ST_Intersects(u.geom, ST_Transform(
+                            (SELECT ST_Union(d.geom)
+                             FROM ST_Dump(ST_GeomFromGeoJSON(:polygonGeojson)) d),
+                            4674))
+                        """);
+                params.addValue("polygonGeojson", criteria.polygonGeojson());
+            }
+
+            StringBuilder csvSql = new StringBuilder("""
+                    SELECT CONCAT('CSV:', u.dist, ':', u.external_id) AS id,
+                           'EXTERNO' AS type,
+                           NULL::text AS posto,
+                           NULL::text AS sub,
+                           u.mun,
+                           NULL::text AS conj,
+                           ST_Y(ST_Transform(u.geom, 4326)) AS latitude,
+                           ST_X(ST_Transform(u.geom, 4326)) AS longitude,
+                           (TRUE %s) AS inside
+                    FROM external_points u
+                    WHERE u.geom IS NOT NULL
+                      AND u.papel = 'candidato'
+                    """.formatted(csvInside));
+
+            if (neighbors) {
+                if (!criteria.distCodes().isEmpty()) {
+                    csvSql.append(" AND u.dist IN (:distCodes) ");
+                }
+
+                csvSql.append("""
+                         AND ST_DWithin(
+                             u.geom::geography,
+                             (SELECT g FROM area)::geography,
+                             :radiusM)
+                        """);
+            } else {
+                csvSql.append(csvInside);
+            }
+
+            selects.add(csvSql.toString());
+        }
+
 
         if (selects.isEmpty()) return List.of();
         String sql = String.join("\nUNION ALL\n", selects);
@@ -164,6 +226,44 @@ public class DecisionRepository {
             }
             parts.add(sql.toString());
         }
+        // Pontos externos importados por CSV (#TG-91).
+            if (criteria.isCoverageLayer("external_points")) {
+                StringBuilder sql = new StringBuilder("""
+                        SELECT CONCAT('CSV:', u.dist, ':', u.external_id) AS id,
+                            'EXTERNO' AS level,
+                            u.mun,
+                            NULL::text AS brr,
+                            NULL::text AS sub,
+                            NULL::text AS conj,
+                            1 AS consumers,
+                            u.geom
+                        FROM external_points u
+                        WHERE u.geom IS NOT NULL
+                        AND u.papel = 'ponto_a_cobrir'
+                        """);
+
+                if (!criteria.distCodes().isEmpty()) {
+                    sql.append(" AND u.dist IN (:distCodes) ");
+                    params.addValue("distCodes", criteria.distCodes());
+                }
+
+                if (!criteria.munCodes().isEmpty()) {
+                    sql.append(" AND u.mun IN (:munCodes) ");
+                    params.addValue("munCodes", criteria.munCodes());
+                }
+
+                if (criteria.hasPolygon()) {
+                    sql.append("""
+                            AND ST_Intersects(u.geom, ST_Transform(
+                                (SELECT ST_Union(d.geom)
+                                FROM ST_Dump(ST_GeomFromGeoJSON(:polygonGeojson)) d),
+                                4674))
+                            """);
+                    params.addValue("polygonGeojson", criteria.polygonGeojson());
+                }
+
+                parts.add(sql.toString());
+            }
         return parts.isEmpty() ? null : String.join("\nUNION ALL\n", parts);
     }
 

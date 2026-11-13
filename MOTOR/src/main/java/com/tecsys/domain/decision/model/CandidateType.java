@@ -7,5 +7,6 @@ public enum CandidateType {
     // consumidores escolhidos como candidatos a gateway (#TG-92)
     UCAT,
     UCMT,
-    UCBT
+    UCBT,
+    EXTERNO
 }

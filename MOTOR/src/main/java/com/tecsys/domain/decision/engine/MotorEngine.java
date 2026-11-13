@@ -128,6 +128,7 @@ public class MotorEngine {
     /** Altura da antena do gateway: por tipo de estrutura da BDGD, ou a do perfil. */
     public static double gatewayHeight(MotorParams p, GatewayCandidate c) {
         if (!p.bdgdHeights()) return p.gatewayHeightM();
+        if (c.type() == CandidateType.EXTERNO) return p.gatewayHeightM();
         if (c.type() == CandidateType.UNTRAT || c.type() == CandidateType.SUB) return 15.0; // mastro de telecom
         String posto = c.posto() == null ? "" : c.posto().trim();
         if (posto.equalsIgnoreCase("CAB") || posto.equalsIgnoreCase("SUB")) return 3.5;    // cabine / pedestal
@@ -139,6 +140,7 @@ public class MotorEngine {
         if (!p.bdgdHeights()) return p.sensorHeightM();
         if (pt.level() == VoltageLevel.ALTO) return 10.0;
         if (pt.level() == VoltageLevel.MEDIO) return 6.0;
+        if (pt.level() == VoltageLevel.EXTERNO) return p.sensorHeightM();
         return 3.0;
     }
 

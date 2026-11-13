@@ -70,4 +70,39 @@ void main() {
       expect(c.alpha, 255);
     }
   });
+
+
+  test('TG-91: permite pontos CSV como cobertura e candidatos', () {
+    final c = _controller();
+    addTearDown(c.dispose);
+
+    // O padrão continua sem os pontos externos.
+    expect(c.coverageLayers, [
+      'ucbt',
+      'ucmt_pj',
+      'ucat_pj',
+    ]);
+    expect(c.candidateLayers, ['untrmt', 'untrat']);
+
+    // Seleciona apenas a camada externa.
+    c.setCoverageLayers(['external_points']);
+    c.setCandidateLayers(['external_points']);
+
+    expect(c.coverageLayers, ['external_points']);
+    expect(c.candidateLayers, ['external_points']);
+
+    // Confirma os campos enviados para o projeto/motor.
+    final params = c.filterParams;
+
+    expect(
+      params['coverage_layers'],
+      ['external_points'],
+    );
+
+    expect(
+      params['candidate_layers'],
+      ['external_points'],
+    );
+  });
+
 }
