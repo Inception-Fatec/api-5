@@ -76,6 +76,19 @@ class GatewayProfile {
         'maxDevices': maxDevices,
       };
 
+  /// Perfil novo com os mesmos valores (botão "Duplicar").
+  GatewayProfile copia() => GatewayProfile(
+        name: 'Cópia de $name',
+        frequencyMhz: frequencyMhz,
+        txPowerDbm: txPowerDbm,
+        antennaGainDbi: antennaGainDbi,
+        rxSensitivityDbm: rxSensitivityDbm,
+        antennaHeightM: antennaHeightM,
+        sensorHeightM: sensorHeightM,
+        extraLossDb: extraLossDb,
+        maxDevices: maxDevices,
+      );
+
   /// Orçamento de enlace (dB): potência − sensibilidade + ganho − perda.
   double get orcamentoDb =>
       txPowerDbm - rxSensitivityDbm + antennaGainDbi - extraLossDb;

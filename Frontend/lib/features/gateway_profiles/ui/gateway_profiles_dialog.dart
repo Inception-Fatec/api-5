@@ -157,6 +157,7 @@ class _GatewayProfilesDialogState extends State<GatewayProfilesDialog> {
               itemBuilder: (_, i) => _CartaoPerfil(
                 perfil: perfis[i],
                 onEditar: () => setState(() => _editando = perfis[i]),
+                onDuplicar: () => setState(() => _editando = perfis[i].copia()),
                 onExcluir: perfis[i].isDefault ? null : () => _excluir(perfis[i]),
               ),
             ),
@@ -179,11 +180,13 @@ class _CartaoPerfil extends StatelessWidget {
   const _CartaoPerfil({
     required this.perfil,
     required this.onEditar,
+    required this.onDuplicar,
     required this.onExcluir,
   });
 
   final GatewayProfile perfil;
   final VoidCallback onEditar;
+  final VoidCallback onDuplicar;
   final VoidCallback? onExcluir;
 
   @override
@@ -216,11 +219,21 @@ class _CartaoPerfil extends StatelessWidget {
               ],
             ),
           ),
-          IconButton(
-            tooltip: 'Editar',
-            icon: const Icon(Icons.edit_outlined),
-            onPressed: onEditar,
-          ),
+          // O padrão não é editável (é a referência da Tecsys): só dá para
+          // duplicar e ajustar a cópia.
+          if (perfil.isDefault)
+            IconButton(
+              key: const Key('duplicar-padrao'),
+              tooltip: 'Duplicar (o perfil padrão não pode ser alterado)',
+              icon: const Icon(Icons.copy_outlined),
+              onPressed: onDuplicar,
+            )
+          else
+            IconButton(
+              tooltip: 'Editar',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: onEditar,
+            ),
           IconButton(
             tooltip: onExcluir == null
                 ? 'O perfil padrão não pode ser excluído'

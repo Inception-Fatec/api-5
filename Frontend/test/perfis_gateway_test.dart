@@ -179,5 +179,21 @@ void main() {
       expect(service.ultimoEnviado?.rxSensitivityDbm, -120, reason: 'veio preenchido');
       expect(find.text('Urbano 14 dBm'), findsOneWidget);
     });
+
+    testWidgets('padrão não tem lápis: Duplicar abre um perfil novo com os valores dele', (tester) async {
+      final service = _PerfisFalsos();
+      await _abrirTela(tester, service);
+      expect(find.widgetWithIcon(IconButton, Icons.edit_outlined), findsNothing);
+
+      await tester.tap(find.byKey(const Key('duplicar-padrao')));
+      await tester.pumpAndSettle();
+      expect(find.text('Novo perfil'), findsOneWidget);
+      expect(find.text('Cópia de Tecsys'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('salvar-perfil')));
+      await tester.pumpAndSettle();
+      expect(service.perfis.length, 2, reason: 'criou outro, não alterou o padrão');
+      expect(service.perfis.first.name, 'Tecsys');
+    });
   });
 }

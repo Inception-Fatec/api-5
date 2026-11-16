@@ -47,6 +47,12 @@ public class GatewayProfileService {
     @Transactional
     public GatewayProfileResponseDto update(Long id, GatewayProfileRequestDto request) {
         GatewayProfile profile = getProfileOrThrow(id);
+        if (profile.isPadrao()) {
+            // O padrão é a referência da Tecsys usada por todo projeto sem perfil (#TG-150):
+            // alterá-lo mudaria o cálculo de todos esses projetos sem ninguém perceber.
+            throw new BusinessRuleException("O perfil padrão não pode ser alterado. "
+                    + "Para usar outros valores, crie um perfil novo (botão Duplicar).");
+        }
 
         profile.setName(request.name());
         profile.setFrequencyMhz(request.frequencyMhz());
