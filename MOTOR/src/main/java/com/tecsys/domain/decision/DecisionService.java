@@ -16,6 +16,9 @@ import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryPoolMXBean;
+import java.lang.management.MemoryType;
 import java.io.UncheckedIOException;
 import java.util.List;
 
@@ -73,6 +76,7 @@ public class DecisionService {
     }
 
     public DecisionResultResponseDto calculate(DecisionCriteria criteria) {
+        ManagementFactory.getMemoryPoolMXBeans().forEach(MemoryPoolMXBean::resetPeakUsage);
         MotorParams params = engine.params();
         long start = System.nanoTime();
         MotorResult result;
@@ -112,6 +116,11 @@ public class DecisionService {
         log.info("======================================");
         r.timingsSeconds().forEach((k, v) -> log.info("{}: {} s", k, v));
         log.info("TEMPO TOTAL: {} s", Math.round(totalSeconds * 10) / 10.0);
+        long picoMb = ManagementFactory.getMemoryPoolMXBeans().stream()
+                .filter(p -> p.getType() == MemoryType.HEAP)
+                .mapToLong(p -> p.getPeakUsage().getUsed()).sum() / (1024 * 1024);
+        long maxMb = Runtime.getRuntime().maxMemory() / (1024 * 1024);
+        log.info("MEMÓRIA: pico de {} MB (limite {} MB)", picoMb, maxMb);
         log.info("--------------------------------------");
         log.info("Pontos: {} ({} locais) | candidatos: {} ({} locais, {} fora dos filtros)",
                 r.totalPoints(), r.uniquePoints(), r.totalCandidates(), r.uniqueCandidates(), r.candidatesOutsideFilters());
