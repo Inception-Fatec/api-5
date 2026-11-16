@@ -63,6 +63,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
           distCode: resultado.distCode,
           distribuidoraLabel: resultado.distribuidoraLabel,
           municipios: resultado.municipios,
+          gatewayProfileId: resultado.gatewayProfileId,
         ),
       ),
     );

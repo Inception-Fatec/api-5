@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:tecsys_app/core/theme/app_theme.dart';
 import 'package:tecsys_app/core/widgets/field_label.dart';
+import 'package:tecsys_app/features/gateway_profiles/ui/gateway_profiles_dialog.dart';
 import 'package:tecsys_app/features/projects/data/models/novo_projeto_resultado.dart';
 import 'package:tecsys_app/features/projects/state/new_project_dialog_controller.dart';
 import 'package:tecsys_app/features/projects/ui/styles/new_project_dialog_styles.dart';
@@ -74,6 +75,74 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
     );
   }
 
+  /// Perfil de gateway (#TG-79): o padrão já vem escolhido. "Gerenciar"
+  /// abre a tela de perfis; o perfil criado lá volta selecionado.
+  Widget _campoPerfil() {
+    final perfis = _controller.perfis;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            const Expanded(child: FieldLabel('Perfil de gateway')),
+            TextButton.icon(
+              key: const Key('gerenciar-perfis'),
+              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+              onPressed: () async {
+                final id = await GatewayProfilesDialog.mostrar(context);
+                await _controller.carregarPerfis(selecionar: id);
+              },
+              icon: const Icon(Icons.tune, size: 16),
+              label: const Text('Gerenciar perfis'),
+            ),
+          ],
+        ),
+        DropdownButtonFormField<int>(
+          key: ValueKey('perfil-${_controller.perfilId}-${perfis.length}'),
+          initialValue: _controller.perfilId,
+          isExpanded: true,
+          style: AppTextStyles.input,
+          hint: Text(
+              _controller.erroPerfis
+                  ? 'Perfis indisponíveis: será usado o perfil padrão'
+                  : 'Carregando perfis...',
+              style: AppTextStyles.bodyMuted),
+          decoration: AppDecorations.filledInput(
+            contentPadding: NewProjectDialogStyles.fieldPadding,
+            borderRadius: AppRadius.sm,
+          ),
+          selectedItemBuilder: (_) => [
+            for (final p in perfis)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(p.isDefault ? '${p.name} (padrão)' : p.name,
+                    overflow: TextOverflow.ellipsis),
+              ),
+          ],
+          items: [
+            for (final p in perfis)
+              DropdownMenuItem(
+                value: p.id,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(p.isDefault ? '${p.name} (padrão)' : p.name,
+                        overflow: TextOverflow.ellipsis),
+                    Text(p.resumo,
+                        style: AppTextStyles.micro,
+                        overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              ),
+          ],
+          onChanged: perfis.isEmpty ? null : _controller.escolherPerfil,
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final larguraTela = MediaQuery.of(context).size.width;
@@ -121,6 +190,8 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                   const SizedBox(height: AppSpacing.md),
                   const FieldLabel('Cidade(s)'),
                   NewProjectCitiesField(controller: _controller),
+                  const SizedBox(height: AppSpacing.md),
+                  _campoPerfil(),
                   if (_controller.erro != null) ...[
                     const SizedBox(height: AppSpacing.xs),
                     Text(_controller.erro!, style: AppTextStyles.captionError),

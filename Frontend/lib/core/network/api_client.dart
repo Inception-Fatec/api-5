@@ -67,6 +67,14 @@ class ApiClient {
     return _decodeOrThrow(response);
   }
 
+  /// PUT que espera um corpo JSON de resposta (ex.: editar perfil de gateway).
+  Future<Map<String, dynamic>> putJson(
+      String path, Map<String, dynamic> body) async {
+    final response =
+        await http.put(_uri(path), headers: _headers, body: jsonEncode(body));
+    return _decodeOrThrow(response);
+  }
+
   /// POST que espera resposta em texto puro (ex.: change-password,
   /// que hoje devolve só uma string de sucesso).
   Future<String> postRaw(String path, Map<String, dynamic> body) async {

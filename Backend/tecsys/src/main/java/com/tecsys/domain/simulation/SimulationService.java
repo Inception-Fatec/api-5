@@ -32,7 +32,10 @@ public class SimulationService {
                 .orElseThrow(() -> new BusinessRuleException("Usuário não encontrado."));
 
         // Perfil escolhido ou, sem ele, o padrão (#TG-150). Perfil inválido → 422.
-        Long perfilId = gatewayProfileResolver.resolver(request.gatewayProfileId(), null);
+        Long pedido = request.gatewayProfileId() != null
+                ? request.gatewayProfileId()
+                : GatewayProfileResolver.idEm(request.filterParams());
+        Long perfilId = gatewayProfileResolver.resolver(pedido, null);
 
         // salva o Projeto
         Project project = Project.builder()

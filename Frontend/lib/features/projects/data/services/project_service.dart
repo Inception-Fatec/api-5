@@ -26,11 +26,14 @@ class ProjectsService {
     required String distCode,
     required Map<String, dynamic> filterParams,
     String? geometry,
+    int? gatewayProfileId,
   }) async {
     final data = await _client.postJson('/simulation/run', {
       'name': name,
       'dist_code': distCode,
       if (geometry != null) 'geometry': geometry,
+      // perfil de gateway (#TG-79); sem ele, o backend usa o padrão (#TG-150)
+      if (gatewayProfileId != null) 'gateway_profile_id': gatewayProfileId,
       'filter_params': filterParams,
     });
     return Project.fromJson(data);
