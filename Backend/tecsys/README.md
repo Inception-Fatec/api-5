@@ -74,7 +74,7 @@ export API_SECURITY_TOKEN_SECRET=$(openssl rand -hex 32)
 
 O Flyway aplica as migrations no startup. A documentação OpenAPI fica em `http://localhost:8081/swagger-ui.html`.
 
-Para executar cargas de ETL localmente, o backend precisa de Python com as dependências de `modules/requirements.txt` e da variável `ETL_DB_URL` (formato SQLAlchemy) no ambiente. O caminho padrão do script (`../api-5/modules/etl_cli.py`) pressupõe que o repositório esteja numa pasta chamada `api-5`; use `ETL_SCRIPT_PATH` caso contrário.
+Para executar cargas de ETL localmente, o backend precisa de Python com as dependências de `modules/requirements.txt`. O banco do ETL não é configurado à parte: o backend monta a `ETL_DB_URL` a partir da sua própria conexão (`spring.datasource`) e a passa ao subprocesso, então o ETL grava sempre no mesmo banco do backend (#TG-119). O caminho padrão do script (`../api-5/modules/etl_cli.py`) pressupõe que o repositório esteja numa pasta chamada `api-5`; use `ETL_SCRIPT_PATH` caso contrário.
 
 ### Variáveis de configuração
 
@@ -87,7 +87,6 @@ Para executar cargas de ETL localmente, o backend precisa de Python com as depen
 | `ETL_PYTHON` | `python` | Executável Python do ETL |
 | `ETL_SCRIPT_PATH` | `../api-5/modules/etl_cli.py` | Caminho do `etl_cli.py` |
 | `ETL_TIMEOUT_MINUTES` | `120` | Tempo máximo de uma carga |
-| `ETL_DB_URL` | n/a | Banco onde o ETL grava (SQLAlchemy: `postgresql+psycopg2://...`) |
 
 `.env.properties` é lido via `spring.config.import` e não deve ser versionado.
 
@@ -99,7 +98,7 @@ cd Backend/tecsys
 ./mvnw test                           # inclui TecsysApplicationTests (@SpringBootTest): exige DB_* e o segredo do JWT
 ```
 
-`TokenServiceTest` cobre rejeição de segredo vazio ou curto e o ciclo de geração e validação do token. A cobertura de testes do módulo é restrita a esse serviço.
+Os testes unitários (sem banco) cobrem o token JWT (`TokenServiceTest`), os projetos (`ProjectActivityTest`, `ProjectHistoryTest`, `ProjectRecalculateTest`) e os papéis das camadas do mapa (`PointRolesTest`). `PointExternalLayersPostgresTest` precisa de um PostgreSQL de testes apontado por `TG91_JDBC_URL`.
 
 ## 3. Resumo de funcionalidades
 
@@ -114,7 +113,8 @@ Todas as rotas exigem JWT, exceto `POST /api/v1/auth/login` e a documentação O
 | Pontos | `POST /api/v1/points/filter`: filtro espacial e de atributos; modos contagem, agrupado em grade e pontos individuais | autenticado |
 | Projetos | `POST/GET /api/v1/projects`, `GET/PUT/DELETE /api/v1/projects/{id}` (ordenação `sort=recent`, `limit`); `GET /api/v1/projects/{id}/history` (versões); `POST /api/v1/projects/{id}/recalculate` (nova versão e reenvio ao motor); `POST /api/v1/projects/{id}/activity` (registra abertura, ordena os Recentes) | autenticado |
 | Simulação | `POST /api/v1/simulation/run`: cria o projeto, registra polígono e filtros e aciona o motor | autenticado |
-| Relatórios | `GET /api/v1/reports/projects/{projectId}/coverage` | autenticado |
+| Perfis de gateway | `POST/GET /api/v1/gateway-profiles`, `GET/PUT/DELETE /api/v1/gateway-profiles/{id}`: parâmetros de RF usados no cálculo (#TG-78) | autenticado |
+| Relatórios | `GET /api/v1/reports/projects/{projectId}/coverage`; `GET /api/v1/reports/compare?ids=1,2` (comparação de cenários, #TG-75) | autenticado |
 | ETL | `POST /api/v1/etl/upload-gdb` (multipart), `POST /api/v1/etl/upload-csv` (pontos externos, #TG-89), `GET /api/v1/etl/jobs`, `GET /api/v1/etl/jobs/{id}`, `POST /api/v1/etl/jobs/{id}/iniciar`, `POST /api/v1/etl/jobs/{id}/cancelar` | `ADM` |
 
 Estados de um projeto (`ProjectStatus`): `CRIADO` → `ENVIADO` → `PROCESSANDO` → `SUCESSO` ou `FALHA`. As três últimas transições são do motor.
@@ -151,7 +151,7 @@ Papéis (`UserRole`): `ADM` e `USER`. Seed inicial: `admin@tecsys.com.br` (migra
 
 **Semântica de 401 e 403.** 401 indica ausência, expiração ou invalidez do token (o frontend desloga). 403 indica usuário autenticado sem permissão (`@PreAuthorize("hasRole('ADM')")`, via `@EnableMethodSecurity`).
 
-**Schema versionado só pelo Flyway.** Migrations `V1` a `V15` em `src/main/resources/db/migration`; `spring.jpa.hibernate.ddl-auto=validate`. Alterações de schema entram como nova migration.
+**Schema versionado só pelo Flyway.** Migrations numeradas (`V1__...`, `V2__...`) em `src/main/resources/db/migration`; `spring.jpa.hibernate.ddl-auto=validate`. Alterações de schema entram como nova migration.
 
 **Integração assíncrona com o motor.** `DecisionEngineClient` envia o `project_id` sem esperar o cálculo e só depois do commit da transação (`sendAfterCommit`, #TG-96), para o motor sempre encontrar o projeto e a versão do histórico. O estado é compartilhado pelo banco: o motor atualiza `projects.status` e grava `project_coverage`; o frontend consulta por polling. Se o motor estiver fora do ar ou responder com erro HTTP, o backend marca o projeto como `FALHA` com a mensagem do motivo, para ele não ficar em `ENVIADO` para sempre; o usuário pode recalcular.
 
