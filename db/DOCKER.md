@@ -27,7 +27,7 @@ O backend e o motor escolhem entre este banco e o Supabase por `./scripts/run-ba
 
 A carga só acontece com o banco vazio (tabela `sub` ausente ou zerada).
 
-1. **Schema.** O script executa as migrations do Flyway (`Backend/tecsys/src/main/resources/db/migration`, `V1` a `V15`) num container `flyway/flyway` na mesma versão do backend. O schema é de responsabilidade do backend: alterações entram como nova migration, nunca por edição manual do banco. As extensões são criadas pelas próprias migrations (`postgis` na `V1`, `pgcrypto` na `V9`).
+1. **Schema.** O script executa as migrations do Flyway (`Backend/tecsys/src/main/resources/db/migration`, todas as versões existentes) num container `flyway/flyway` na mesma versão do backend. O schema é de responsabilidade do backend: alterações entram como nova migration, nunca por edição manual do banco. As extensões são criadas pelas próprias migrations (`postgis` na `V1`, `pgcrypto` na `V9`).
 2. **Usuário administrador.** A migration `V9` cria `admin@tecsys.com.br` / `admin123` (perfil `ADM`).
 3. **Dados da rede.** O script restaura do `bdgd.dump` somente os dados (`--data-only`) das tabelas do dump, exceto `users` (vem da `V9`) e `spatial_ref_sys` (vem da extensão PostGIS). Na prática, são as tabelas da rede: `sub`, `untrat`, `untrmt`, `ssdat`, `ssdmt`, `ssdbt`, `ucat_pj`, `ucmt_pj`, `ucbt`.
 
@@ -47,7 +47,8 @@ O banco local não vem populado. Obtenha o `bdgd.dump` com a equipe e salve em `
 |---|---|---|
 | Rede elétrica | `sub`, `untrat`, `untrmt`, `ssdat`, `ssdmt`, `ssdbt` | BDGD (dump ou ETL) |
 | Consumidores | `ucat_pj`, `ucmt_pj`, `ucbt` | BDGD (dump ou ETL); `ucbt.qtd_consumidores` é o peso no motor |
-| Aplicação | `users`, `projects`, `project_history`, `project_coverage`, `etl_jobs`, tabela de distribuidoras | Migrations do Flyway |
+| Pontos externos | `external_points` (candidatos, pontos a cobrir e de interesse importados por CSV, #TG-89) | Importação de CSV pela aplicação |
+| Aplicação | `users`, `projects`, `project_history`, `project_coverage`, `etl_jobs`, `gateway_profiles` (perfis de RF usados no cálculo, #TG-78), `distributor` | Migrations do Flyway |
 
 Os dados de rede usam SIRGAS 2000 (EPSG:4674). Documentação de referência em `docs/` (`modelo_banco_dados_postgis-2.docx.pdf`, `documento_consolidado_bdgd.docx.pdf`).
 
