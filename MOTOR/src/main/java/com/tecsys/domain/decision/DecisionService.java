@@ -87,9 +87,9 @@ public class DecisionService {
         ManagementFactory.getMemoryPoolMXBeans().forEach(MemoryPoolMXBean::resetPeakUsage);
         MotorParams params = perfil.map(p -> p.aplicar(engine.params())).orElse(engine.params());
         perfil.ifPresentOrElse(
-                p -> log.info("Perfil de gateway: {} (id {}) — {} MHz, {} dBm, sensibilidade {} dBm, ganho {} dB, alturas {} m / {} m",
+                p -> log.info("Perfil de gateway: {} (id {}) — {} MHz, {} dBm, sensibilidade {} dBm, ganho {} dB, perda adicional {} dB, alturas {} m / {} m",
                         p.name(), p.id(), p.frequencyMhz(), p.txPowerDbm(), p.rxSensitivityDbm(),
-                        p.antennaGainDbi(), p.antennaHeightM(), p.sensorHeightM()),
+                        p.antennaGainDbi(), p.extraLossDb(), p.antennaHeightM(), p.sensorHeightM()),
                 () -> log.info("Projeto sem perfil de gateway: usando a configuração do motor ({}).", params.profile()));
         long start = System.nanoTime();
         MotorResult result;
@@ -234,6 +234,7 @@ public class DecisionService {
                 params.txPowerDbm(),
                 params.sensitivityDbm(),
                 params.antennaGainsDb(),
+                params.extraLossDb(),
                 params.gatewayProfileId(),
                 params.gatewayProfileName()
                 );

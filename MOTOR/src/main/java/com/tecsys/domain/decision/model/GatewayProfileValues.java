@@ -17,7 +17,8 @@ public record GatewayProfileValues(
         double antennaGainDbi,
         double rxSensitivityDbm,
         double antennaHeightM,
-        double sensorHeightM
+        double sensorHeightM,
+        double extraLossDb
 ) {
 
     /** Parâmetros do motor com os valores de RF deste perfil. */
@@ -31,6 +32,8 @@ public record GatewayProfileValues(
                 .antennaGainsDb(antennaGainDbi)
                 .gatewayHeightM(antennaHeightM)
                 .sensorHeightM(sensorHeightM)
+                // vegetação/construções: reduz o orçamento de enlace
+                .extraLossDb(extraLossDb)
                 .gatewayProfile(id, name)
                 .build();
     }

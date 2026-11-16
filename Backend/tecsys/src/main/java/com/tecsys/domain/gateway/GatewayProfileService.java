@@ -28,6 +28,7 @@ public class GatewayProfileService {
                 .rxSensitivityDbm(request.rxSensitivityDbm())
                 .antennaHeightM(request.antennaHeightM())
                 .sensorHeightM(request.sensorHeightMOuPadrao())
+                .extraLossDb(request.extraLossDbOuZero())
                 .maxDevices(request.maxDevices())
                 .build();
         return toDto(repository.save(profile));
@@ -54,6 +55,7 @@ public class GatewayProfileService {
         profile.setRxSensitivityDbm(request.rxSensitivityDbm());
         profile.setAntennaHeightM(request.antennaHeightM());
         profile.setSensorHeightM(request.sensorHeightMOuPadrao());
+        profile.setExtraLossDb(request.extraLossDbOuZero());
         profile.setMaxDevices(request.maxDevices());
 
         return toDto(repository.save(profile));
@@ -82,7 +84,7 @@ public class GatewayProfileService {
                 entity.getId(), entity.getName(), entity.getFrequencyMhz(),
                 entity.getTxPowerDbm(), entity.getAntennaGainDbi(),
                 entity.getRxSensitivityDbm(), entity.getAntennaHeightM(),
-                entity.getSensorHeightM(), entity.getMaxDevices(), entity.isActive(), entity.isPadrao()
+                entity.getSensorHeightM(), entity.getExtraLossDb(), entity.getMaxDevices(), entity.isActive(), entity.isPadrao()
         );
     }
 }

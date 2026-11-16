@@ -38,6 +38,10 @@ public class GatewayProfile {
     @Column(name = "sensor_height_m", nullable = false)
     private Double sensorHeightM;
 
+    /** Perda adicional do enlace (vegetação, construções), em dB (#TG-150). */
+    @Column(name = "extra_loss_db", nullable = false)
+    private Double extraLossDb;
+
     @Column(name = "max_devices", nullable = false)
     private Integer maxDevices;
 

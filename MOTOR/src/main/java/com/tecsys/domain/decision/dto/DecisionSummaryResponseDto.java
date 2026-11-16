@@ -109,6 +109,10 @@ public record DecisionSummaryResponseDto(
         @JsonProperty("antenna_gains_db")
         double antennaGainsDb,
 
+        // perda de vegetação/construções considerada no orçamento de enlace
+        @JsonProperty("extra_loss_db")
+        double extraLossDb,
+
         // perfil de gateway do projeto; null quando o cálculo usou só a configuração do motor
         @JsonProperty("gateway_profile_id")
         Long gatewayProfileId,

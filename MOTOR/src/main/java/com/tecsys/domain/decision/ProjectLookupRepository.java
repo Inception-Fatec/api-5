@@ -85,7 +85,7 @@ public class ProjectLookupRepository {
                     LIMIT 1
                 )
                 SELECT gp.id, gp.name, gp.frequency_mhz, gp.tx_power_dbm, gp.antenna_gain_dbi,
-                       gp.rx_sensitivity_dbm, gp.antenna_height_m, gp.sensor_height_m
+                       gp.rx_sensitivity_dbm, gp.antenna_height_m, gp.sensor_height_m, gp.extra_loss_db
                 FROM ultima u
                 JOIN gateway_profiles gp ON u.perfil ~ '^[0-9]+$' AND gp.id = u.perfil::bigint
                 """;
@@ -100,7 +100,8 @@ public class ProjectLookupRepository {
                             rs.getDouble("antenna_gain_dbi"),
                             rs.getDouble("rx_sensitivity_dbm"),
                             rs.getDouble("antenna_height_m"),
-                            rs.getDouble("sensor_height_m")));
+                            rs.getDouble("sensor_height_m"),
+                            rs.getDouble("extra_loss_db")));
             return perfis.stream().findFirst();
         } catch (DataAccessException e) {
             // Banco sem a tabela/colunas de perfil (migrations antigas): segue com a configuração.

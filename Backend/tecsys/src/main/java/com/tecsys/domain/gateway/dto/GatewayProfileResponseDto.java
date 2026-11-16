@@ -11,6 +11,7 @@ public record GatewayProfileResponseDto(
         Double rxSensitivityDbm,
         Double antennaHeightM,
         Double sensorHeightM,
+        Double extraLossDb,
         Integer maxDevices,
         boolean active,
         @JsonProperty("isDefault") boolean padrao
