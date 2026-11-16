@@ -2,11 +2,16 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:tecsys_app/core/theme/app_theme.dart';
+import 'package:tecsys_app/core/widgets/app_filter_chip.dart';
 import 'package:tecsys_app/core/widgets/app_footer.dart';
+import 'package:tecsys_app/core/widgets/app_search_field.dart';
 import 'package:tecsys_app/core/widgets/card_avatar.dart';
 import 'package:tecsys_app/core/widgets/card_info_row.dart';
 import 'package:tecsys_app/core/widgets/list_card.dart';
+import 'package:tecsys_app/core/widgets/metric_card.dart';
 import 'package:tecsys_app/core/widgets/page_body.dart';
+import 'package:tecsys_app/core/widgets/page_title.dart';
+import 'package:tecsys_app/core/widgets/primary_action_button.dart';
 import 'package:tecsys_app/core/widgets/status_badge.dart';
 
 import 'carga_detalhes_dialog.dart';
@@ -30,6 +35,12 @@ class _EtlGeodadosScreenState extends State<EtlGeodadosScreen> {
   int _falhasSeguidas = 0;
   bool _carregandoHistorico = true;
   String? _erroHistorico;
+
+  /// Filtro do histórico: tudo, só cargas do .zip ou só importações de CSV.
+  FiltroHistorico _filtro = FiltroHistorico.todos;
+
+  /// Texto da busca (arquivo, município ou distribuidora).
+  String _busca = '';
 
   @override
   void initState() {
@@ -90,11 +101,25 @@ class _EtlGeodadosScreenState extends State<EtlGeodadosScreen> {
 
   Future<void> _abrirUpload() => _abrirModal(null);
 
-  /// Abre o upload (novo) ou retoma a escolha de municípios de uma carga
-  /// que ficou "Aguardando escolha" (#TG-143).
+  /// Abre o modal único de envio (.zip ou .csv, #TG-90) ou retoma a escolha
+  /// de municípios de uma carga que ficou "Aguardando escolha" (#TG-143).
   Future<void> _abrirModal(EtlCarga? aguardando) async {
-    final nova = await UploadModalDialog.show(context, aguardando: aguardando);
-    if (nova == null || !mounted) return;
+    final ResultadoEnvio? resultado =
+        await UploadModalDialog.show(context, aguardando: aguardando);
+    if (resultado == null || !mounted) return;
+
+    // Cada envio de CSV (sucesso ou falha) é gravado pelo backend no mesmo
+    // histórico das cargas: recarrega para o item aparecer na lista.
+    final int pontos = resultado.pontosImportados;
+    if (pontos > 0) {
+      _mostrarToast(pontos == 1
+          ? '1 ponto importado do CSV.'
+          : '$pontos pontos importados do CSV.');
+    }
+    if (resultado.houveCsv) unawaited(_carregarHistorico());
+
+    final EtlCarga? nova = resultado.carga;
+    if (nova == null) return;
     setState(() {
       final int i = _cargas.indexWhere((c) => c.id == nova.id);
       if (i >= 0) {
@@ -200,42 +225,59 @@ class _EtlGeodadosScreenState extends State<EtlGeodadosScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // A busca vale para os chips e para a lista (como em Projetos).
+    final List<EtlCarga> buscadas = buscarNoHistorico(_cargas, _busca);
+    final List<EtlCarga> visiveis = filtrarHistorico(buscadas, _filtro);
     return PageBody(
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final mobile = constraints.maxWidth < AppBreakpoints.web;
-          final horizontal = mobile ? AppSpacing.md : AppSpacing.xl;
+          final bool web = constraints.maxWidth >= AppBreakpoints.web;
           return CustomScrollView(
             slivers: [
               SliverPadding(
-                padding: EdgeInsets.fromLTRB(
-                    horizontal,
-                    mobile ? AppSpacing.lg : AppSpacing.xl,
-                    horizontal,
-                    AppSpacing.lg),
+                padding: web ? _paddingWeb : _paddingMobile,
                 sliver: SliverToBoxAdapter(
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 1280),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      EtlPageHeader(mobile: !web, total: _cargas.length, onUpload: _abrirUpload),
+                      const SizedBox(height: AppSpacing.lg),
+                      _Metricas(cargas: _cargas),
+                      const SizedBox(height: AppSpacing.lg),
+                      AppSearchField(
+                        hint: 'Buscar por arquivo, município ou distribuidora...',
+                        initialText: _busca,
+                        onChanged: (v) => setState(() => _busca = v),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Row(
                         children: [
-                          _PageHeader(
-                            mobile: mobile,
-                            onUpload: _abrirUpload,
+                          Expanded(
+                            child: FiltroHistoricoChips(
+                              cargas: buscadas,
+                              filtro: _filtro,
+                              onFiltro: (f) => setState(() => _filtro = f),
+                            ),
                           ),
-                          const SizedBox(height: AppSpacing.lg),
-                          _CargaList(
-                            cargas: _cargas,
-                            carregando: _carregandoHistorico,
-                            erro: _erroHistorico,
-                            onRecarregar: _carregarHistorico,
-                            onOpen: _abrirCard,
-                            onUpload: _abrirUpload,
+                          IconButton(
+                            tooltip: 'Atualizar',
+                            onPressed: _carregandoHistorico ? null : _carregarHistorico,
+                            icon: const Icon(Icons.refresh, size: 20),
                           ),
                         ],
                       ),
-                    ),
+                      const SizedBox(height: AppSpacing.lg),
+                      _CargaList(
+                        cargas: visiveis,
+                        temAlguma: _cargas.isNotEmpty,
+                        carregando: _carregandoHistorico,
+                        erro: _erroHistorico,
+                        onRecarregar: _carregarHistorico,
+                        onOpen: _abrirCard,
+                        onUpload: _abrirUpload,
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                    ],
                   ),
                 ),
               ),
@@ -253,64 +295,149 @@ class _EtlGeodadosScreenState extends State<EtlGeodadosScreen> {
       ),
     );
   }
+
+  // Mesmas margens das telas de Projetos e Usuários.
+  static const EdgeInsets _paddingWeb =
+      EdgeInsets.symmetric(horizontal: AppSpacing.xl, vertical: AppSpacing.lg);
+  static const EdgeInsets _paddingMobile = EdgeInsets.all(AppSpacing.lg);
 }
 
-class _PageHeader extends StatelessWidget {
-  const _PageHeader({required this.mobile, required this.onUpload});
+/// Título com o contador e o botão "Enviar arquivo", que abre o modal único
+/// (.zip da BDGD ou .csv de pontos externos, #TG-90) — mesmo arranjo das
+/// telas de Projetos e Usuários. Público para o teste de widget.
+class EtlPageHeader extends StatelessWidget {
+  const EtlPageHeader({super.key, required this.mobile, required this.onUpload, this.total = 0});
 
   final bool mobile;
   final VoidCallback onUpload;
 
+  /// Itens no histórico (cargas do .zip + importações de CSV).
+  final int total;
+
   @override
   Widget build(BuildContext context) {
-    final title = Column(
+    final Widget titulo = PageTitle(
+      title: 'ETL & Geodados', // mesmo nome da aba, como em Projetos e Usuários
+      countLabel: '$total ${total == 1 ? 'item' : 'itens'}',
+      fontSize: mobile ? 24 : 26,
+    );
+    if (!mobile) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: titulo),
+          PrimaryActionButton(
+              label: 'Enviar arquivo', icon: Icons.upload_file_outlined, onPressed: onUpload, full: false),
+        ],
+      );
+    }
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Execuções de ETL e Cargas Espaciais',
-          style: AppTextStyles.pageTitle(mobile ? 24 : 26),
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        const Text(
-          'Envie arquivos .zip para processamento geoespacial e validação dos dados.',
-          style: AppTextStyles.bodyMuted,
-        ),
-      ],
-    );
-
-    final button = SizedBox(
-      width: mobile ? double.infinity : null,
-      child: FilledButton.icon(
-        onPressed: onUpload,
-        icon: const Icon(Icons.upload_file_outlined),
-        label: const Text('Novo upload (.zip)'),
-      ),
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (mobile) ...[
-          title,
-          const SizedBox(height: AppSpacing.md),
-          button,
-        ] else
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(child: title),
-              const SizedBox(width: AppSpacing.lg),
-              button,
-            ],
-          ),
+        titulo,
+        const SizedBox(height: AppSpacing.md),
+        PrimaryActionButton(
+            label: 'Enviar arquivo', icon: Icons.upload_file_outlined, onPressed: onUpload, full: true),
       ],
     );
   }
 }
 
+/// Linha de métricas, no mesmo formato de Projetos e Usuários.
+class _Metricas extends StatelessWidget {
+  const _Metricas({required this.cargas});
+
+  final List<EtlCarga> cargas;
+
+  @override
+  Widget build(BuildContext context) {
+    final int concluidas = cargas.where((c) => c.status == EtlCargaStatus.concluido).length;
+    final int falhas = cargas.where((c) => c.status == EtlCargaStatus.erro).length;
+    return Row(
+      children: [
+        Expanded(
+          child: MetricCard(label: 'TOTAL', icon: Icons.storage_outlined, value: '${cargas.length}'),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: MetricCard(
+              label: 'SUCESSO', icon: Icons.check_circle_outline, value: '$concluidas'),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: MetricCard(
+            label: 'FALHAS',
+            icon: Icons.error_outline,
+            value: '$falhas',
+            valueColor: falhas > 0 ? AppColors.error : null,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Filtro do histórico de cargas (#TG-90): as importações de CSV entram na
+/// mesma lista das cargas da BDGD.
+enum FiltroHistorico { todos, etl, csv }
+
+/// Itens do histórico que o filtro mostra.
+List<EtlCarga> filtrarHistorico(List<EtlCarga> cargas, FiltroHistorico filtro) =>
+    switch (filtro) {
+      FiltroHistorico.todos => cargas,
+      FiltroHistorico.etl => cargas.where((c) => !c.ehCsv).toList(),
+      FiltroHistorico.csv => cargas.where((c) => c.ehCsv).toList(),
+    };
+
+/// Busca por nome do arquivo, município ou distribuidora (sem diferenciar
+/// maiúsculas). Busca vazia devolve tudo.
+List<EtlCarga> buscarNoHistorico(List<EtlCarga> cargas, String busca) {
+  final String q = busca.trim().toLowerCase();
+  if (q.isEmpty) return cargas;
+  return cargas.where((c) {
+    final String texto = [
+      c.nomeArquivo,
+      MunicipioService.rotulosDe(c.municipios),
+      if (c.ehCsv) c.origemCsv,
+    ].join(' ').toLowerCase();
+    return texto.contains(q);
+  }).toList();
+}
+
+/// Chips "Todos (n) | ETL (n) | CSV (n)", no padrão do filtro de Projetos.
+class FiltroHistoricoChips extends StatelessWidget {
+  const FiltroHistoricoChips({
+    super.key,
+    required this.cargas,
+    required this.filtro,
+    required this.onFiltro,
+  });
+
+  final List<EtlCarga> cargas;
+  final FiltroHistorico filtro;
+  final ValueChanged<FiltroHistorico> onFiltro;
+
+  @override
+  Widget build(BuildContext context) {
+    AppFilterChip chip(FiltroHistorico f, String rotulo) => AppFilterChip(
+          label: '$rotulo (${filtrarHistorico(cargas, f).length})',
+          selected: filtro == f,
+          onTap: () => onFiltro(f),
+        );
+    return AppFilterChipRow(chips: [
+      chip(FiltroHistorico.todos, 'Todos'),
+      chip(FiltroHistorico.etl, 'ETL'),
+      chip(FiltroHistorico.csv, 'CSV'),
+    ]);
+  }
+}
+
+/// Lista de cards (largura total, como a tela já era), com os estados de
+/// carregando, erro e vazio no formato da lista de Projetos.
 class _CargaList extends StatelessWidget {
   const _CargaList({
     required this.cargas,
+    required this.temAlguma,
     required this.carregando,
     required this.erro,
     required this.onRecarregar,
@@ -318,63 +445,72 @@ class _CargaList extends StatelessWidget {
     required this.onUpload,
   });
 
+  /// Itens já filtrados pela busca e pelos chips.
   final List<EtlCarga> cargas;
+
+  /// O histórico tem algum item (antes da busca e do filtro).
+  final bool temAlguma;
   final bool carregando;
   final String? erro;
   final VoidCallback onRecarregar;
   final ValueChanged<EtlCarga> onOpen;
   final VoidCallback onUpload;
 
+  static const EdgeInsets _paddingMensagem = EdgeInsets.symmetric(vertical: 32);
+
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Expanded(
-              child: Text('Histórico de cargas',
-                  style: AppTextStyles.sectionLabel),
-            ),
-            IconButton(
-              tooltip: 'Atualizar',
-              onPressed: carregando ? null : onRecarregar,
-              icon: const Icon(Icons.refresh, size: 20),
-            ),
-            const SizedBox(width: AppSpacing.xs),
-            Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
-              decoration: const BoxDecoration(
-                  color: AppColors.chipBg, borderRadius: AppRadius.pill),
-              child: Text(
-                  '${cargas.length} ${cargas.length == 1 ? 'item' : 'itens'}',
-                  style: AppTextStyles.countBadge),
-            ),
-          ],
+    if (carregando && !temAlguma) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 48),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (erro != null && !temAlguma) {
+      return Padding(
+        padding: _paddingMensagem,
+        child: Center(
+          child: Column(
+            children: [
+              Text(erro!, style: AppTextStyles.bodyError, textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              OutlinedButton(onPressed: onRecarregar, child: const Text('Tentar de novo')),
+            ],
+          ),
         ),
-        const SizedBox(height: AppSpacing.md),
+      );
+    }
+    if (!temAlguma) return _EmptyState(onUpload: onUpload);
+    if (cargas.isEmpty) {
+      return const Padding(
+        padding: _paddingMensagem,
+        child: Center(
+          child: Text('Nenhum item encontrado para essa busca ou filtro.', style: AppTextStyles.bodyMuted),
+        ),
+      );
+    }
+
+    final List<Widget> cards = [
+      for (final EtlCarga c in cargas) _CargaCard(key: ValueKey(c.id), carga: c, onTap: () => onOpen(c)),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
         if (erro != null) ...[
           Text(erro!, style: AppTextStyles.bodySmallError),
           const SizedBox(height: AppSpacing.md),
         ],
-        if (carregando && cargas.isEmpty)
-          const Padding(
-            padding: EdgeInsets.all(AppSpacing.xl),
-            child: Center(child: CircularProgressIndicator()),
-          )
-        else if (cargas.isEmpty)
-          _EmptyState(onUpload: onUpload)
-        else
-          for (final carga in cargas) ...[
-            _CargaCard(carga: carga, onTap: () => onOpen(carga)),
-            const SizedBox(height: AppSpacing.md),
-          ],
+        // Cards em largura total, um embaixo do outro (como a tela já era).
+        for (final Widget card in cards) ...[
+          card,
+          const SizedBox(height: AppSpacing.md),
+        ],
       ],
     );
   }
 }
 
+/// Estado vazio (nada enviado ainda), no formato do de Projetos.
 class _EmptyState extends StatelessWidget {
   const _EmptyState({required this.onUpload});
 
@@ -382,34 +518,34 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.xl),
-      decoration: AppDecorations.outlinedCard,
-      child: Column(
-        children: [
-          const Text('Nenhuma carga enviada ainda',
-              style: AppTextStyles.sectionLabel, textAlign: TextAlign.center),
-          const SizedBox(height: AppSpacing.xs),
-          const Text(
-            'Envie um arquivo .zip com uma geodatabase para iniciar o processamento.',
-            style: AppTextStyles.bodySmallMuted,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: AppSpacing.md),
-          OutlinedButton.icon(
-            onPressed: onUpload,
-            icon: const Icon(Icons.upload_file_outlined),
-            label: const Text('Selecionar arquivo'),
-          ),
-        ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 48),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.storage_outlined, size: 48, color: AppColors.textSecondary),
+            const SizedBox(height: AppSpacing.md),
+            const Text('Nenhum arquivo enviado ainda',
+                style: TextStyle(fontSize: 16, color: AppColors.textSecondary)),
+            const SizedBox(height: AppSpacing.xs),
+            const Text(
+              'Envie um .zip com a BDGD ou um .csv de pontos externos.',
+              style: AppTextStyles.bodySmallMuted,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            PrimaryActionButton(
+                label: 'Enviar arquivo', icon: Icons.upload_file_outlined, onPressed: onUpload, full: false),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _CargaCard extends StatelessWidget {
-  const _CargaCard({required this.carga, required this.onTap});
+  const _CargaCard({super.key, required this.carga, required this.onTap});
 
   final EtlCarga carga;
   final VoidCallback onTap;
@@ -424,8 +560,9 @@ class _CargaCard extends StatelessWidget {
       EtlCargaStatus.cancelado => (AppColors.textSecondary, AppColors.chipBg),
     };
     return ListCard(
-      leading: const CardAvatar(
-          color: AppColors.primary, icon: Icons.folder_zip_outlined),
+      leading: CardAvatar(
+          color: AppColors.primary,
+          icon: carga.ehCsv ? Icons.description_outlined : Icons.folder_zip_outlined),
       badge: StatusBadge(
           label: carga.statusLabel, color: color, softColor: softColor),
       onDelete: null,
@@ -435,6 +572,11 @@ class _CargaCard extends StatelessWidget {
       accentColor: AppColors.primary,
       onTap: onTap,
       infoRows: [
+        if (carga.ehCsv)
+          CardInfoRow(
+            icon: Icons.add_location_alt_outlined,
+            text: carga.origemCsv,
+          ),
         if (carga.executadoEm != null)
           CardInfoRow(icon: Icons.schedule_outlined, text: carga.executadoEm!),
         if (carga.status == EtlCargaStatus.processando)

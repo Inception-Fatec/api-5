@@ -1,176 +1,147 @@
-import 'dart:ui' show ImageFilter;
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'etl_theme.dart';
+import 'models/csv_import_resumo.dart';
 import 'models/etl_carga.dart';
+import 'models/ponto_importado.dart';
+import 'services/etl_service.dart';
+import 'services/salvar_arquivo.dart';
+import 'services/csv_preview.dart';
+import 'widgets/csv_resumo.dart';
 import 'widgets/seletor_municipio.dart';
 import 'widgets/etl_buttons.dart';
+import 'widgets/etl_modal.dart';
+import 'widgets/etl_tabela.dart';
+import 'package:tecsys_app/core/widgets/app_filter_chip.dart';
 
-/// Modal "Detalhes da carga" (aberto ao clicar num card da lista).
-///
+/// Busca os pontos gravados por uma importação de CSV. Trocável nos testes.
+typedef CarregarPontosDaImportacao = Future<PontosDaImportacao> Function(String cargaId);
+
+/// Modal "Detalhes da carga" (aberto ao clicar num card da lista). Para uma
+/// importação de CSV (#TG-90) mostra o resumo, as rejeitadas e as linhas
+/// gravadas; para o .zip, as métricas e as camadas carregadas.
 class CargaDetalhesDialog extends StatelessWidget {
-  const CargaDetalhesDialog({super.key, required this.carga});
+  const CargaDetalhesDialog({super.key, required this.carga, this.carregarPontos});
 
   final EtlCarga carga;
+  final CarregarPontosDaImportacao? carregarPontos;
 
-  static Future<bool?> show(BuildContext context, EtlCarga carga) {
-    return showGeneralDialog<bool>(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Fechar',
-      barrierColor: EtlColors.overlay,
-      transitionDuration: const Duration(milliseconds: 200),
-      pageBuilder: (ctx, animation, secondaryAnimation) {
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => Navigator.of(ctx).pop(),
-                  child: const SizedBox.expand(),
-                ),
-              ),
-            ),
-            Center(
-              child: FadeTransition(
-                opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
-                child: CargaDetalhesDialog(carga: carga),
-              ),
-            ),
-          ],
-        );
-      },
-      transitionBuilder: (ctx, animation, secondaryAnimation, child) => child,
-    );
-  }
+  static Future<bool?> show(BuildContext context, EtlCarga carga) =>
+      mostrarModalEtl<bool>(context, CargaDetalhesDialog(carga: carga), fecharAoClicarFora: true);
 
   @override
   Widget build(BuildContext context) {
     final EtlCarga c = carga;
+    void fechar() => Navigator.of(context).pop();
 
-    return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.of(context).pop(),
-      },
-      child: Focus(
-        autofocus: true,
-        child: Material(
-          type: MaterialType.transparency,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 672 + 32),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(kEtlModalRadius),
-                  border: Border.all(color: EtlColors.slate100),
-                  boxShadow: const [
-                    BoxShadow(color: EtlColors.black25, blurRadius: 50, spreadRadius: -12, offset: Offset(0, 25)),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(kEtlModalRadius - 1),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _Cabecalho(carga: c),
-                      Flexible(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              IntrinsicHeight(
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: [
-                                    Expanded(child: _Metrica(rotulo: 'Tamanho do Arquivo', valor: c.tamanhoBytes > 0 ? c.tamanhoFormatado : '—')),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: _Metrica(
-                                        rotulo: 'Tempo de Processamento',
-                                        valor: c.duracao ?? '—',
-                                        corValor: EtlColors.teal700,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: _Metrica(
-                                        rotulo: 'Tabelas Carregadas',
-                                        valor: c.totalCamadas > 0 ? '${c.totalCamadas}' : '—',
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: _Metrica(
-                                        rotulo: 'Registros Gravados',
-                                        valor: c.camadas.isEmpty ? '—' : EtlCarga.milhar(c.totalGravados),
-                                        corValor: EtlColors.slate900,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              if (c.status == EtlCargaStatus.erro) ...[
-                                const SizedBox(height: 16),
-                                _Falha(mensagem: c.errorMessage, log: c.logTail),
-                              ],
-                              for (final aviso in c.avisos) ...[
-                                const SizedBox(height: 16),
-                                _Aviso(texto: aviso),
-                              ],
-                              const SizedBox(height: 20),
-                              _SecaoCamadas(camadas: c.camadas),
-                              for (final bt in c.camadas.where((k) => k.nome == 'ucbt' && k.consumidores > 0)) ...[
-                                const SizedBox(height: 12),
-                                Text(
-                                  'Baixa tensão: ${EtlCarga.milhar(bt.consumidores)} consumidores '
-                                  '(inclusive residenciais) gravados em ${EtlCarga.milhar(bt.gravados)} registros, '
-                                  'um por ponto de conexão e classe.',
-                                  style: etlText(12, color: EtlColors.slate500, lineHeight: 18),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                        decoration: const BoxDecoration(
-                          color: EtlColors.slate50,
-                          border: Border(top: BorderSide(color: EtlColors.slate100)),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            EtlOutlineButton(label: 'Fechar', onPressed: () => Navigator.of(context).pop()),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+    return EtlModalCard(
+      onEsc: fechar,
+      larguraMaxima: 672,
+      cabecalho: _Cabecalho(carga: c, onFechar: fechar),
+      conteudo: c.ehCsv ? _detalhesCsv(c) : _detalhesEtl(c),
+      rodape: [EtlOutlineButton(label: 'Fechar', onPressed: fechar)],
+    );
+  }
+
+  /// Linha de métricas do topo: tamanho e tempo (iguais para .zip e CSV) e
+  /// duas métricas próprias de cada tipo.
+  Widget _metricas(EtlCarga c, _Metrica terceira, _Metrica quarta) {
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(child: _Metrica(rotulo: 'Tamanho do Arquivo', valor: c.tamanhoBytes > 0 ? c.tamanhoFormatado : '—')),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _Metrica(
+              rotulo: 'Tempo de Processamento',
+              valor: c.duracao ?? '—',
+              corValor: EtlColors.teal700,
             ),
           ),
-        ),
+          const SizedBox(width: 12),
+          Expanded(child: terceira),
+          const SizedBox(width: 12),
+          Expanded(child: quarta),
+        ],
       ),
     );
+  }
+
+  List<Widget> _detalhesEtl(EtlCarga c) {
+    return [
+      _metricas(
+        c,
+        _Metrica(rotulo: 'Tabelas Carregadas', valor: c.totalCamadas > 0 ? '${c.totalCamadas}' : '—'),
+        _Metrica(
+          rotulo: 'Registros Gravados',
+          valor: c.camadas.isEmpty ? '—' : EtlCarga.milhar(c.totalGravados),
+          corValor: EtlColors.slate900,
+        ),
+      ),
+      if (c.status == EtlCargaStatus.erro) ...[
+        const SizedBox(height: 16),
+        _Falha(mensagem: c.errorMessage, log: c.logTail),
+      ],
+      for (final aviso in c.avisos) ...[
+        const SizedBox(height: 16),
+        EtlAvisoLinha(mensagem: aviso),
+      ],
+      const SizedBox(height: 20),
+      _SecaoCamadas(camadas: c.camadas),
+      for (final bt in c.camadas.where((k) => k.nome == 'ucbt' && k.consumidores > 0)) ...[
+        const SizedBox(height: 12),
+        Text(
+          'Baixa tensão: ${EtlCarga.milhar(bt.consumidores)} consumidores '
+          '(inclusive residenciais) gravados em ${EtlCarga.milhar(bt.gravados)} registros, '
+          'um por ponto de conexão e classe.',
+          style: etlText(12, color: EtlColors.slate500, lineHeight: 18),
+        ),
+      ],
+    ];
+  }
+
+  /// Importação de CSV (#TG-90): as mesmas métricas do topo, com os números
+  /// da importação, e o resumo com as linhas rejeitadas e o motivo.
+  List<Widget> _detalhesCsv(EtlCarga c) {
+    final CsvImportResumo? r = c.csv;
+    return [
+      _metricas(
+        c,
+        _Metrica(rotulo: 'Linhas no Arquivo', valor: r == null ? '—' : EtlCarga.milhar(r.total)),
+        _Metrica(
+          rotulo: 'Pontos Importados',
+          valor: r == null ? '—' : EtlCarga.milhar(r.importadas),
+          corValor: EtlColors.slate900,
+        ),
+      ),
+      if (c.status == EtlCargaStatus.erro) ...[
+        const SizedBox(height: 16),
+        _Falha(mensagem: c.errorMessage, log: c.logTail),
+      ],
+      if (r != null) ...[
+        const SizedBox(height: 20),
+        CsvResumoImportacao(resumo: r, nomeArquivo: c.nomeArquivo, mostrarNumeros: false),
+      ],
+      // Sem linha nova o resumo acima já explica; não repete o aviso.
+      if (c.status != EtlCargaStatus.erro && (r?.importadas ?? 0) > 0) ...[
+        const SizedBox(height: 20),
+        _LinhasImportadas(
+          carga: c,
+          carregar: carregarPontos ?? (id) => EtlService.listarPontosDaImportacao(id),
+        ),
+      ],
+    ];
   }
 }
 
 // ─────────────────────────────── Cabeçalho ───────────────────────────────
 
 class _Cabecalho extends StatelessWidget {
-  const _Cabecalho({required this.carga});
+  const _Cabecalho({required this.carga, required this.onFechar});
 
   final EtlCarga carga;
+  final VoidCallback onFechar;
 
   @override
   Widget build(BuildContext context) {
@@ -197,7 +168,8 @@ class _Cabecalho extends StatelessWidget {
               border: Border.all(color: EtlColors.teal100),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: const Icon(Icons.dataset_outlined, size: 24, color: EtlColors.teal600),
+            child: Icon(carga.ehCsv ? Icons.description_outlined : Icons.dataset_outlined,
+                size: 24, color: EtlColors.teal600),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -250,6 +222,21 @@ class _Cabecalho extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (carga.ehCsv) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.add_location_alt_outlined, size: 14, color: EtlColors.slate400),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          carga.origemCsv,
+                          style: etlText(12, color: EtlColors.slate500, lineHeight: 16),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 if (carga.municipios.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Row(
@@ -270,43 +257,8 @@ class _Cabecalho extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          _BotaoFechar(onTap: () => Navigator.of(context).pop()),
+          EtlBotaoIcone(icone: Icons.close, onTap: onFechar),
         ],
-      ),
-    );
-  }
-}
-
-class _BotaoFechar extends StatefulWidget {
-  const _BotaoFechar({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  State<_BotaoFechar> createState() => _BotaoFecharState();
-}
-
-class _BotaoFecharState extends State<_BotaoFechar> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: _hover ? EtlColors.slate100 : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(Icons.close, size: 20, color: _hover ? EtlColors.slate600 : EtlColors.slate400),
-        ),
       ),
     );
   }
@@ -514,38 +466,6 @@ class _SecaoCamadas extends StatelessWidget {
   }
 }
 
-/// Aviso de carga incompleta (ex.: baixa tensão não carregada).
-class _Aviso extends StatelessWidget {
-  const _Aviso({required this.texto});
-
-  final String texto;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFFCD34D)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.warning_amber_rounded, size: 18, color: Color(0xFFB45309)),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              texto,
-              style: const TextStyle(fontSize: 13, height: 1.4, color: Color(0xFF92400E)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// Motivo da falha e as últimas linhas do log do processamento (#TG-141),
 /// para o ADM entender o erro sem precisar abrir o servidor.
 class _Falha extends StatelessWidget {
@@ -606,6 +526,165 @@ class _Falha extends StatelessWidget {
                 ),
               ),
             ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ───────────────────────────── Linhas importadas (CSV) ─────────────────────────────
+
+/// Pontos que a importação de CSV gravou (#TG-90), lidos do backend: filtro
+/// por papel, tabela rolável e download no mesmo formato do CSV de entrada.
+class _LinhasImportadas extends StatefulWidget {
+  const _LinhasImportadas({required this.carga, required this.carregar});
+
+  final EtlCarga carga;
+  final CarregarPontosDaImportacao carregar;
+
+  @override
+  State<_LinhasImportadas> createState() => _LinhasImportadasState();
+}
+
+class _LinhasImportadasState extends State<_LinhasImportadas> {
+  PontosDaImportacao? _lista;
+  String? _erro;
+  bool _carregando = true;
+
+  /// Papel escolhido no filtro; null = todos.
+  String? _papel;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregar();
+  }
+
+  Future<void> _carregar() async {
+    setState(() {
+      _carregando = true;
+      _erro = null;
+    });
+    try {
+      final PontosDaImportacao lista = await widget.carregar(widget.carga.id);
+      if (!mounted) return;
+      setState(() {
+        _lista = lista;
+        _carregando = false;
+      });
+    } on EtlUploadException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _carregando = false;
+        _erro = e.mensagem;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _carregando = false;
+        _erro = 'Não foi possível carregar as linhas importadas.';
+      });
+    }
+  }
+
+  Future<void> _baixar(PontosDaImportacao lista) async {
+    final String base = widget.carga.nomeArquivo.replaceAll(RegExp(r'\.csv$', caseSensitive: false), '');
+    try {
+      await salvarArquivo(nome: '${base}_importadas.csv', bytes: bytesCsvComBom(lista.comoCsv()));
+    } catch (_) {
+      // Download é um extra; a tabela continua na tela.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final PontosDaImportacao? lista = _lista;
+    final TextStyle titulo = etlText(13, weight: FontWeight.w700, color: EtlColors.slate900, lineHeight: 20);
+
+    if (_carregando) {
+      return Row(
+        children: [
+          Text('Linhas importadas', style: titulo),
+          const SizedBox(width: 10),
+          const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+                strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(EtlColors.teal600)),
+          ),
+        ],
+      );
+    }
+    if (_erro != null || lista == null) {
+      return EtlAvisoLinha(
+        mensagem: _erro ?? 'Não foi possível carregar as linhas importadas.',
+        erro: true,
+        acao: TextButton(onPressed: _carregar, child: const Text('Tentar de novo')),
+      );
+    }
+    if (lista.pontos.isEmpty) {
+      final bool importouAlgo = (widget.carga.csv?.importadas ?? 0) > 0;
+      return EtlAvisoLinha(
+        mensagem: importouAlgo
+            ? 'As linhas desta importação não estão ligadas a ela: foi feita antes de o '
+                'histórico guardar os pontos de cada importação.'
+            : 'Nenhuma linha nova foi gravada nesta importação.',
+      );
+    }
+
+    final List<PontoImportado> visiveis =
+        _papel == null ? lista.pontos : lista.pontos.where((p) => p.papel == _papel).toList();
+    int contar(String papel) => lista.pontos.where((p) => p.papel == papel).length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          alignment: WrapAlignment.spaceBetween,
+          spacing: 8,
+          children: [
+            Text('Linhas importadas (${EtlCarga.milhar(lista.total)})', style: titulo),
+            EtlBotaoLink(icone: Icons.download_outlined, label: 'Baixar .csv', onTap: () => _baixar(lista)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        AppFilterChipRow(chips: [
+          AppFilterChip(
+            label: 'Todos (${lista.pontos.length})',
+            selected: _papel == null,
+            onTap: () => setState(() => _papel = null),
+          ),
+          for (final String papel in PontoImportado.papeis)
+            if (contar(papel) > 0)
+              AppFilterChip(
+                label: '${PontoImportado.rotuloPapel(papel)} (${contar(papel)})',
+                selected: _papel == papel,
+                onTap: () => setState(() => _papel = papel),
+              ),
+        ]),
+        const SizedBox(height: 8),
+        EtlTabela(
+          alturaMaxima: 320,
+          cabecalho: const ['#', 'id', 'papel', 'latitude', 'longitude', 'descrição'],
+          linhas: [
+            for (int i = 0; i < visiveis.length; i++)
+              [
+                '${i + 1}',
+                visiveis[i].id,
+                PontoImportado.rotuloPapel(visiveis[i].papel),
+                '${visiveis[i].latitude}',
+                '${visiveis[i].longitude}',
+                visiveis[i].descricao ?? '',
+              ],
+          ],
+        ),
+        if (lista.cortada) ...[
+          const SizedBox(height: 6),
+          Text(
+            'Mostrando as primeiras ${EtlCarga.milhar(lista.pontos.length)} de ${EtlCarga.milhar(lista.total)} linhas.',
+            style: etlText(11, color: EtlColors.slate500, lineHeight: 16),
           ),
         ],
       ],

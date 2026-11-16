@@ -2,6 +2,7 @@ package com.tecsys.domain.etl;
 
 import com.tecsys.domain.etl.dto.EtlJobResponseDto;
 import com.tecsys.domain.etl.dto.ExternalPointsImportResponseDto;
+import com.tecsys.domain.etl.dto.ExternalPointsListResponseDto;
 import com.tecsys.domain.user.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -42,6 +43,15 @@ public class EtlController {
             @AuthenticationPrincipal User currentUser) {
         return ResponseEntity.ok(
                 externalPointsImportService.importar(file, distribuidora, municipio, currentUser.getId()));
+    }
+
+    /** Pontos gravados por uma importação de CSV do histórico (#TG-90). */
+    @GetMapping("/jobs/{id}/pontos")
+    @PreAuthorize("hasRole('ADM')")
+    public ResponseEntity<ExternalPointsListResponseDto> listJobPoints(
+            @PathVariable Long id,
+            @RequestParam(value = "limite", required = false) Integer limite) {
+        return ResponseEntity.ok(externalPointsImportService.listarPontosDaImportacao(id, limite));
     }
 
     @GetMapping("/jobs")

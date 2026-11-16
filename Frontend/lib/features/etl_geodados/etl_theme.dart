@@ -31,6 +31,13 @@ class EtlColors {
   static const Color emerald700 = Color(0xFF047857);
   static const Color emerald800 = Color(0xFF065F46);
 
+  // Avisos que não impedem nada por si (ex.: prévia do CSV, #TG-90).
+  static const Color amber50 = Color(0xFFFFFBEB);
+  static const Color amber100 = Color(0xFFFEF3C7);
+  static const Color amber200 = Color(0xFFFDE68A);
+  static const Color amber600 = Color(0xFFD97706);
+  static const Color amber800 = Color(0xFF92400E);
+
   static const Color rose100 = Color(0xFFFFE4E6);
   static const Color rose200 = Color(0xFFFECDD3);
   static const Color rose600 = Color(0xFFE11D48);

@@ -41,7 +41,7 @@ public record EtlJobResponseDto(
                 job.getOriginalFilename(),
                 job.getFileSizeBytes(),
                 Arrays.stream(job.getMunicipios().split(",")).filter(m -> !m.isBlank()).toList(),
-                parse(job.getSummaryJson()),
+                semIdsImportados(parse(job.getSummaryJson())),
                 job.getErrorMessage(),
                 logTail,
                 job.getStage(),
@@ -52,6 +52,17 @@ public record EtlJobResponseDto(
                 job.getStartedAt(),
                 job.getFinishedAt()
         );
+    }
+
+    /**
+     * Importação de CSV (#TG-90): os ids gravados ficam no summary só para
+     * GET /etl/jobs/{id}/pontos; a listagem não precisa deles.
+     */
+    private static JsonNode semIdsImportados(JsonNode summary) {
+        if (summary instanceof com.fasterxml.jackson.databind.node.ObjectNode o) {
+            o.remove(com.tecsys.domain.etl.ExternalPointsImportService.CHAVE_IMPORTADOS);
+        }
+        return summary;
     }
 
     private static JsonNode parse(String json) {
