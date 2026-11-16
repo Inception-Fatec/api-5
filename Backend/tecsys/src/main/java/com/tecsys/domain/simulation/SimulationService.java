@@ -3,7 +3,8 @@ package com.tecsys.domain.simulation;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.tecsys.core.exception.BusinessRuleException;
-import com.tecsys.domain.gateway.GatewayProfileRepository;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.tecsys.domain.gateway.GatewayProfileResolver;
 import com.tecsys.domain.project.*;
 import com.tecsys.domain.project.dto.ProjectResponseDto;
 import com.tecsys.domain.simulation.dto.SimulationRunRequestDto;
@@ -21,7 +22,7 @@ public class SimulationService {
     private final ProjectRepository projectRepository;
     private final ProjectHistoryRepository projectHistoryRepository;
     private final UserRepository userRepository;
-    private final GatewayProfileRepository gatewayProfileRepository;
+    private final GatewayProfileResolver gatewayProfileResolver;
     private final DecisionEngineClient decisionEngineClient;
     private final ProjectService projectService;
 
@@ -30,10 +31,8 @@ public class SimulationService {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new BusinessRuleException("Usuário não encontrado."));
 
-        // Valida a existência e estado ativo do perfil de gateway submetido
-        if (!gatewayProfileRepository.existsByIdAndActiveTrue(request.gatewayProfileId())) {
-            throw new BusinessRuleException("Perfil de gateway selecionado não existe ou está inativo.");
-        }
+        // Perfil escolhido ou, sem ele, o padrão (#TG-150). Perfil inválido → 422.
+        Long perfilId = gatewayProfileResolver.resolver(request.gatewayProfileId(), null);
 
         // salva o Projeto
         Project project = Project.builder()
@@ -44,10 +43,12 @@ public class SimulationService {
                 .build();
         project = projectRepository.save(project);
 
-        // Injeta o gateway_profile_id dentro do nó JSONB do filter_params dinamicamente
-        JsonNode filters = request.filterParams();
-        if (filters != null && filters.isObject()) {
-            ((ObjectNode) filters).put("gateway_profile_id", request.gatewayProfileId());
+        // Grava o perfil usado no filter_params: é de lá que o motor lê (#TG-150)
+        ObjectNode filters = request.filterParams() != null && request.filterParams().isObject()
+                ? ((ObjectNode) request.filterParams()).deepCopy()
+                : JsonNodeFactory.instance.objectNode();
+        if (perfilId != null) {
+            filters.put(GatewayProfileResolver.CAMPO, perfilId);
         }
 
         // salva o historico com o poligono e filtros da página de novo projeto (já com o ID do perfil)

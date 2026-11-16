@@ -93,7 +93,28 @@ public record DecisionSummaryResponseDto(
         Double losStepMeters,
 
         @JsonProperty("calculation_time_seconds")
-        Double calculationTimeSeconds
+        Double calculationTimeSeconds,
+
+        // Valores de RF usados no cálculo (#TG-150): do perfil de gateway do projeto ou,
+        // sem perfil, da configuração do motor.
+        @JsonProperty("frequency_mhz")
+        double frequencyMhz,
+
+        @JsonProperty("tx_power_dbm")
+        double txPowerDbm,
+
+        @JsonProperty("sensitivity_dbm")
+        double sensitivityDbm,
+
+        @JsonProperty("antenna_gains_db")
+        double antennaGainsDb,
+
+        // perfil de gateway do projeto; null quando o cálculo usou só a configuração do motor
+        @JsonProperty("gateway_profile_id")
+        Long gatewayProfileId,
+
+        @JsonProperty("gateway_profile")
+        String gatewayProfileName
 
 ) {
 }

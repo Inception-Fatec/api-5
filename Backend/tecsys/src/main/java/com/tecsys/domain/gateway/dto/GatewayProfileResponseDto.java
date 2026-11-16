@@ -1,5 +1,7 @@
 package com.tecsys.domain.gateway.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 public record GatewayProfileResponseDto(
         Long id,
         String name,
@@ -8,6 +10,8 @@ public record GatewayProfileResponseDto(
         Double antennaGainDbi,
         Double rxSensitivityDbm,
         Double antennaHeightM,
+        Double sensorHeightM,
         Integer maxDevices,
-        boolean active
+        boolean active,
+        @JsonProperty("isDefault") boolean padrao
 ) {}

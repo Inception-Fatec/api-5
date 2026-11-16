@@ -9,6 +9,7 @@ import com.tecsys.domain.decision.engine.MotorEngine;
 import com.tecsys.domain.decision.engine.MotorParams;
 import com.tecsys.domain.decision.engine.MotorResult;
 import com.tecsys.domain.decision.model.DecisionCriteria;
+import com.tecsys.domain.decision.model.GatewayProfileValues;
 import com.tecsys.domain.decision.model.GatewayCandidate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,6 +22,7 @@ import java.lang.management.MemoryPoolMXBean;
 import java.lang.management.MemoryType;
 import java.io.UncheckedIOException;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 public class DecisionService {
@@ -59,7 +61,9 @@ public class DecisionService {
             }
 
             projectStatusRepository.updateStatus(projectId, "PROCESSANDO");
-            DecisionResultResponseDto response = calculate(criteria);
+            // Perfil de gateway escolhido no projeto (#TG-150); sem ele, a configuração do motor.
+            Optional<GatewayProfileValues> perfil = projectLookupRepository.findGatewayProfile(projectId);
+            DecisionResultResponseDto response = calculate(criteria, perfil);
             projectCoverageService.saveCoverage(projectId, response);
             projectStatusRepository.updateStatus(projectId, "SUCESSO");
             return response;
@@ -76,8 +80,17 @@ public class DecisionService {
     }
 
     public DecisionResultResponseDto calculate(DecisionCriteria criteria) {
+        return calculate(criteria, Optional.empty());
+    }
+
+    public DecisionResultResponseDto calculate(DecisionCriteria criteria, Optional<GatewayProfileValues> perfil) {
         ManagementFactory.getMemoryPoolMXBeans().forEach(MemoryPoolMXBean::resetPeakUsage);
-        MotorParams params = engine.params();
+        MotorParams params = perfil.map(p -> p.aplicar(engine.params())).orElse(engine.params());
+        perfil.ifPresentOrElse(
+                p -> log.info("Perfil de gateway: {} (id {}) — {} MHz, {} dBm, sensibilidade {} dBm, ganho {} dB, alturas {} m / {} m",
+                        p.name(), p.id(), p.frequencyMhz(), p.txPowerDbm(), p.rxSensitivityDbm(),
+                        p.antennaGainDbi(), p.antennaHeightM(), p.sensorHeightM()),
+                () -> log.info("Projeto sem perfil de gateway: usando a configuração do motor ({}).", params.profile()));
         long start = System.nanoTime();
         MotorResult result;
         try {
@@ -216,7 +229,13 @@ public class DecisionService {
                 params.lineOfSight().name(),
                 losSamples,
                 losStepMeters,
-                elapsedSeconds
+                elapsedSeconds,
+                params.frequencyMhz(),
+                params.txPowerDbm(),
+                params.sensitivityDbm(),
+                params.antennaGainsDb(),
+                params.gatewayProfileId(),
+                params.gatewayProfileName()
                 );
 
         List<SelectedGatewayResponseDto> gateways = r.gateways().stream().map(s -> {

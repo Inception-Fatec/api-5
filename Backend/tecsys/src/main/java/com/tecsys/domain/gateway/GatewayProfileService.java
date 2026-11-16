@@ -27,6 +27,7 @@ public class GatewayProfileService {
                 .antennaGainDbi(request.antennaGainDbi())
                 .rxSensitivityDbm(request.rxSensitivityDbm())
                 .antennaHeightM(request.antennaHeightM())
+                .sensorHeightM(request.sensorHeightMOuPadrao())
                 .maxDevices(request.maxDevices())
                 .build();
         return toDto(repository.save(profile));
@@ -52,6 +53,7 @@ public class GatewayProfileService {
         profile.setAntennaGainDbi(request.antennaGainDbi());
         profile.setRxSensitivityDbm(request.rxSensitivityDbm());
         profile.setAntennaHeightM(request.antennaHeightM());
+        profile.setSensorHeightM(request.sensorHeightMOuPadrao());
         profile.setMaxDevices(request.maxDevices());
 
         return toDto(repository.save(profile));
@@ -59,6 +61,9 @@ public class GatewayProfileService {
 
     @Transactional
     public void delete(Long id) {
+        if (getProfileOrThrow(id).isPadrao()) {
+            throw new BusinessRuleException("O perfil padrão não pode ser excluído: ele é usado quando o projeto não escolhe um perfil.");
+        }
         if (projectHistoryRepository.existsByGatewayProfileIdInFilterParams(id)) {
             throw new BusinessRuleException("Não é possível excluir o perfil, pois já está em uso por um projeto.");
         }
@@ -77,7 +82,7 @@ public class GatewayProfileService {
                 entity.getId(), entity.getName(), entity.getFrequencyMhz(),
                 entity.getTxPowerDbm(), entity.getAntennaGainDbi(),
                 entity.getRxSensitivityDbm(), entity.getAntennaHeightM(),
-                entity.getMaxDevices(), entity.isActive()
+                entity.getSensorHeightM(), entity.getMaxDevices(), entity.isActive(), entity.isPadrao()
         );
     }
 }

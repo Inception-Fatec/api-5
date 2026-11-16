@@ -4,6 +4,10 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tecsys.domain.decision.model.DecisionCriteria;
+import com.tecsys.domain.decision.model.GatewayProfileValues;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import com.tecsys.domain.decision.model.VoltageLevel;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -11,12 +15,15 @@ import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public class ProjectLookupRepository {
 
     private static final List<VoltageLevel> TODOS_OS_NIVEIS =
             List.of(VoltageLevel.ALTO, VoltageLevel.MEDIO, VoltageLevel.BAIXO);
+
+    private static final Logger log = LoggerFactory.getLogger(ProjectLookupRepository.class);
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -61,6 +68,46 @@ public class ProjectLookupRepository {
                             strings(fp, "candidate_layers")
                     );
                 });
+    }
+
+    /**
+     * Perfil de gateway da última versão do projeto (#TG-150). Vazio quando a versão
+     * não tem {@code gateway_profile_id} (projeto antigo) ou o perfil não existe:
+     * aí o motor usa a própria configuração, como antes.
+     */
+    public Optional<GatewayProfileValues> findGatewayProfile(long projectId) {
+        String sql = """
+                WITH ultima AS (
+                    SELECT ph.filter_params ->> 'gateway_profile_id' AS perfil
+                    FROM project_history ph
+                    WHERE ph.project_id = :projectId
+                    ORDER BY ph.created_at DESC, ph.id DESC
+                    LIMIT 1
+                )
+                SELECT gp.id, gp.name, gp.frequency_mhz, gp.tx_power_dbm, gp.antenna_gain_dbi,
+                       gp.rx_sensitivity_dbm, gp.antenna_height_m, gp.sensor_height_m
+                FROM ultima u
+                JOIN gateway_profiles gp ON u.perfil ~ '^[0-9]+$' AND gp.id = u.perfil::bigint
+                """;
+        try {
+            List<GatewayProfileValues> perfis = jdbcTemplate.query(sql,
+                    new MapSqlParameterSource("projectId", projectId),
+                    (rs, rowNum) -> new GatewayProfileValues(
+                            rs.getLong("id"),
+                            rs.getString("name"),
+                            rs.getDouble("frequency_mhz"),
+                            rs.getDouble("tx_power_dbm"),
+                            rs.getDouble("antenna_gain_dbi"),
+                            rs.getDouble("rx_sensitivity_dbm"),
+                            rs.getDouble("antenna_height_m"),
+                            rs.getDouble("sensor_height_m")));
+            return perfis.stream().findFirst();
+        } catch (DataAccessException e) {
+            // Banco sem a tabela/colunas de perfil (migrations antigas): segue com a configuração.
+            log.warn("Projeto {}: não foi possível ler o perfil de gateway ({}); usando a configuração do motor.",
+                    projectId, e.getMostSpecificCause().getMessage());
+            return Optional.empty();
+        }
     }
 
     private JsonNode parse(String json) {

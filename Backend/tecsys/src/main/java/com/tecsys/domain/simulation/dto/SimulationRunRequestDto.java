@@ -3,7 +3,6 @@ package com.tecsys.domain.simulation.dto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 public record SimulationRunRequestDto(
@@ -18,7 +17,7 @@ public record SimulationRunRequestDto(
         @JsonProperty("geometry")
         String geometry,
 
-        @NotNull(message = "O gateway_profile_id é obrigatório.")
+        // Opcional (#TG-150): sem ele, o projeto usa o perfil padrão.
         @JsonProperty("gateway_profile_id")
         Long gatewayProfileId,
 

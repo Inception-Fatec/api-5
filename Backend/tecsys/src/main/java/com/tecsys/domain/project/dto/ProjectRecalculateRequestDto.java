@@ -14,5 +14,13 @@ public record ProjectRecalculateRequestDto(
 
         @NotNull(message = "Os filtros (filter_params) são obrigatórios para recalcular.")
         @JsonProperty("filter_params")
-        JsonNode filterParams
-) {}
+        JsonNode filterParams,
+
+        // Opcional (#TG-150): sem ele, mantém o perfil da versão anterior.
+        @JsonProperty("gateway_profile_id")
+        Long gatewayProfileId
+) {
+    public ProjectRecalculateRequestDto(String geometry, JsonNode filterParams) {
+        this(geometry, filterParams, null);
+    }
+}

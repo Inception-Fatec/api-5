@@ -25,7 +25,8 @@ class ProjectActivityTest {
     void setUp() {
         projectRepository = mock(ProjectRepository.class);
         service = new ProjectService(projectRepository, mock(UserRepository.class),
-                mock(ProjectHistoryRepository.class), mock(DecisionEngineClient.class));
+                mock(ProjectHistoryRepository.class), mock(DecisionEngineClient.class),
+                mock(com.tecsys.domain.gateway.GatewayProfileResolver.class));
         when(projectRepository.save(any(Project.class))).thenAnswer(inv -> inv.getArgument(0));
     }
 
