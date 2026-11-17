@@ -1,3 +1,5 @@
+import 'package:tecsys_app/core/ajuda/ajuda.dart';
+import 'package:tecsys_app/core/ajuda/textos_ajuda.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey, SingleActivator;
 
@@ -144,6 +146,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           fontSize: 22,
                           fontWeight: FontWeight.w800,
                           color: AppColors.textPrimary)),
+                  AjudaBotao(ajuda: TextosAjuda.login),
                 ],
               ),
               const SizedBox(height: 40),

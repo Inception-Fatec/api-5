@@ -1,3 +1,5 @@
+import 'package:tecsys_app/core/ajuda/ajuda.dart';
+import 'package:tecsys_app/core/ajuda/textos_ajuda.dart';
 import 'package:flutter/material.dart';
 
 import 'package:tecsys_app/core/theme/app_theme.dart';
@@ -178,6 +180,7 @@ class ReportHeader extends StatelessWidget {
                             icon: const Icon(Icons.history),
                           ),
                   ),
+                AjudaBotao(ajuda: TextosAjuda.relatorio),
                 if (onExportPdf != null)
                   exportingPdf
                       ? const SizedBox(

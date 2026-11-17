@@ -1,3 +1,5 @@
+import 'package:tecsys_app/core/ajuda/ajuda.dart';
+import 'package:tecsys_app/core/ajuda/textos_ajuda.dart';
 import 'package:flutter/material.dart';
 
 import 'package:tecsys_app/core/theme/app_theme.dart';
@@ -166,6 +168,7 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                         child: Text('Novo Projeto',
                             style: NewProjectDialogStyles.title),
                       ),
+                      AjudaBotao(ajuda: TextosAjuda.novoProjeto),
                       IconButton(
                         icon: const Icon(Icons.close),
                         onPressed: () => Navigator.of(context).pop(),

@@ -1,3 +1,5 @@
+import 'package:tecsys_app/core/ajuda/ajuda.dart';
+import 'package:tecsys_app/core/ajuda/textos_ajuda.dart';
 import 'package:flutter/material.dart';
 
 import 'package:tecsys_app/core/theme/app_theme.dart';
@@ -127,6 +129,7 @@ class _GatewayProfilesDialogState extends State<GatewayProfilesDialog> {
           children: [
             const Expanded(
                 child: Text('Perfis de gateway', style: AppTextStyles.cardTitle)),
+            const AjudaBotao(ajuda: TextosAjuda.perfis),
             IconButton(
               icon: const Icon(Icons.close),
               tooltip: 'Fechar',
@@ -342,13 +345,35 @@ class _FormularioPerfilState extends State<_FormularioPerfil> {
     }
   }
 
+  static String? _dica(CampoPerfil c) => switch (c) {
+        CampoPerfil.nome => null,
+        CampoPerfil.frequencia => TextosAjuda.campoFrequencia,
+        CampoPerfil.potencia => TextosAjuda.campoPotencia,
+        CampoPerfil.ganho => TextosAjuda.campoGanho,
+        CampoPerfil.sensibilidade => TextosAjuda.campoSensibilidade,
+        CampoPerfil.alturaGateway => TextosAjuda.campoAlturaGateway,
+        CampoPerfil.alturaSensor => TextosAjuda.campoAlturaSensor,
+        CampoPerfil.perda => TextosAjuda.campoPerda,
+      };
+
   Widget _campo(CampoPerfil c) {
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          FieldLabel(c.unidade.isEmpty ? c.rotulo : '${c.rotulo} (${c.unidade})'),
+          Row(
+            children: [
+              Flexible(
+                  child: FieldLabel(c.unidade.isEmpty ? c.rotulo : '${c.rotulo} (${c.unidade})')),
+              // #TG-153: explicação do campo técnico.
+              if (_dica(c) != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: AjudaDica(_dica(c)!, key: Key('dica-${c.name}')),
+                ),
+            ],
+          ),
           TextField(
             key: Key('campo-${c.name}'),
             controller: _campos[c],

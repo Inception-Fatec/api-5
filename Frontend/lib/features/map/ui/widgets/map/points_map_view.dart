@@ -1,3 +1,5 @@
+import 'package:tecsys_app/core/ajuda/ajuda.dart';
+import 'package:tecsys_app/core/ajuda/textos_ajuda.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show listEquals;
@@ -579,16 +581,18 @@ class PointsMapViewState extends State<PointsMapView>
               Positioned(
                 left: MapStyles.coordsLeft,
                 bottom: MapStyles.coordsBottom,
-                child: IgnorePointer(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      MapLegend(agrupado: _layer.agrupado),
-                      const SizedBox(height: MapStyles.legendGap),
-                      _painelCoordenadas(),
-                    ],
-                  ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // A legenda é clicável (#TG-153): "o que é cada cor" abre a ajuda do mapa.
+                    MapLegend(
+                      agrupado: _layer.agrupado,
+                      onAjuda: () => mostrarAjuda(context, TextosAjuda.mapa),
+                    ),
+                    const SizedBox(height: MapStyles.legendGap),
+                    IgnorePointer(child: _painelCoordenadas()),
+                  ],
                 ),
               ),
               Positioned(

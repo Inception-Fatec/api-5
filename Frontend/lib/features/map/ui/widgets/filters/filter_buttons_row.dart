@@ -1,3 +1,4 @@
+import 'package:tecsys_app/core/ajuda/textos_ajuda.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 
@@ -35,6 +36,7 @@ class FilterButtonsRow extends StatelessWidget {
 
       // TG-91: seleção independente das camadas de cobertura.
       DropdownFilterButton(
+        ajuda: TextosAjuda.filtroPontosACobrir,
         label: 'Pontos a cobrir (${cobertura.length})',
         icon: Icons.location_on_outlined,
         ativo: !listEquals(
@@ -56,6 +58,7 @@ class FilterButtonsRow extends StatelessWidget {
       // TG-91/TG-92: seleção das camadas candidatas a gateway,
 // independente das camadas utilizadas como pontos a cobrir.
       DropdownFilterButton(
+        ajuda: TextosAjuda.filtroCandidatos,
         label: 'Candidatos a gateway (${candidatas.length})',
         icon: Icons.cell_tower,
         ativo: !listEquals(candidatas, MapFilterOptions.padraoCandidatos),
@@ -74,7 +77,8 @@ class FilterButtonsRow extends StatelessWidget {
       ListenableBuilder(
         listenable: areas,
         builder: (context, _) => DropdownFilterButton(
-          label: areas.isEmpty ? 'Áreas' : 'Áreas (${areas.areas.length})',
+          ajuda: TextosAjuda.filtroAreas,
+        label: areas.isEmpty ? 'Áreas' : 'Áreas (${areas.areas.length})',
           icon: Icons.highlight_alt,
           ativo: !areas.isEmpty,
           // Escuta as áreas e o controller (onde chegam os totais por área).
@@ -98,6 +102,7 @@ class FilterButtonsRow extends StatelessWidget {
         ),
       ),
       DropdownFilterButton(
+        ajuda: TextosAjuda.filtroBairro,
         label: 'Bairro',
         icon: Icons.signpost_outlined,
         ativo: controller.bairroNames.isNotEmpty,
@@ -111,6 +116,7 @@ class FilterButtonsRow extends StatelessWidget {
         ),
       ),
       DropdownFilterButton(
+        ajuda: TextosAjuda.filtroTensao,
         label: targetLayers.isEmpty
             ? 'Nível de Tensão'
             : targetLayers.map(MapFilterOptions.targetLayerLabel).join(', '),
@@ -125,6 +131,7 @@ class FilterButtonsRow extends StatelessWidget {
         ),
       ),
       DropdownFilterButton(
+        ajuda: TextosAjuda.filtroConjunto,
         label: 'Conjunto',
         icon: Icons.hub_outlined,
         ativo: controller.conjCodes.isNotEmpty,
@@ -136,6 +143,7 @@ class FilterButtonsRow extends StatelessWidget {
         ),
       ),
       DropdownFilterButton(
+        ajuda: TextosAjuda.filtroSubestacao,
         label: 'Subestação',
         icon: Icons.electrical_services_outlined,
         ativo: controller.subCodes.isNotEmpty,
@@ -147,6 +155,7 @@ class FilterButtonsRow extends StatelessWidget {
         ),
       ),
       DropdownFilterButton(
+        ajuda: TextosAjuda.filtroClasse,
         label: 'Classe',
         icon: Icons.category_outlined,
         ativo: controller.clasSub.isNotEmpty,
@@ -160,6 +169,7 @@ class FilterButtonsRow extends StatelessWidget {
         ),
       ),
       DropdownFilterButton(
+        ajuda: TextosAjuda.filtroCnae,
         label: 'CNAE',
         icon: Icons.work_outline,
         ativo: controller.cnaeCodes.isNotEmpty,
