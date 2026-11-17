@@ -107,6 +107,10 @@ class ReportSummary {
   /// resposta — nunca é fixado no app (parâmetro de RF).
   final int gatewayRangeM;
 
+  /// Premissas usadas no cálculo (perfil de gateway, RF, alturas, relevo),
+  /// gravadas pelo motor (#TG-77, #TG-150). Cálculos antigos trazem só parte.
+  final ReportAssumptions assumptions;
+
   const ReportSummary({
     required this.totalPoints,
     required this.totalCandidates,
@@ -115,6 +119,7 @@ class ReportSummary {
     required this.uncoveredPoints,
     required this.coveragePercentage,
     required this.gatewayRangeM,
+    this.assumptions = const ReportAssumptions(),
   });
 
   factory ReportSummary.fromJson(Map<String, dynamic> json) {
@@ -126,8 +131,79 @@ class ReportSummary {
       uncoveredPoints: _int(json['uncovered_consumers'] ?? json['uncovered_points']),
       coveragePercentage: _double(json['coverage_percentage']),
       gatewayRangeM: _int(json['gateway_range_m']),
+      assumptions: ReportAssumptions.fromJson(json),
     );
   }
+}
+
+/// Premissas do cálculo (#TG-83). Todos os campos são opcionais: cálculos
+/// feitos antes do #TG-77/#TG-150 não gravavam todos eles.
+class ReportAssumptions {
+  /// Nome do perfil de gateway escolhido no projeto (#TG-150).
+  final String? gatewayProfile;
+  final double? frequencyMhz;
+  final double? txPowerDbm;
+  final double? sensitivityDbm;
+  final double? antennaGainsDb;
+  final double? extraLossDb;
+  final double? gatewayHeightM;
+  final double? sensorHeightM;
+
+  /// Alturas tiradas do tipo de estrutura da BDGD (perfis de compatibilidade).
+  final bool bdgdHeights;
+
+  /// O motor usou relevo? null = cálculo antigo, sem a informação.
+  final bool? elevationUsed;
+
+  /// Fonte do relevo ("COP30" = Copernicus GLO-30) ou "plano".
+  final String? elevationSource;
+
+  const ReportAssumptions({
+    this.gatewayProfile,
+    this.frequencyMhz,
+    this.txPowerDbm,
+    this.sensitivityDbm,
+    this.antennaGainsDb,
+    this.extraLossDb,
+    this.gatewayHeightM,
+    this.sensorHeightM,
+    this.bdgdHeights = false,
+    this.elevationUsed,
+    this.elevationSource,
+  });
+
+  factory ReportAssumptions.fromJson(Map<String, dynamic> json) {
+    double? n(String k) => (json[k] as num?)?.toDouble();
+    String? t(String k) {
+      final v = json[k];
+      final s = v == null ? '' : '$v'.trim();
+      return s.isEmpty ? null : s;
+    }
+
+    // Cálculos anteriores ao #TG-77 só gravavam terrain_source.
+    bool? usado = json['elevation_used'] is bool ? json['elevation_used'] as bool : null;
+    final terreno = t('terrain_source');
+    if (usado == null && terreno != null) {
+      usado = terreno.toLowerCase() != 'plano';
+    }
+    return ReportAssumptions(
+      gatewayProfile: t('gateway_profile'),
+      frequencyMhz: n('frequency_mhz'),
+      txPowerDbm: n('tx_power_dbm'),
+      sensitivityDbm: n('sensitivity_dbm'),
+      antennaGainsDb: n('antenna_gains_db'),
+      extraLossDb: n('extra_loss_db'),
+      gatewayHeightM: n('gateway_height_m'),
+      sensorHeightM: n('sensor_height_m'),
+      bdgdHeights: json['bdgd_heights'] == true,
+      elevationUsed: usado,
+      elevationSource: t('elevation_source') ??
+          (terreno != null && terreno.toLowerCase().startsWith('copernicus') ? 'COP30' : terreno),
+    );
+  }
+
+  /// O relevo NÃO foi usado (terreno plano). Falso também quando não se sabe.
+  bool get semRelevo => elevationUsed == false;
 }
 
 class ReportGateway {

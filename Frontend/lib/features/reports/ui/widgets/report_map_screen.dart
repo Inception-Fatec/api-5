@@ -121,7 +121,9 @@ class _ReportMapScreenState extends State<ReportMapScreen> {
                   borderRadius: AppRadius.lg,
                   child: Padding(
                     padding: const EdgeInsets.all(AppSpacing.sm + 4),
-                    child: ReportLegend(rangeM: report.summary.gatewayRangeM),
+                    child: ReportLegend(
+                      rangeM: report.summary.gatewayRangeM,
+                      assumptions: report.summary.assumptions),
                   ),
                 ),
               ),

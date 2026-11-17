@@ -124,8 +124,13 @@ List<ReportInsight> buildInsights(CoverageReport report) {
       s.uncoveredPoints == 0 ? InsightKind.success : InsightKind.info,
       'Com $gateways, ${formatPercent(s.coveragePercentage)} dos consumidores '
       '(${formatInt(s.coveredPoints)} de ${formatInt(s.totalPoints)}) '
-      'são atendidos (gateways com alcance de $range, relevo considerado).',
+      'são atendidos (gateways com alcance de $range${_relevoNaFrase(s.assumptions)}).',
     ));
+  }
+
+  // Sem relevo, a cobertura fica otimista: morros não bloquearam o sinal (#TG-83).
+  if (s.assumptions.semRelevo) {
+    insights.add(const ReportInsight(InsightKind.warning, alertaSemRelevo));
   }
 
   if (n >= 2) {
@@ -235,4 +240,72 @@ List<DataStat> dataStats(ReportSummary s) {
         'consumidores atendidos'),
     DataStat('Alcance do gateway', formatRange(s.gatewayRangeM)),
   ];
+}
+
+// ---------------------------------------------------------------------------
+// Premissas do cálculo (#TG-83)
+// ---------------------------------------------------------------------------
+
+/// Aviso quando o motor calculou com terreno plano.
+const String alertaSemRelevo =
+    'O relevo não foi considerado neste cálculo (terreno plano). A cobertura '
+    'real pode ser menor, porque morros e vales não bloquearam o sinal. '
+    'Recalcule o projeto com o relevo disponível.';
+
+/// Complemento da frase de cobertura: ", relevo considerado", ", sem relevo"
+/// ou nada quando o cálculo antigo não informa.
+String _relevoNaFrase(ReportAssumptions a) => switch (a.elevationUsed) {
+      true => ', relevo considerado',
+      false => ', sem relevo: terreno plano',
+      null => '',
+    };
+
+/// Rótulo da área atendida na legenda do mapa e no PDF.
+String legendaAreaAtendida(ReportAssumptions a) => switch (a.elevationUsed) {
+      true => 'Área com cobertura (relevo considerado)',
+      false => 'Área com cobertura (sem relevo: terreno plano)',
+      null => 'Área com cobertura',
+    };
+
+/// Fonte do relevo em texto para a ficha de premissas.
+String fonteDoRelevo(ReportAssumptions a) {
+  if (a.elevationUsed == false) return 'Não usado (terreno plano)';
+  if (a.elevationUsed == null) return 'Não informado';
+  final f = a.elevationSource ?? '';
+  if (f == 'COP30' || f.toLowerCase().startsWith('copernicus')) {
+    return 'Copernicus GLO-30 (30 m)';
+  }
+  return f.isEmpty ? 'Considerado' : f;
+}
+
+String _num(double v) =>
+    v == v.roundToDouble() ? formatInt(v.round()) : formatDecimal(v);
+
+/// Linhas da seção "Premissas do cálculo" (tela e PDF). Campos que o
+/// cálculo não gravou ficam de fora; o relevo aparece sempre.
+List<ReportParam> assumptionRows(ReportSummary s) {
+  final a = s.assumptions;
+  final rows = <ReportParam>[
+    ReportParam('Perfil de gateway',
+        a.gatewayProfile ?? 'Configuração padrão do motor'),
+    if (a.frequencyMhz != null) ReportParam('Frequência', '${_num(a.frequencyMhz!)} MHz'),
+    if (a.txPowerDbm != null) ReportParam('Potência de transmissão', '${_num(a.txPowerDbm!)} dBm'),
+    if (a.sensitivityDbm != null)
+      ReportParam('Sensibilidade de recepção', '${_num(a.sensitivityDbm!)} dBm'),
+    if (a.antennaGainsDb != null) ReportParam('Ganho das antenas', '${_num(a.antennaGainsDb!)} dB'),
+    if (a.extraLossDb != null)
+      ReportParam('Perda adicional (vegetação, construções)', '${_num(a.extraLossDb!)} dB'),
+    if (a.bdgdHeights)
+      const ReportParam('Alturas', 'Pelo tipo de estrutura da BDGD')
+    else if (a.gatewayHeightM != null || a.sensorHeightM != null)
+      ReportParam(
+          'Alturas',
+          [
+            if (a.gatewayHeightM != null) 'gateway ${_num(a.gatewayHeightM!)} m',
+            if (a.sensorHeightM != null) 'sensor ${_num(a.sensorHeightM!)} m',
+          ].join(' · ')),
+    ReportParam('Relevo', fonteDoRelevo(a)),
+    ReportParam('Alcance do gateway', formatRange(s.gatewayRangeM)),
+  ];
+  return rows;
 }

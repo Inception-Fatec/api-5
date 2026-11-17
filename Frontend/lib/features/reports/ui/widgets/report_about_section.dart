@@ -6,6 +6,55 @@ import 'package:tecsys_app/features/reports/ui/report_texts.dart';
 import 'package:tecsys_app/features/reports/ui/styles/report_styles.dart';
 import 'package:tecsys_app/features/reports/ui/widgets/report_section.dart';
 
+/// Premissas do cálculo (#TG-83): perfil de gateway, valores de RF, alturas
+/// e relevo usados pelo motor. Sem relevo, mostra o alerta em destaque.
+class ReportAssumptionsSection extends StatelessWidget {
+  const ReportAssumptionsSection({super.key, required this.summary});
+
+  final ReportSummary summary;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = assumptionRows(summary);
+    return ReportSection(
+      title: 'Premissas do cálculo',
+      icon: Icons.settings_input_antenna,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (summary.assumptions.semRelevo) ...[
+            Container(
+              key: const Key('alerta-sem-relevo'),
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppSpacing.sm + 4),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withOpacity(0.12),
+                border: Border.all(color: AppColors.warning),
+                borderRadius: AppRadius.md,
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: AppColors.warning, size: 20),
+                  SizedBox(width: AppSpacing.sm),
+                  Expanded(child: Text(alertaSemRelevo, style: ReportStyles.body)),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
+          for (var i = 0; i < rows.length; i++)
+            ReportKeyValueRow(
+              label: rows[i].label,
+              value: rows[i].value,
+              showDivider: i < rows.length - 1,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Parâmetros do estudo: texto introdutório + um item por filtro usado.
 class ReportParamsSection extends StatelessWidget {
   const ReportParamsSection({super.key, required this.report});

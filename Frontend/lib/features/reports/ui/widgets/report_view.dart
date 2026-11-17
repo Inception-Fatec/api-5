@@ -67,7 +67,8 @@ class ReportView extends StatelessWidget {
                             child: Padding(
                               padding: const EdgeInsets.all(AppSpacing.sm + 4),
                               child: ReportLegend(
-                                  rangeM: report.summary.gatewayRangeM),
+                                  rangeM: report.summary.gatewayRangeM,
+                                  assumptions: report.summary.assumptions),
                             ),
                           ),
                         ),
