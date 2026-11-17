@@ -53,7 +53,7 @@ class _PerfisFalsos extends GatewayProfileService {
 
 class _DistribuidorasFalsas extends DistribuidorasService {
   @override
-  Future<List<Distribuidora>> listar() async =>
+  Future<List<Distribuidora>> listar({bool incluirCadastradas = false}) async =>
       const [Distribuidora(codigo: '391', nome: 'EDP São Paulo')];
 }
 

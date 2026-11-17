@@ -84,6 +84,14 @@ class _CsvImportPainelState extends State<CsvImportPainel> {
   String? _erroMunicipios;
   String? _municipio;
 
+  // Distribuidora personalizada, sem BDGD (#TG-151).
+  static const String _kNova = '__nova__';
+  bool _novaDistribuidora = false;
+  final TextEditingController _codigoNova = TextEditingController();
+  final TextEditingController _nomeNova = TextEditingController();
+  bool _cadastrando = false;
+  String? _erroNova;
+
   bool _enviando = false;
   double _progresso = 0;
   String? _erro;
@@ -127,12 +135,14 @@ class _CsvImportPainelState extends State<CsvImportPainel> {
   @override
   void dispose() {
     if (widget.controller?._painel == this) widget.controller?._painel = null;
+    _codigoNova.dispose();
+    _nomeNova.dispose();
     super.dispose();
   }
 
   // ───────────────────────── Distribuidora e município ─────────────────────────
 
-  Future<void> _carregarDistribuidoras({bool inicial = false}) async {
+  Future<void> _carregarDistribuidoras({bool inicial = false, String? selecionar}) async {
     if (!inicial) {
       setState(() {
         _carregandoDistribuidoras = true;
@@ -140,14 +150,20 @@ class _CsvImportPainelState extends State<CsvImportPainel> {
       });
     }
     try {
-      final List<Distribuidora> lista = await _distribuidorasService.listar();
+      // Inclui as cadastradas ainda sem dados (#TG-151).
+      final List<Distribuidora> lista =
+          await _distribuidorasService.listar(incluirCadastradas: true);
       if (!mounted) return;
       setState(() {
         _distribuidoras = lista;
         _carregandoDistribuidoras = false;
       });
-      // Com uma distribuidora só no banco, não faz o ADM escolher.
-      if (lista.length == 1) await _escolherDistribuidora(lista.first.codigo);
+      if (selecionar != null) {
+        await _escolherDistribuidora(selecionar);
+      } else if (lista.length == 1) {
+        // Com uma distribuidora só no banco, não faz o ADM escolher.
+        await _escolherDistribuidora(lista.first.codigo);
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -158,8 +174,55 @@ class _CsvImportPainelState extends State<CsvImportPainel> {
     }
   }
 
-  Future<void> _escolherDistribuidora(String? codigo) async {
+  /// Cadastra a distribuidora digitada e já a seleciona (#TG-151).
+  Future<void> _cadastrarDistribuidora() async {
+    final String codigo = _codigoNova.text.trim();
+    final String nome = _nomeNova.text.trim();
+    if (!RegExp(r'^\d{1,10}$').hasMatch(codigo)) {
+      setState(() => _erroNova = 'O código deve ter só números (até 10 dígitos).');
+      return;
+    }
+    if (nome.isEmpty) {
+      setState(() => _erroNova = 'Informe o nome da distribuidora.');
+      return;
+    }
     setState(() {
+      _cadastrando = true;
+      _erroNova = null;
+    });
+    try {
+      await _distribuidorasService.cadastrar(codigo: codigo, nome: nome);
+      if (!mounted) return;
+      setState(() {
+        _cadastrando = false;
+        _novaDistribuidora = false;
+        _codigoNova.clear();
+        _nomeNova.clear();
+      });
+      await _carregarDistribuidoras(selecionar: codigo);
+    } catch (e) {
+      if (!mounted) return;
+      // Ex.: "Já existe uma distribuidora com o código 391."
+      setState(() {
+        _cadastrando = false;
+        _erroNova = '$e';
+      });
+    }
+  }
+
+  Future<void> _escolherDistribuidora(String? codigo) async {
+    if (codigo == _kNova) {
+      setState(() {
+        _novaDistribuidora = true;
+        _distribuidora = null;
+        _municipio = null;
+        _municipios = const <String>[];
+        _erroMunicipios = null;
+      });
+      return;
+    }
+    setState(() {
+      _novaDistribuidora = false;
       _distribuidora = codigo;
       _municipio = null;
       _municipios = const <String>[];
@@ -308,21 +371,14 @@ class _CsvImportPainelState extends State<CsvImportPainel> {
       );
     }
     final List<Distribuidora> lista = _distribuidoras ?? const <Distribuidora>[];
-    if (lista.isEmpty) {
-      return const EtlAvisoLinha(
-        mensagem: 'Nenhuma distribuidora com dados no banco. Envie antes o .zip com a '
-            'BDGD da distribuidora (neste mesmo botão "Enviar arquivo") e depois importe os pontos.',
-        erro: true,
-      );
-    }
 
     final Widget campoDistribuidora = _Campo(
       rotulo: 'Distribuidora',
       child: DropdownButtonFormField<String>(
         // initialValue só vale na criação: a chave muda junto com o valor
         // para a pré-seleção (uma distribuidora só) aparecer no campo.
-        key: ValueKey('csv-distribuidora-$_distribuidora'),
-        initialValue: _distribuidora,
+        key: ValueKey('csv-distribuidora-$_distribuidora-$_novaDistribuidora-${lista.length}'),
+        initialValue: _novaDistribuidora ? _kNova : _distribuidora,
         isExpanded: true,
         decoration: _decoracao('Selecione a distribuidora'),
         style: etlText(13, color: EtlColors.slate800, lineHeight: 20),
@@ -330,39 +386,31 @@ class _CsvImportPainelState extends State<CsvImportPainel> {
           for (final Distribuidora d in lista)
             DropdownMenuItem<String>(
               value: d.codigo,
-              child: Text(d.rotulo, overflow: TextOverflow.ellipsis),
+              child: Text(d.temRede ? d.rotulo : '${d.rotulo} · sem BDGD',
+                  overflow: TextOverflow.ellipsis),
             ),
+          const DropdownMenuItem<String>(
+            value: _kNova,
+            child: Text('+ Outra distribuidora...', overflow: TextOverflow.ellipsis),
+          ),
         ],
         onChanged: _enviando ? null : _escolherDistribuidora,
       ),
     );
 
-    // Ordenados pelo nome (quando a lista do IBGE já chegou).
-    final List<String> municipios = List<String>.of(_municipios)
-      ..sort((a, b) => MunicipioService.rotuloDe(a).compareTo(MunicipioService.rotuloDe(b)));
     final Widget campoMunicipio = _Campo(
       rotulo: 'Município',
-      child: DropdownButtonFormField<String>(
+      child: _CampoMunicipio(
+        // Recria o campo ao trocar de distribuidora ou pré-selecionar a cidade.
         key: ValueKey('csv-municipio-$_distribuidora-$_municipio-${_municipios.length}'),
-        initialValue: _municipio,
-        isExpanded: true,
-        decoration: _decoracao(_distribuidora == null
+        selecionado: _municipio,
+        comDados: _municipios.toSet(),
+        habilitado: !_enviando && _distribuidora != null,
+        dica: _distribuidora == null
             ? 'Escolha a distribuidora antes'
-            : (_carregandoMunicipios ? 'Carregando municípios...' : 'Selecione o município')),
-        style: etlText(13, color: EtlColors.slate800, lineHeight: 20),
-        items: [
-          for (final String c in municipios)
-            DropdownMenuItem<String>(
-              value: c,
-              child: Text(
-                MunicipioService.rotuloDe(c) == c ? c : '${MunicipioService.rotuloDe(c)} ($c)',
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-        ],
-        onChanged: _enviando || municipios.isEmpty
-            ? null
-            : (v) => setState(() => _municipio = v),
+            : (_carregandoMunicipios ? 'Carregando municípios...' : 'Digite o nome do município'),
+        decoracao: _decoracao,
+        onEscolher: (c) => setState(() => _municipio = c),
       ),
     );
 
@@ -385,6 +433,10 @@ class _CsvImportPainelState extends State<CsvImportPainel> {
             ],
           );
         }),
+        if (_novaDistribuidora) ...[
+          const SizedBox(height: 12),
+          _formNovaDistribuidora(),
+        ],
         if (_erroMunicipios != null) ...[
           const SizedBox(height: 8),
           EtlAvisoLinha(
@@ -397,14 +449,73 @@ class _CsvImportPainelState extends State<CsvImportPainel> {
           ),
         ] else if (_distribuidora != null &&
             !_carregandoMunicipios &&
-            _municipios.isEmpty) ...[
+            _municipio != null &&
+            !_municipios.contains(_municipio)) ...[
           const SizedBox(height: 8),
           const EtlAvisoLinha(
-            mensagem: 'Essa distribuidora não tem municípios carregados no banco.',
-            erro: true,
+            mensagem: 'Esse município ainda não tem dados dessa distribuidora: os pontos do '
+                'CSV vão formar uma rede independente (sem a rede da BDGD).',
           ),
         ],
       ],
+    );
+  }
+
+  /// Código e nome da distribuidora nova (#TG-151).
+  Widget _formNovaDistribuidora() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: EtlColors.slate50,
+        border: Border.all(color: EtlColors.slate200),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Nova distribuidora (rede sem BDGD carregada)',
+              style: etlText(12, weight: FontWeight.w600, color: EtlColors.slate800, lineHeight: 16)),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 120,
+                child: TextField(
+                  key: const Key('nova-dist-codigo'),
+                  controller: _codigoNova,
+                  enabled: !_cadastrando,
+                  keyboardType: TextInputType.number,
+                  decoration: _decoracao('Código'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  key: const Key('nova-dist-nome'),
+                  controller: _nomeNova,
+                  enabled: !_cadastrando,
+                  decoration: _decoracao('Nome'),
+                ),
+              ),
+            ],
+          ),
+          if (_erroNova != null) ...[
+            const SizedBox(height: 8),
+            EtlAvisoLinha(mensagem: _erroNova!, erro: true),
+          ],
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton(
+              key: const Key('nova-dist-cadastrar'),
+              onPressed: _cadastrando ? null : _cadastrarDistribuidora,
+              style: FilledButton.styleFrom(backgroundColor: EtlColors.teal600),
+              child: Text(_cadastrando ? 'Cadastrando...' : 'Cadastrar distribuidora'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -487,6 +598,94 @@ class _TabelaPrevia extends StatelessWidget {
           style: etlText(11, color: EtlColors.slate500, lineHeight: 16),
         ),
       ],
+    );
+  }
+}
+
+/// Município por busca em todas as cidades do IBGE (#TG-151). As que já têm
+/// dados da distribuidora aparecem primeiro, marcadas.
+class _CampoMunicipio extends StatelessWidget {
+  const _CampoMunicipio({
+    super.key,
+    required this.selecionado,
+    required this.comDados,
+    required this.habilitado,
+    required this.dica,
+    required this.decoracao,
+    required this.onEscolher,
+  });
+
+  final String? selecionado;
+  final Set<String> comDados;
+  final bool habilitado;
+  final String dica;
+  final InputDecoration Function(String) decoracao;
+  final ValueChanged<String?> onEscolher;
+
+  static const int _maxOpcoes = 30;
+
+  static String _rotulo(Municipio m) => '${m.nome} - ${m.uf}';
+
+  @override
+  Widget build(BuildContext context) {
+    final List<Municipio> todos = MunicipioService.cache;
+    final Municipio? inicial =
+        selecionado == null ? null : todos.where((m) => m.codigo == selecionado).firstOrNull;
+    return Autocomplete<Municipio>(
+      initialValue: TextEditingValue(
+          text: inicial != null ? _rotulo(inicial) : (selecionado ?? '')),
+      displayStringForOption: _rotulo,
+      optionsBuilder: (TextEditingValue v) {
+        final String termo = MunicipioService.normalizar(v.text.trim());
+        final List<Municipio> achados = [
+          for (final m in todos)
+            if (termo.isEmpty ? comDados.contains(m.codigo) : MunicipioService.normalizar(_rotulo(m)).contains(termo))
+              m,
+        ]..sort((a, b) {
+            final da = comDados.contains(a.codigo), db = comDados.contains(b.codigo);
+            if (da != db) return da ? -1 : 1;
+            return a.nome.compareTo(b.nome);
+          });
+        return achados.take(_maxOpcoes);
+      },
+      onSelected: (m) => onEscolher(m.codigo),
+      fieldViewBuilder: (context, controller, focus, onSubmit) => TextField(
+        key: const Key('csv-municipio-busca'),
+        controller: controller,
+        focusNode: focus,
+        enabled: habilitado,
+        onChanged: (_) {
+          // Apagou ou mudou o texto: a cidade escolhida deixa de valer.
+          if (selecionado != null) onEscolher(null);
+        },
+        decoration: decoracao(dica),
+      ),
+      optionsViewBuilder: (context, onSelect, opcoes) => Align(
+        alignment: Alignment.topLeft,
+        child: Material(
+          elevation: 4,
+          borderRadius: BorderRadius.circular(12),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 260, maxWidth: 420),
+            child: ListView(
+              padding: EdgeInsets.zero,
+              shrinkWrap: true,
+              children: [
+                for (final m in opcoes)
+                  ListTile(
+                    dense: true,
+                    title: Text(_rotulo(m)),
+                    trailing: comDados.contains(m.codigo)
+                        ? Text('com dados',
+                            style: etlText(11, color: EtlColors.teal700, lineHeight: 14))
+                        : null,
+                    onTap: () => onSelect(m),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

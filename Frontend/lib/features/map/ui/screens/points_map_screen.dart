@@ -65,6 +65,8 @@ class _PointsMapScreenState extends State<PointsMapScreen> {
           _mapKey.currentState?.moverPara(ponto, MapRegions.zoomFiltro),
     )
       ..carregarCidadesDisponiveis()
+      // Cidades sem BDGD abrem como rede independente (#TG-151).
+      ..carregarOrigemDosDados()
       // Centro real das cidades (endpoint da #126): usado quando a cidade
       // não tem bolhas para enquadrar e ao marcar uma cidade nova.
       ..carregarCentros();

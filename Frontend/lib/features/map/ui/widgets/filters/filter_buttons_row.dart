@@ -24,6 +24,14 @@ class FilterButtonsRow extends StatelessWidget {
     final candidatas = controller.candidateLayers;
 
     final botoes = <Widget>[
+      // #TG-151: atalho para calcular só com a planilha (rede independente).
+      if (controller.temPontosCsv && !controller.soPlanilha)
+        OutlinedButton.icon(
+          key: const Key('usar-so-planilha'),
+          onPressed: controller.usarSoPlanilha,
+          icon: const Icon(Icons.table_view_outlined, size: 18),
+          label: const Text('Usar só os pontos da planilha'),
+        ),
 
       // TG-91: seleção independente das camadas de cobertura.
       DropdownFilterButton(

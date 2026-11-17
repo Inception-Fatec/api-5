@@ -1,5 +1,8 @@
 package com.tecsys.domain.distributor;
 
+import com.tecsys.core.exception.BusinessRuleException;
+import com.tecsys.domain.distributor.dto.DistributorCreateRequestDto;
+
 import com.tecsys.domain.distributor.dto.DistributorResponseDto;
 import com.tecsys.domain.distributor.dto.DistributorResumoProjection;
 import com.tecsys.domain.distributor.dto.MunicipioResponseDto;
@@ -17,7 +20,12 @@ public class DistributorService {
 
     @Transactional(readOnly = true)
     public List<DistributorResponseDto> listarDistribuidoras() {
-        return distributorRepository.findDistribuidorasResumo().stream()
+        return listarDistribuidoras(false);
+    }
+
+    @Transactional(readOnly = true)
+    public List<DistributorResponseDto> listarDistribuidoras(boolean incluirCadastradas) {
+        return distributorRepository.findDistribuidorasResumo(incluirCadastradas).stream()
                 .map(proj -> new DistributorResponseDto(
                         proj.getDist(),
                         proj.getDistName(),
@@ -32,8 +40,25 @@ public class DistributorService {
                 .map(proj -> new MunicipioResponseDto(
                         proj.getIbgeCode(),
                         proj.getLatitude(),
-                        proj.getLongitude()
+                        proj.getLongitude(),
+                        Boolean.TRUE.equals(proj.getTemRede()),
+                        Boolean.TRUE.equals(proj.getTemCsv())
                 ))
                 .toList();
+    }
+
+    /**
+     * Cadastra uma distribuidora sem BDGD (#TG-151). Código repetido (já
+     * cadastrado ou já usado pela rede carregada) é recusado com mensagem.
+     */
+    @Transactional
+    public DistributorResponseDto cadastrar(DistributorCreateRequestDto request) {
+        String codigo = request.codigo().trim();
+        String nome = request.nome().trim();
+        if (distributorRepository.existsById(codigo) || distributorRepository.temRede(codigo)) {
+            throw new BusinessRuleException("Já existe uma distribuidora com o código " + codigo + ".");
+        }
+        distributorRepository.save(Distributor.builder().dist(codigo).distName(nome).build());
+        return new DistributorResponseDto(codigo, nome, 0L);
     }
 }

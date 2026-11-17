@@ -11,7 +11,7 @@ class _DistribuidorasFalsas extends DistribuidorasService {
   final List<Distribuidora> lista;
 
   @override
-  Future<List<Distribuidora>> listar() async {
+  Future<List<Distribuidora>> listar({bool incluirCadastradas = false}) async {
     registrarDistribuidoras({for (final d in lista) d.codigo: d.nome});
     return lista;
   }
