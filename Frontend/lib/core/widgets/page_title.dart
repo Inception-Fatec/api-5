@@ -1,3 +1,4 @@
+import 'package:tecsys_app/core/ajuda/ajuda.dart';
 import 'package:flutter/material.dart';
 
 import 'package:tecsys_app/core/theme/app_theme.dart';
@@ -9,11 +10,15 @@ class PageTitle extends StatelessWidget {
   final String countLabel;
   final double fontSize;
 
+  /// Ajuda da tela (#TG-153): mostra o "?" ao lado do título.
+  final AjudaTela? ajuda;
+
   const PageTitle({
     super.key,
     required this.title,
     required this.countLabel,
     required this.fontSize,
+    this.ajuda,
   });
 
   @override
@@ -32,6 +37,7 @@ class PageTitle extends StatelessWidget {
               color: AppColors.chipBg, borderRadius: AppRadius.pill),
           child: Text(countLabel, style: AppTextStyles.countBadge),
         ),
+        if (ajuda != null) AjudaBotao(ajuda: ajuda!),
       ],
     );
   }

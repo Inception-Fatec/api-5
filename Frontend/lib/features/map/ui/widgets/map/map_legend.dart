@@ -11,7 +11,10 @@ import 'package:tecsys_app/features/map/ui/widgets/map/point_markers_layer.dart'
 class MapLegend extends StatelessWidget {
   final bool agrupado;
 
-  const MapLegend({super.key, this.agrupado = false});
+  /// Abre a explicação das cores (#TG-153).
+  final VoidCallback? onAjuda;
+
+  const MapLegend({super.key, this.agrupado = false, this.onAjuda});
 
   static const _tensoes = [
     ('ALTO', 'Alta tensão'),
@@ -55,6 +58,22 @@ class MapLegend extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (onAjuda != null)
+            InkWell(
+              key: const Key('legenda-ajuda'),
+              onTap: onAjuda,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('LEGENDA', style: MapStyles.coordsTitle),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.help_outline_rounded, size: 14, color: AppColors.primary),
+                  const SizedBox(width: 2),
+                  Text('o que é cada cor', style: MapStyles.legendLabel.copyWith(color: AppColors.primary)),
+                ],
+              ),
+            ),
+          if (onAjuda != null) const SizedBox(height: 6),
           if (agrupado) ...[
             Text('PONTOS A COBRIR NA BOLHA', style: MapStyles.coordsTitle),
             const SizedBox(height: 3),

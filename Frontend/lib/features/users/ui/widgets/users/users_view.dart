@@ -1,3 +1,4 @@
+import 'package:tecsys_app/core/ajuda/textos_ajuda.dart';
 import 'package:flutter/material.dart';
 
 import 'package:tecsys_app/core/theme/app_theme.dart';
@@ -48,6 +49,7 @@ class UsersView extends StatelessWidget {
         countLabel: '$total ${total == 1 ? "usuário" : "usuários"}',
         fontSize:
             isWeb ? UsersStyles.webTitleSize : UsersStyles.mobileTitleSize,
+        ajuda: TextosAjuda.usuarios,
       );
 
   Widget _header() {

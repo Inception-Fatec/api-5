@@ -1,3 +1,5 @@
+import 'package:tecsys_app/core/ajuda/ajuda.dart';
+import 'package:tecsys_app/core/ajuda/textos_ajuda.dart';
 import 'package:flutter/material.dart';
 
 import 'package:tecsys_app/core/theme/app_theme.dart';
@@ -44,7 +46,13 @@ class FilterDropdownBar extends StatelessWidget {
                     if (contagem != null) ...[
                       const SizedBox(height: AppSpacing.xs),
                       // Mesmo número de "Pontos analisados" do relatório.
-                      Text(contagem.texto, style: AppTextStyles.caption),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(child: Text(contagem.texto, style: AppTextStyles.caption)),
+                          const AjudaDica(TextosAjuda.contadorMapa, key: Key('dica-contador'), tamanho: 14),
+                        ],
+                      ),
                     ],
                     const SizedBox(height: AppSpacing.sm),
                     FilterButtonsRow(controller: controller),

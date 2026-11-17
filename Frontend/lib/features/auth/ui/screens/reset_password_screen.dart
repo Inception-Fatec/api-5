@@ -1,3 +1,5 @@
+import 'package:tecsys_app/core/ajuda/ajuda.dart';
+import 'package:tecsys_app/core/ajuda/textos_ajuda.dart';
 import 'package:flutter/material.dart';
 
 import 'package:tecsys_app/core/theme/app_theme.dart';
@@ -57,6 +59,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
                       color: AppColors.primary)),
+              const AjudaBotao(ajuda: TextosAjuda.trocaSenha, tamanho: 18),
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

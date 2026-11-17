@@ -1,3 +1,4 @@
+import 'package:tecsys_app/core/ajuda/textos_ajuda.dart';
 import 'package:flutter/material.dart';
 
 import 'package:tecsys_app/core/widgets/page_title.dart';
@@ -15,6 +16,7 @@ class ProjectsTitle extends StatelessWidget {
       title: 'Meus Projetos',
       countLabel: '$total ${total == 1 ? "projeto" : "projetos"}',
       fontSize: fontSize,
+      ajuda: TextosAjuda.projetos,
     );
   }
 }

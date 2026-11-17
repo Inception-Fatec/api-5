@@ -1,3 +1,4 @@
+import 'package:tecsys_app/core/ajuda/textos_ajuda.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -320,6 +321,7 @@ class EtlPageHeader extends StatelessWidget {
       title: 'ETL & Geodados', // mesmo nome da aba, como em Projetos e Usuários
       countLabel: '$total ${total == 1 ? 'item' : 'itens'}',
       fontSize: mobile ? 24 : 26,
+      ajuda: TextosAjuda.etl,
     );
     if (!mobile) {
       return Row(

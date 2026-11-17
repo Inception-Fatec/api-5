@@ -1,3 +1,5 @@
+import 'package:tecsys_app/core/ajuda/ajuda.dart';
+import 'package:tecsys_app/core/ajuda/textos_ajuda.dart';
 import 'package:flutter/material.dart';
 
 import 'package:tecsys_app/core/theme/app_theme.dart';
@@ -50,6 +52,8 @@ class FilterBarHeader extends StatelessWidget {
               onToggle: onToggleCity,
             ),
           ),
+          // #TG-153: ajuda do mapa (filtros, legenda, áreas).
+          AjudaBotao(ajuda: TextosAjuda.mapa),
         ],
       ),
     );

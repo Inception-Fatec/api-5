@@ -14,12 +14,16 @@ class DropdownFilterButton extends StatefulWidget {
   final bool ativo;
   final IconData? icon;
 
+  /// Explicação do filtro (#TG-153): tooltip do botão e faixa no topo do painel.
+  final String? ajuda;
+
   const DropdownFilterButton({
     super.key,
     required this.label,
     required this.panelBuilder,
     this.ativo = false,
     this.icon,
+    this.ajuda,
   });
 
   @override
@@ -105,7 +109,16 @@ class _DropdownFilterButtonState extends State<DropdownFilterButton> {
                     maxWidth: larguraMaxPainel,
                     maxHeight: alturaMax,
                   ),
-                  child: widget.panelBuilder(context, _fechar),
+                  child: widget.ajuda == null
+                      ? widget.panelBuilder(context, _fechar)
+                      : Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _AjudaDoFiltro(widget.ajuda!),
+                            Flexible(child: widget.panelBuilder(context, _fechar)),
+                          ],
+                        ),
                 ),
               ),
             ),
@@ -131,7 +144,7 @@ class _DropdownFilterButtonState extends State<DropdownFilterButton> {
   @override
   Widget build(BuildContext context) {
     final aberto = _overlay != null;
-    return InkWell(
+    final botao = InkWell(
       onTap: _alternar,
       borderRadius: AppRadius.sm,
       child: Container(
@@ -164,6 +177,40 @@ class _DropdownFilterButtonState extends State<DropdownFilterButton> {
             ),
           ],
         ),
+      ),
+    );
+    final ajuda = widget.ajuda;
+    if (ajuda == null || aberto) return botao;
+    return Tooltip(
+      message: ajuda,
+      waitDuration: const Duration(milliseconds: 500),
+      constraints: const BoxConstraints(maxWidth: 320),
+      child: botao,
+    );
+  }
+}
+
+/// Faixa com a explicação do filtro no topo do painel (#TG-153).
+class _AjudaDoFiltro extends StatelessWidget {
+  const _AjudaDoFiltro(this.texto);
+
+  final String texto;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: const BoxDecoration(
+        color: AppColors.chipBg,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline_rounded, size: 16, color: AppColors.primary),
+          const SizedBox(width: 8),
+          Expanded(child: Text(texto, style: AppTextStyles.caption)),
+        ],
       ),
     );
   }

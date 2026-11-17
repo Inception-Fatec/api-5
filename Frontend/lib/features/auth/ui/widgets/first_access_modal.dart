@@ -1,3 +1,5 @@
+import 'package:tecsys_app/core/ajuda/ajuda.dart';
+import 'package:tecsys_app/core/ajuda/textos_ajuda.dart';
 import 'package:flutter/material.dart';
 
 import 'package:tecsys_app/core/network/api_exception.dart';
@@ -85,12 +87,19 @@ class _FirstAccessModalState extends State<FirstAccessModal> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'Defina sua nova senha',
-                  style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textPrimary),
+                const Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Defina sua nova senha',
+                        style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textPrimary),
+                      ),
+                    ),
+                    AjudaBotao(ajuda: TextosAjuda.trocaSenha),
+                  ],
                 ),
                 const SizedBox(height: 8),
                 const Text(
