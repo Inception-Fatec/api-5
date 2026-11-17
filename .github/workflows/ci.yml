@@ -1,0 +1,120 @@
+# CI de testes (#TG-152): roda em todo PR para a dev e em cada push na dev.
+# Backend e motor usam um PostGIS vazio no próprio CI; os testes de integração
+# criam tabelas temporárias e o backend aplica as migrations do Flyway nele.
+name: CI
+
+on:
+  pull_request:
+    branches: [dev]
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DB_URL: jdbc:postgresql://localhost:5432/tecsys
+  DB_USER: tecsys
+  DB_PASSWORD: tecsys
+  # Testes de integração (só aceitam banco local).
+  TG77_JDBC_URL: jdbc:postgresql://localhost:5432/tecsys
+  TG77_DB_USER: tecsys
+  TG77_DB_PASSWORD: tecsys
+  TG91_JDBC_URL: jdbc:postgresql://localhost:5432/tecsys
+  TG91_DB_USER: tecsys
+  TG91_DB_PASSWORD: tecsys
+
+jobs:
+  backend:
+    name: Backend (mvn test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgis:
+        image: postgis/postgis:17-3.6-alpine
+        env:
+          POSTGRES_DB: tecsys
+          POSTGRES_USER: tecsys
+          POSTGRES_PASSWORD: tecsys
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U tecsys -d tecsys"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      # Só para o contextLoads subir; não é segredo de nenhum ambiente.
+      API_SECURITY_TOKEN_SECRET: segredo-de-teste-do-ci-com-mais-de-32-bytes
+    defaults:
+      run:
+        working-directory: Backend/tecsys
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          cache-dependency-path: Backend/tecsys/pom.xml
+      - run: chmod +x mvnw
+      - run: ./mvnw -B test
+      - name: Relatório dos testes
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-surefire
+          path: Backend/tecsys/target/surefire-reports
+
+  motor:
+    name: Motor (mvn test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgis:
+        image: postgis/postgis:17-3.6-alpine
+        env:
+          POSTGRES_DB: tecsys
+          POSTGRES_USER: tecsys
+          POSTGRES_PASSWORD: tecsys
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U tecsys -d tecsys"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    defaults:
+      run:
+        working-directory: MOTOR
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          cache-dependency-path: MOTOR/pom.xml
+      - run: mvn -B test
+      - name: Relatório dos testes
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: motor-surefire
+          path: MOTOR/target/surefire-reports
+
+  frontend:
+    name: Frontend (flutter analyze e test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: Frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.5
+          cache: true
+      - run: flutter pub get
+      # Barra só erros. Os avisos e sugestões antigos do analyze aparecem no log,
+      # mas não deixam o CI vermelho.
+      - run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      - run: flutter test
