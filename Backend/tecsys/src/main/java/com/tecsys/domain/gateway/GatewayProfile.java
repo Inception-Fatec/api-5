@@ -34,10 +34,23 @@ public class GatewayProfile {
     @Column(name = "antenna_height_m", nullable = false)
     private Double antennaHeightM;
 
+    /** Altura do dispositivo (sensor) usada na visada (#TG-150). */
+    @Column(name = "sensor_height_m", nullable = false)
+    private Double sensorHeightM;
+
+    /** Perda adicional do enlace (vegetação, construções), em dB (#TG-150). */
+    @Column(name = "extra_loss_db", nullable = false)
+    private Double extraLossDb;
+
     @Column(name = "max_devices", nullable = false)
     private Integer maxDevices;
 
     @Builder.Default
     @Column(nullable = false, columnDefinition = "boolean default true")
     private boolean active = true;
+
+    /** Perfil usado quando o projeto não informa um (#TG-150). Só um é padrão. */
+    @Builder.Default
+    @Column(name = "is_default", nullable = false)
+    private boolean padrao = false;
 }

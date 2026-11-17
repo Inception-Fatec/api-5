@@ -36,7 +36,8 @@ class ProjectRecalculateTest {
         projectRepository = mock(ProjectRepository.class);
         historyRepository = mock(ProjectHistoryRepository.class);
         engine = mock(DecisionEngineClient.class);
-        service = new ProjectService(projectRepository, mock(UserRepository.class), historyRepository, engine);
+        service = new ProjectService(projectRepository, mock(UserRepository.class), historyRepository, engine,
+                mock(com.tecsys.domain.gateway.GatewayProfileResolver.class));
 
         projeto = Project.builder()
                 .id(5L).name("SJC centro").distCode("391")
@@ -103,5 +104,43 @@ class ProjectRecalculateTest {
         assertThrows(EntityNotFoundException.class,
                 () -> service.recalculate(999L, new ProjectRecalculateRequestDto(AREA, mapper.readTree("{}"))));
         verifyNoInteractions(historyRepository, engine);
+    }
+
+    // #TG-150 CT5: recalcular sem mandar perfil mantém o perfil da versão anterior
+    @Test
+    void recalcularSemPerfilMantemOPerfilDaVersaoAnterior() throws Exception {
+        var perfis = mock(com.tecsys.domain.gateway.GatewayProfileRepository.class);
+        var comPerfil = new ProjectService(projectRepository, mock(UserRepository.class), historyRepository, engine,
+                new com.tecsys.domain.gateway.GatewayProfileResolver(perfis));
+        when(historyRepository.findFirstByProject_IdOrderByCreatedAtDescIdDesc(5L))
+                .thenReturn(Optional.of(ProjectHistory.builder().polygonGeojson(AREA)
+                        .filterParams(mapper.readTree("{\"gateway_profile_id\":7}")).build()));
+
+        var pedido = mapper.readTree("{\"bairro_names\":[\"Centro\"]}");
+        comPerfil.recalculate(5L, new ProjectRecalculateRequestDto(null, pedido));
+
+        ArgumentCaptor<ProjectHistory> versao = ArgumentCaptor.forClass(ProjectHistory.class);
+        verify(historyRepository).save(versao.capture());
+        assertEquals(7L, versao.getValue().getFilterParams().path("gateway_profile_id").asLong());
+        assertEquals("Centro", versao.getValue().getFilterParams().path("bairro_names").get(0).asText());
+        assertTrue(pedido.path("gateway_profile_id").isMissingNode(), "não altera o JSON recebido");
+    }
+
+    // #TG-150: perfil escolhido no recálculo troca o perfil da versão
+    @Test
+    void recalcularComOutroPerfilUsaOPerfilNovo() throws Exception {
+        var perfis = mock(com.tecsys.domain.gateway.GatewayProfileRepository.class);
+        when(perfis.existsByIdAndActiveTrue(9L)).thenReturn(true);
+        var comPerfil = new ProjectService(projectRepository, mock(UserRepository.class), historyRepository, engine,
+                new com.tecsys.domain.gateway.GatewayProfileResolver(perfis));
+        when(historyRepository.findFirstByProject_IdOrderByCreatedAtDescIdDesc(5L))
+                .thenReturn(Optional.of(ProjectHistory.builder()
+                        .filterParams(mapper.readTree("{\"gateway_profile_id\":7}")).build()));
+
+        comPerfil.recalculate(5L, new ProjectRecalculateRequestDto(AREA, mapper.readTree("{}"), 9L));
+
+        ArgumentCaptor<ProjectHistory> versao = ArgumentCaptor.forClass(ProjectHistory.class);
+        verify(historyRepository).save(versao.capture());
+        assertEquals(9L, versao.getValue().getFilterParams().path("gateway_profile_id").asLong());
     }
 }

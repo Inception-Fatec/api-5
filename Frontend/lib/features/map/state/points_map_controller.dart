@@ -27,6 +27,7 @@ class PointsMapController extends ChangeNotifier {
     this.onFocusPoint,
     this.projetoId,
     ProjectVersion? versaoInicial,
+    this.gatewayProfileId,
     this.focusDebounce = const Duration(milliseconds: 600),
     PointsFilterService? pointsService,
     MunicipiosCentroService? centroService,
@@ -46,6 +47,10 @@ class PointsMapController extends ChangeNotifier {
 
   /// Projeto salvo aberto para ajustar e recalcular (#TG-86); null = novo.
   final int? projetoId;
+
+  /// Perfil de gateway do novo projeto (#TG-79). No recálculo fica null: o
+  /// backend mantém o perfil da versão anterior (#TG-150).
+  final int? gatewayProfileId;
 
   bool get editando => projetoId != null;
 
@@ -447,6 +452,7 @@ class PointsMapController extends ChangeNotifier {
           distCode: distCode,
           geometry: geo == null ? null : jsonEncode(geo),
           filterParams: filterParams,
+          gatewayProfileId: gatewayProfileId,
         );
         _store.adicionar(projetoCriado);
       } else {

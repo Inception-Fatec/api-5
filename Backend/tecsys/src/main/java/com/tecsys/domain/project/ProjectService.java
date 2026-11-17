@@ -7,7 +7,10 @@ import com.tecsys.domain.project.dto.ProjectRecalculateRequestDto;
 import com.tecsys.domain.project.dto.ProjectResponseDto;
 import com.tecsys.domain.user.User;
 import com.tecsys.domain.user.UserRepository;
+import com.tecsys.domain.gateway.GatewayProfileResolver;
 import com.tecsys.infrastructure.engine.DecisionEngineClient;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -25,6 +28,7 @@ public class ProjectService {
     private final UserRepository userRepository;
     private final ProjectHistoryRepository projectHistoryRepository;
     private final DecisionEngineClient decisionEngineClient;
+    private final GatewayProfileResolver gatewayProfileResolver;
 
     @Transactional
     public ProjectResponseDto createProject(ProjectCreateRequestDto request, String userEmail) {
@@ -95,17 +99,31 @@ public class ProjectService {
     public ProjectResponseDto recalculate(Long id, ProjectRecalculateRequestDto request) {
         Project project = getProjectOrThrow(id);
 
+        ProjectHistory anterior = projectHistoryRepository.findFirstByProject_IdOrderByCreatedAtDescIdDesc(id)
+                .orElse(null);
+
         String area = request.geometry();
-        if (area == null || area.isBlank()) {
-            area = projectHistoryRepository.findFirstByProject_IdOrderByCreatedAtDescIdDesc(id)
-                    .map(ProjectHistory::getPolygonGeojson)
-                    .orElse(null);
+        if ((area == null || area.isBlank()) && anterior != null) {
+            area = anterior.getPolygonGeojson();
+        }
+
+        // Perfil: o do pedido (campo ou dentro dos filtros), senão o da versão anterior,
+        // senão o padrão (#TG-150). O motor lê o perfil do filter_params.
+        ObjectNode filtros = request.filterParams() != null && request.filterParams().isObject()
+                ? ((ObjectNode) request.filterParams()).deepCopy()
+                : JsonNodeFactory.instance.objectNode();
+        Long pedido = request.gatewayProfileId() != null
+                ? request.gatewayProfileId()
+                : GatewayProfileResolver.idEm(filtros);
+        Long perfilId = gatewayProfileResolver.resolver(pedido, anterior != null ? anterior.getFilterParams() : null);
+        if (perfilId != null) {
+            filtros.put(GatewayProfileResolver.CAMPO, perfilId);
         }
 
         projectHistoryRepository.save(ProjectHistory.builder()
                 .project(project)
                 .polygonGeojson(area)
-                .filterParams(request.filterParams())
+                .filterParams(filtros)
                 .build());
 
         project.setStatus(ProjectStatus.ENVIADO);
@@ -125,7 +143,7 @@ public class ProjectService {
                 salvo.getCreatedAt(),
                 salvo.getUpdatedAt(),
                 salvo.isActive(),
-                ProjectResponseDto.munCodesDe(request.filterParams()),
+                ProjectResponseDto.munCodesDe(filtros),
                 salvo.getStatusMessage(),
                 salvo.getLastActivityAt()
         );

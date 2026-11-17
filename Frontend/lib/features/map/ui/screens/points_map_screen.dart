@@ -28,6 +28,9 @@ class PointsMapScreen extends StatefulWidget {
   final int? projetoId;
   final ProjectVersion? versaoInicial;
 
+  /// Perfil de gateway escolhido no novo projeto (#TG-79).
+  final int? gatewayProfileId;
+
   const PointsMapScreen({
     super.key,
     required this.nomeProjeto,
@@ -36,6 +39,7 @@ class PointsMapScreen extends StatefulWidget {
     required this.municipios,
     this.projetoId,
     this.versaoInicial,
+    this.gatewayProfileId,
   });
 
   @override
@@ -56,6 +60,7 @@ class _PointsMapScreenState extends State<PointsMapScreen> {
       municipios: widget.municipios,
       projetoId: widget.projetoId,
       versaoInicial: widget.versaoInicial,
+      gatewayProfileId: widget.gatewayProfileId,
       onFocusPoint: (ponto) =>
           _mapKey.currentState?.moverPara(ponto, MapRegions.zoomFiltro),
     )

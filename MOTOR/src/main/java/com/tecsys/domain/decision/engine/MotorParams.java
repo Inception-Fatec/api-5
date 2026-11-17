@@ -40,7 +40,12 @@ public record MotorParams(
 
         boolean localSearch,
         double exactSeconds,         // tempo do solver exato; 0 = desliga
-        boolean useTerrain
+        boolean useTerrain,
+
+        // Perfil de gateway do projeto (#TG-150) que definiu os valores de RF acima;
+        // null quando o cálculo usou só a configuração do motor.
+        Long gatewayProfileId,
+        String gatewayProfileName
 ) {
 
     public enum LosMode {
@@ -77,7 +82,8 @@ public record MotorParams(
                 false, 6.0, 5.0,
                 LosMode.RAYS, 30.0, 5, 0.0, true, 4.0 / 3.0, 0.0,
                 true, true,
-                true, 180.0, true);
+                true, 180.0, true,
+                null, null);
     }
 
     public Builder toBuilder() {
@@ -108,6 +114,8 @@ public record MotorParams(
         private boolean localSearch;
         private double exactSeconds;
         private boolean useTerrain;
+        private Long gatewayProfileId;
+        private String gatewayProfileName;
 
         private Builder(MotorParams p) {
             profile = p.profile;
@@ -133,6 +141,8 @@ public record MotorParams(
             localSearch = p.localSearch;
             exactSeconds = p.exactSeconds;
             useTerrain = p.useTerrain;
+            gatewayProfileId = p.gatewayProfileId;
+            gatewayProfileName = p.gatewayProfileName;
         }
 
         public Builder profile(String v) { profile = v; return this; }
@@ -158,6 +168,7 @@ public record MotorParams(
         public Builder localSearch(boolean v) { localSearch = v; return this; }
         public Builder exactSeconds(double v) { exactSeconds = v; return this; }
         public Builder useTerrain(boolean v) { useTerrain = v; return this; }
+        public Builder gatewayProfile(Long id, String name) { gatewayProfileId = id; gatewayProfileName = name; return this; }
 
         public MotorParams build() {
             if (losStepM <= 0) throw new IllegalArgumentException("los-step-m deve ser maior que zero.");
@@ -165,7 +176,8 @@ public record MotorParams(
             return new MotorParams(profile, fixedRangeM, frequencyMhz, txPowerDbm, sensitivityDbm,
                     antennaGainsDb, extraLossDb, maxRangeM, bdgdHeights, gatewayHeightM, sensorHeightM,
                     lineOfSight, losStepM, teamSamples, obstructionToleranceM, earthCurvature, kFactor,
-                    fresnelFraction, neighborCandidates, bairroLikeMap, localSearch, exactSeconds, useTerrain);
+                    fresnelFraction, neighborCandidates, bairroLikeMap, localSearch, exactSeconds, useTerrain,
+                    gatewayProfileId, gatewayProfileName);
         }
     }
 }

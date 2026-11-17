@@ -8,4 +8,5 @@ public interface GatewayProfileRepository extends JpaRepository<GatewayProfile, 
     List<GatewayProfile> findAllByActiveTrue();
     Optional<GatewayProfile> findByIdAndActiveTrue(Long id);
     boolean existsByIdAndActiveTrue(Long id);
+    Optional<GatewayProfile> findFirstByPadraoTrueAndActiveTrue();
 }

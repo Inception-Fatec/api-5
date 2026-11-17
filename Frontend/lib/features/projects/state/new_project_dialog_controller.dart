@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 
 import 'package:tecsys_app/core/utils/distributors.dart';
+import 'package:tecsys_app/features/gateway_profiles/data/gateway_profile.dart';
+import 'package:tecsys_app/features/gateway_profiles/data/gateway_profile_service.dart';
 import 'package:tecsys_app/features/projects/data/models/novo_projeto_resultado.dart';
 import 'package:tecsys_app/features/projects/data/services/distribuidoras_service.dart';
 import 'package:tecsys_app/features/projects/data/services/ibge_service.dart';
@@ -11,12 +13,55 @@ class NewProjectDialogController extends ChangeNotifier {
   NewProjectDialogController({
     IbgeService? ibgeService,
     DistribuidorasService? distribuidorasService,
-  })  : _distribuidorasService =
+    GatewayProfileService? perfisService,
+  })  : _perfisService = perfisService ?? GatewayProfileService(),
+        _distribuidorasService =
             distribuidorasService ?? DistribuidorasService(),
         _ibge = ibgeService ??
             IbgeService(distribuidoras: distribuidorasService);
 
   final DistribuidorasService _distribuidorasService;
+  final GatewayProfileService _perfisService;
+
+  List<GatewayProfile> _perfis = const [];
+  int? _perfilId;
+  bool _erroPerfis = false;
+
+  /// Perfis de gateway para o seletor (#TG-79), o padrão primeiro.
+  List<GatewayProfile> get perfis => _perfis;
+
+  /// Perfil escolhido; começa no padrão. Null = o backend usa o padrão.
+  int? get perfilId => _perfilId;
+
+  /// A lista de perfis não carregou (o projeto segue com o perfil padrão).
+  bool get erroPerfis => _erroPerfis;
+
+  /// Carrega os perfis e seleciona [selecionar] (ex.: o recém-criado), o
+  /// atual se ainda existir, ou o padrão.
+  Future<void> carregarPerfis({int? selecionar}) async {
+    try {
+      final lista = await _perfisService.listar();
+      if (_disposed) return;
+      _perfis = lista;
+      _erroPerfis = false;
+      final ids = {for (final p in lista) p.id};
+      final padrao = lista.where((p) => p.isDefault).map((p) => p.id).firstOrNull;
+      _perfilId = ids.contains(selecionar)
+          ? selecionar
+          : ids.contains(_perfilId)
+              ? _perfilId
+              : (padrao ?? lista.firstOrNull?.id);
+    } catch (_) {
+      if (_disposed) return;
+      _erroPerfis = true;
+    }
+    notifyListeners();
+  }
+
+  void escolherPerfil(int? id) {
+    _perfilId = id;
+    notifyListeners();
+  }
   final IbgeService _ibge;
   bool _disposed = false;
 
@@ -65,6 +110,7 @@ class NewProjectDialogController extends ChangeNotifier {
   /// Carrega as distribuidoras com dados. Nenhuma vem escolhida (#TG-147):
   /// as cidades aparecem depois que o usuário escolhe a distribuidora.
   Future<void> carregar() async {
+    carregarPerfis();
     try {
       final lista = await _distribuidorasService.listar();
       if (_disposed) return;
@@ -147,6 +193,7 @@ class NewProjectDialogController extends ChangeNotifier {
       distCode: _distCode!,
       distribuidoraLabel: distribuidoraLabel,
       municipios: _cidadesSelecionadas.toList(),
+      gatewayProfileId: _perfilId,
     );
   }
 

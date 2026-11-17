@@ -32,7 +32,8 @@ class ProjectHistoryTest {
         projectRepository = mock(ProjectRepository.class);
         historyRepository = mock(ProjectHistoryRepository.class);
         service = new ProjectService(projectRepository, mock(UserRepository.class), historyRepository,
-                mock(DecisionEngineClient.class));
+                mock(DecisionEngineClient.class),
+                mock(com.tecsys.domain.gateway.GatewayProfileResolver.class));
     }
 
     private ProjectHistory versao(long id, String criadoEm, String filtros) throws Exception {
