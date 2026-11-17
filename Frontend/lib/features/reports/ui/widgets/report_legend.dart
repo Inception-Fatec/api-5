@@ -1,15 +1,24 @@
 import 'package:flutter/material.dart';
 
 import 'package:tecsys_app/core/theme/app_theme.dart';
+import 'package:tecsys_app/features/reports/data/models/coverage_report.dart';
+import 'package:tecsys_app/features/reports/ui/report_texts.dart';
 import 'package:tecsys_app/features/reports/ui/styles/report_styles.dart';
 
 /// Legenda do mapa.
 class ReportLegend extends StatelessWidget {
-  const ReportLegend({super.key, required this.rangeM});
+  const ReportLegend({
+    super.key,
+    required this.rangeM,
+    this.assumptions = const ReportAssumptions(),
+  });
 
   /// Alcance do gateway (m). Mantido para a legenda poder citá-lo; hoje a
   /// mancha não é um círculo, então não aparece no texto.
   final int rangeM;
+
+  /// Para dizer se a mancha considerou o relevo (#TG-83).
+  final ReportAssumptions assumptions;
 
   @override
   Widget build(BuildContext context) {
@@ -17,9 +26,9 @@ class ReportLegend extends StatelessWidget {
       spacing: AppSpacing.md,
       runSpacing: AppSpacing.xs,
       children: [
-        const _Item(
+        _Item(
             color: ReportStyles.stainColor,
-            label: 'Área com cobertura (relevo considerado)'),
+            label: legendaAreaAtendida(assumptions)),
         const _Item(color: ReportStyles.pinColor, label: 'Gateway proposto'),
         const _Item(
             color: ReportStyles.coveredPointColor, label: 'Ponto atendido'),

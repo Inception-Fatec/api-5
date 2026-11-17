@@ -84,7 +84,9 @@ class ReportMapPreview extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.sm + 2),
-          ReportLegend(rangeM: report.summary.gatewayRangeM),
+          ReportLegend(
+                      rangeM: report.summary.gatewayRangeM,
+                      assumptions: report.summary.assumptions),
         ],
       ),
     );

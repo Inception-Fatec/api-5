@@ -51,6 +51,8 @@ class ReportContent extends StatelessWidget {
         ],
         ReportGatewaysSection(report: report, onTap: onGatewayTap),
         gap,
+        ReportAssumptionsSection(summary: report.summary),
+        gap,
         ReportParamsSection(report: report),
         gap,
         ReportDataSection(summary: report.summary),

@@ -113,7 +113,8 @@ Future<Uint8List> buildReportPdf({
         ),
         pw.SizedBox(height: 3),
         pw.Text(
-            'Roxo: área atendida (relevo considerado). Marcadores: gateways propostos. '
+            'Roxo: ${legendaAreaAtendida(s.assumptions).replaceFirst('Área com cobertura', 'área atendida')}. '
+            'Marcadores: gateways propostos. '
             'Vermelho: pontos sem cobertura. Mapa base: OpenStreetMap contributors.',
             style: const pw.TextStyle(fontSize: 8, color: muted)),
       ],
@@ -167,6 +168,19 @@ Future<Uint8List> buildReportPdf({
           ),
         ],
       ],
+      heading('Premissas do cálculo'),
+      if (s.assumptions.semRelevo) ...[
+        pw.Container(
+          padding: const pw.EdgeInsets.all(6),
+          decoration: pw.BoxDecoration(
+              color: const PdfColor.fromInt(0xFFFFF4E5),
+              border: pw.Border.all(color: const PdfColor.fromInt(0xFFE6A23C), width: 0.8)),
+          child: pw.Text(pdfSafe('ATENÇÃO: $alertaSemRelevo'),
+              style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+        ),
+        pw.SizedBox(height: 4),
+      ],
+      for (final p in assumptionRows(s)) kv(p.label, p.value),
       heading('Parâmetros do estudo'),
       pw.Text(pdfSafe(reportIntro(s)), style: const pw.TextStyle(fontSize: 10)),
       pw.SizedBox(height: 4),
