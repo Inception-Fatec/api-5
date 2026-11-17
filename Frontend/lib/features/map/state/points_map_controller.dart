@@ -15,6 +15,7 @@ import 'package:tecsys_app/features/map/data/services/points_filter_service.dart
 import 'package:tecsys_app/features/map/state/map_areas_controller.dart';
 import 'package:tecsys_app/features/projects/data/models/project_version.dart';
 import 'package:tecsys_app/features/projects/data/services/ibge_service.dart';
+import 'package:tecsys_app/features/projects/data/services/distribuidoras_service.dart';
 import 'package:tecsys_app/features/projects/data/services/project_service.dart';
 import 'package:tecsys_app/features/projects/state/project_store.dart';
 
@@ -34,7 +35,9 @@ class PointsMapController extends ChangeNotifier {
     IbgeService? ibgeService,
     ProjectsService? projectsService,
     ProjectsStore? store,
-  })  : _municipiosIniciais = List.unmodifiable(municipios),
+    DistribuidorasService? distribuidorasService,
+  })  : _distribuidoras = distribuidorasService ?? DistribuidorasService(),
+        _municipiosIniciais = List.unmodifiable(municipios),
         _municipiosSelecionados = List.of(municipios),
         _points = pointsService ?? PointsFilterService(),
         _centroService = centroService ?? MunicipiosCentroService(),
@@ -91,6 +94,55 @@ class PointsMapController extends ChangeNotifier {
   /// carregar ou se a chamada falhar.
   Map<int, LatLng> _centros = const {};
   final IbgeService _ibge;
+  final DistribuidorasService _distribuidoras;
+
+  // Origem dos dados de cada cidade da distribuidora (#TG-151).
+  Set<int> _cidadesComRede = const {};
+  Set<int> _cidadesComCsv = const {};
+  bool _redeIndependente = false;
+
+  /// Alguma cidade escolhida tem pontos importados por CSV.
+  bool get temPontosCsv =>
+      _municipiosSelecionados.any((m) => _cidadesComCsv.contains(m.codigoIbge));
+
+  /// Os dois seletores estão só com os pontos do CSV.
+  bool get soPlanilha =>
+      listEquals(_coverageLayers, const ['external_points']) &&
+      listEquals(_candidateLayers, const ['external_points']);
+
+  /// O mapa abriu como rede independente porque as cidades não têm BDGD.
+  bool get redeIndependente => _redeIndependente;
+
+  /// Lê de onde vêm os dados das cidades (BDGD e/ou CSV). Num projeto novo
+  /// em que nenhuma cidade escolhida tem rede da BDGD, abre como rede
+  /// independente: só os pontos do CSV nos dois seletores (#TG-151).
+  Future<void> carregarOrigemDosDados() async {
+    try {
+      final lista = await _distribuidoras.municipios(distCode);
+      if (_disposed) return;
+      _cidadesComRede = {for (final m in lista) if (m.temRede) m.codigo};
+      _cidadesComCsv = {for (final m in lista) if (m.temCsv) m.codigo};
+      final semRede = _municipiosSelecionados.isNotEmpty &&
+          _municipiosSelecionados.every((m) => !_cidadesComRede.contains(m.codigoIbge));
+      if (!editando && semRede && temPontosCsv) {
+        _redeIndependente = true;
+        usarSoPlanilha();
+        return;
+      }
+      notifyListeners();
+    } catch (_) {
+      // Sem a informação, fica o padrão (BDGD); o usuário ajusta nos seletores.
+    }
+  }
+
+  /// Atalho "Usar só os pontos da planilha": só o CSV como pontos a cobrir e
+  /// como candidatos a gateway (#TG-151).
+  void usarSoPlanilha() {
+    _alterarFiltro(() {
+      _coverageLayers = const ['external_points'];
+      _candidateLayers = const ['external_points'];
+    });
+  }
   final ProjectsService _projects;
   final ProjectsStore _store;
 

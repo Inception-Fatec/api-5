@@ -4,4 +4,6 @@ public interface MunicipioProjection {
     String getIbgeCode();
     Double getLatitude();
     Double getLongitude();
+    Boolean getTemRede();
+    Boolean getTemCsv();
 }

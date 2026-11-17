@@ -43,6 +43,23 @@ class MunicipioService {
     ];
   }
 
+  /// Lista já baixada (vazia antes de [listar] terminar).
+  static List<Municipio> get cache => _cache ?? const <Municipio>[];
+
+  static const String _comAcento = 'áàâãäéèêëíìîïóòôõöúùûüç';
+  static const String _semAcento = 'aaaaaeeeeiiiiooooouuuuc';
+
+  /// Minúsculas e sem acento, para buscas.
+  static String normalizar(String s) {
+    final StringBuffer b = StringBuffer();
+    for (final int r in s.toLowerCase().runes) {
+      final String c = String.fromCharCode(r);
+      final int i = _comAcento.indexOf(c);
+      b.write(i >= 0 ? _semAcento[i] : c);
+    }
+    return b.toString();
+  }
+
   /// "Vila Velha - ES" pelo código IBGE, se a lista já foi baixada; senão o
   /// próprio código (o histórico de cargas guarda só os códigos).
   static String rotuloDe(String codigo) {

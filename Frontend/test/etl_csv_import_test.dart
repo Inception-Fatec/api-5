@@ -26,16 +26,21 @@ Uint8List _utf8(String s) => Uint8List.fromList(utf8.encode(s));
 
 /// Distribuidoras/municípios fixos, sem chamar o backend.
 class _DistribuidorasFalsas extends DistribuidorasService {
-  _DistribuidorasFalsas(this.lista, this.municipios);
+  _DistribuidorasFalsas(this.lista, this.codigos);
 
   final List<Distribuidora> lista;
-  final List<int> municipios;
+  final List<int> codigos;
 
   @override
-  Future<List<Distribuidora>> listar() async => lista;
+  Future<List<Distribuidora>> listar({bool incluirCadastradas = false}) async => lista;
 
   @override
-  Future<List<int>> codigosMunicipios(String distCode) async => municipios;
+  Future<List<int>> codigosMunicipios(String distCode) async => codigos;
+
+  @override
+  Future<List<MunicipioComDados>> municipios(String distCode) async => [
+        for (final c in codigos) MunicipioComDados(codigo: c, temRede: true, temCsv: false),
+      ];
 }
 
 void main() {
@@ -382,11 +387,26 @@ void main() {
       expect(find.text('Pontos externos (CSV)'), findsNothing);
     });
 
-    testWidgets('.csv sem distribuidora no banco pede o .zip antes', (tester) async {
+    // #TG-151: sem distribuidora no banco, dá para cadastrar uma (rede sem BDGD).
+    testWidgets('.csv sem distribuidora no banco oferece "Outra distribuidora"', (tester) async {
       await abrir(tester, distribuidoras: const [], municipios: const []);
       await soltar(tester, 'pontos.csv',
           utf8.encode('id;latitude;longitude;papel\nP1;-23;-45;candidato\n'));
-      expect(find.textContaining('Nenhuma distribuidora com dados'), findsOneWidget);
+      expect(find.textContaining('Nenhuma distribuidora com dados'), findsNothing);
+
+      await tester.tap(find.text('Selecione a distribuidora'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('+ Outra distribuidora...').last);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('nova-dist-codigo')), findsOneWidget);
+      expect(find.byKey(const Key('nova-dist-nome')), findsOneWidget);
+
+      // Código inválido: mensagem, sem chamar o servidor.
+      await tester.enterText(find.byKey(const Key('nova-dist-codigo')), 'abc');
+      await tester.enterText(find.byKey(const Key('nova-dist-nome')), 'Rede Teste');
+      await tester.tap(find.byKey(const Key('nova-dist-cadastrar')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('só números'), findsOneWidget);
     });
   });
 }

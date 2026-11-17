@@ -307,6 +307,8 @@ class EtlCarga {
     final DateTime? b = fim == null ? null : DateTime.tryParse(fim.toString());
     if (a == null || b == null) return null;
     final Duration d = b.difference(a);
+    // Menos de 1 s (ex.: importação de CSV) aparece como "<1 s" (#TG-151).
+    if (d.inSeconds < 1) return '<1 s';
     if (d.inSeconds < 60) return '${d.inSeconds} s';
     if (d.inMinutes < 60) return '${d.inMinutes} min ${d.inSeconds % 60} s';
     return '${d.inHours} h ${d.inMinutes % 60} min';
