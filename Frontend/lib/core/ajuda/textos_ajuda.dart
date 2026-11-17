@@ -20,9 +20,9 @@ class TextosAjuda {
     secoes: [
       AjudaSecao('Problemas comuns', [
         AjudaItem('Senha incorreta',
-            'confira maiúsculas e minúsculas. Se esqueceu a senha, peça a um administrador para redefinir.'),
+            'confira maiúsculas e minúsculas. Se esqueceu a senha, fale com um administrador do sistema.'),
         AjudaItem('Conta desativada',
-            'um administrador desativou seu usuário; peça para reativar.'),
+            'um administrador removeu seu acesso; fale com ele.'),
       ]),
     ],
   );
@@ -32,8 +32,8 @@ class TextosAjuda {
     objetivo:
         'No primeiro acesso, a senha provisória precisa ser trocada antes de usar o sistema.',
     passos: [
-      'Digite a senha nova e repita no campo de confirmação.',
-      'Clique em salvar. Depois disso, entre de novo com a senha nova.',
+      'Digite a senha nova (mínimo de 6 caracteres) e repita no campo de confirmação.',
+      'Clique em Confirmar. O sistema abre em seguida, já com a senha nova.',
     ],
   );
 
@@ -317,17 +317,16 @@ class TextosAjuda {
     objetivo:
         'Cadastro de quem acessa o sistema e o que cada um pode fazer. Só administradores.',
     passos: [
-      'Clique em adicionar usuário e informe nome, e-mail, perfil e uma senha provisória.',
-      'No primeiro acesso, a pessoa troca a senha provisória.',
-      'Use o filtro de perfil para achar usuários; desative quem não deve mais acessar.',
+      'Clique em Novo Usuário e informe nome, e-mail, perfil e uma senha inicial.',
+      'Passe o e-mail e a senha inicial para a pessoa. No primeiro acesso, ela troca a senha.',
+      'Use a busca e o filtro de perfil para achar um usuário.',
     ],
     secoes: [
       AjudaSecao('Perfis', [
-        AjudaItem('ADM', 'acessa tudo, inclusive ETL & Geodados e Usuários.'),
-        AjudaItem('USER',
+        AjudaItem('Administrador',
+            'acessa tudo, inclusive ETL & Geodados e Usuários.'),
+        AjudaItem('Usuário',
             'cria e consulta projetos, relatórios e perfis de gateway.'),
-        AjudaItem('Último administrador',
-            'não pode ser desativado, para o sistema não ficar sem ADM.'),
       ]),
     ],
   );
