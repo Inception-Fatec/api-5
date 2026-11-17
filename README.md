@@ -55,6 +55,8 @@ Para parar: `./scripts/up-local.sh --stop` (os dados permanecem no volume `tecsy
 
 Variantes (banco no Supabase, subida por serviço, `docker compose`) e solução de problemas: [`scripts/README.md`](scripts/README.md).
 
+Como usar o sistema, tela por tela: [`docs/MANUAL_DO_USUARIO.md`](docs/MANUAL_DO_USUARIO.md).
+
 ---
 
 ## Arquitetura
