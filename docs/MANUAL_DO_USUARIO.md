@@ -15,11 +15,10 @@ Os textos seguem a ajuda que existe dentro do próprio sistema. Em qualquer tela
 5. [Mapa do projeto](#5-mapa-do-projeto)
 6. [Relatório de cobertura](#6-relatório-de-cobertura)
 7. [Versões e recálculo](#7-versões-e-recálculo)
-8. [Comparação de cenários](#8-comparação-de-cenários)
-9. [Perfis de gateway](#9-perfis-de-gateway)
-10. [ETL & Geodados (administrador)](#10-etl--geodados-administrador)
-11. [Usuários (administrador)](#11-usuários-administrador)
-12. [Dúvidas comuns](#12-dúvidas-comuns)
+8. [Perfis de gateway](#8-perfis-de-gateway)
+9. [ETL & Geodados (administrador)](#9-etl--geodados-administrador)
+10. [Usuários (administrador)](#10-usuários-administrador)
+11. [Dúvidas comuns](#11-dúvidas-comuns)
 
 ---
 
@@ -63,11 +62,9 @@ No primeiro acesso, a senha provisória precisa ser trocada antes de usar o sist
 - **Senha incorreta:** confira maiúsculas e minúsculas. Se esqueceu a senha, fale com um administrador do sistema.
 - **Conta desativada:** um administrador removeu seu acesso; fale com ele.
 
-### Menu da conta
+### Sair
 
-![Menu da conta](manual/img/04-menu-conta.jpg)
-
-O ícone redondo no canto superior direito abre o menu da conta. **Sair** encerra a sessão. A opção **Redefinir Senha** ainda está em construção: para trocar a senha, fale com um administrador.
+O ícone redondo no canto superior direito abre o menu da conta. **Sair** encerra a sessão.
 
 ---
 
@@ -107,9 +104,9 @@ Define o nome, a área de estudo e o perfil de rádio do gateway. Depois, o mapa
 4. Confira o perfil de gateway. O perfil padrão (Tecsys) já vem escolhido; troque se quiser simular outro equipamento.
 5. Clique em **Buscar** para abrir o mapa.
 
-- **Perfil de gateway:** parâmetros de rádio usados no cálculo (frequência, potência, sensibilidade, alturas). Em **Gerenciar perfis** você cria e edita perfis ([seção 9](#9-perfis-de-gateway)).
+- **Perfil de gateway:** parâmetros de rádio usados no cálculo (frequência, potência, sensibilidade, alturas). Em **Gerenciar perfis** você cria e edita perfis ([seção 8](#8-perfis-de-gateway)).
 
-> A distribuidora ou a cidade não aparece? Os dados dela ainda não foram carregados. Um administrador carrega pela tela [ETL & Geodados](#10-etl--geodados-administrador).
+> A distribuidora ou a cidade não aparece? Os dados dela ainda não foram carregados. Um administrador carrega pela tela [ETL & Geodados](#9-etl--geodados-administrador).
 
 ---
 
@@ -199,7 +196,7 @@ A barra mostra a área em km² enquanto você desenha.
 
 ### Rede independente (planilha)
 
-Uma rede independente é um conjunto de pontos que não vem da distribuidora, importado por planilha CSV ([seção 10](#10-etl--geodados-administrador)).
+Uma rede independente é um conjunto de pontos que não vem da distribuidora, importado por planilha CSV ([seção 9](#9-etl--geodados-administrador)).
 
 - **Só a planilha:** quando a cidade não tem rede da distribuidora carregada, o mapa já abre usando só os pontos do CSV.
 - **Usar só os pontos da planilha:** aparece quando a cidade tem pontos de planilha. Calcula só com os pontos da planilha: eles passam a ser os pontos a cobrir e os candidatos a gateway, e a rede da distribuidora é ignorada.
@@ -284,13 +281,7 @@ Cada recálculo gera uma versão. O relatório mostra a mais recente.
 
 ---
 
-## 8. Comparação de cenários
-
-A tela de comparação lado a lado ainda não está no sistema (task #76 no Taiga). Enquanto isso, compare pelo botão **Versões** de um projeto ou abrindo os relatórios dos projetos em abas diferentes.
-
----
-
-## 9. Perfis de gateway
+## 8. Perfis de gateway
 
 ![Perfis de gateway](manual/img/19-perfis.jpg)
 
@@ -328,7 +319,7 @@ Exemplo: com o perfil padrão (sem perda adicional), o limite é o horizonte de 
 
 ---
 
-## 10. ETL & Geodados (administrador)
+## 9. ETL & Geodados (administrador)
 
 ![ETL & Geodados](manual/img/21-etl.jpg)
 
@@ -382,7 +373,7 @@ Os botões **Todos**, **ETL** e **CSV** filtram o histórico, e a busca acha um 
 
 ---
 
-## 11. Usuários (administrador)
+## 10. Usuários (administrador)
 
 ![Usuários](manual/img/25-usuarios.jpg)
 
@@ -401,10 +392,10 @@ Cadastro de quem acessa o sistema e o que cada um pode fazer. Só administradore
 
 ---
 
-## 12. Dúvidas comuns
+## 11. Dúvidas comuns
 
 **A cidade que eu quero não aparece no Novo projeto.**
-Os dados dela ainda não foram carregados. Peça a um administrador para enviar a BDGD da distribuidora ou uma planilha CSV de pontos da cidade ([seção 10](#10-etl--geodados-administrador)).
+Os dados dela ainda não foram carregados. Peça a um administrador para enviar a BDGD da distribuidora ou uma planilha CSV de pontos da cidade ([seção 9](#9-etl--geodados-administrador)).
 
 **O botão Salvar Projeto está desligado.**
 Nenhum ponto a cobrir com os filtros atuais (o contador mostra 0). Confira as cidades marcadas, as áreas desenhadas e os filtros.
