@@ -20,18 +20,23 @@ class ReportLegend extends StatelessWidget {
   /// Para dizer se a mancha considerou o relevo (#TG-83).
   final ReportAssumptions assumptions;
 
+  /// No mapa a mancha sai com [ReportStyles.stainOpacity] e o ponto atendido
+  /// é pintado por cima dela. As amostras usam a cor final de cada um, senão
+  /// a mancha aparece escura na legenda e clara no mapa (e o ponto, o inverso).
+  static final Color corMancha = ReportStyles.stainColor
+      .withValues(alpha: ReportStyles.stainOpacity);
+  static final Color corPontoAtendido =
+      Color.alphaBlend(ReportStyles.coveredPointColor, corMancha);
+
   @override
   Widget build(BuildContext context) {
     return Wrap(
       spacing: AppSpacing.md,
       runSpacing: AppSpacing.xs,
       children: [
-        _Item(
-            color: ReportStyles.stainColor,
-            label: legendaAreaAtendida(assumptions)),
+        _Item(color: corMancha, label: legendaAreaAtendida(assumptions)),
         const _Item(color: ReportStyles.pinColor, label: 'Gateway proposto'),
-        const _Item(
-            color: ReportStyles.coveredPointColor, label: 'Ponto atendido'),
+        _Item(color: corPontoAtendido, label: 'Ponto atendido'),
         const _Item(
             color: ReportStyles.uncoveredPointColor, label: 'Sem cobertura'),
       ],

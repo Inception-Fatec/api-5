@@ -13,6 +13,7 @@ import 'package:tecsys_app/features/map/data/models/selected_area.dart';
 import 'package:tecsys_app/features/map/data/services/municipios_centro_service.dart';
 import 'package:tecsys_app/features/map/data/services/points_filter_service.dart';
 import 'package:tecsys_app/features/map/state/map_areas_controller.dart';
+import 'package:tecsys_app/features/projects/data/models/project_model.dart';
 import 'package:tecsys_app/features/projects/data/models/project_version.dart';
 import 'package:tecsys_app/features/projects/data/services/ibge_service.dart';
 import 'package:tecsys_app/features/projects/data/services/distribuidoras_service.dart';
@@ -478,6 +479,12 @@ class PointsMapController extends ChangeNotifier {
     };
   }
 
+  Project? _ultimoSalvo;
+
+  /// Projeto como o servidor devolveu no último salvar/recalcular: a tela
+  /// devolve ele ao fechar, para quem abriu o mapa ir direto ao relatório.
+  Project? get ultimoSalvo => _ultimoSalvo;
+
   /// Salva o projeto novo ou, se for um projeto aberto ([editando]),
   /// recalcula gerando uma versão nova.
   Future<bool> salvarProjeto() async {
@@ -507,6 +514,7 @@ class PointsMapController extends ChangeNotifier {
           gatewayProfileId: gatewayProfileId,
         );
         _store.adicionar(projetoCriado);
+        _ultimoSalvo = projetoCriado;
       } else {
         // Projeto aberto (#TG-86): nova versão e novo cálculo (#TG-84).
         final recalculado = await _projects.recalcular(
@@ -515,6 +523,7 @@ class PointsMapController extends ChangeNotifier {
           filterParams: filterParams,
         );
         _store.atualizar(recalculado);
+        _ultimoSalvo = recalculado;
       }
 
       if (_disposed) return true;

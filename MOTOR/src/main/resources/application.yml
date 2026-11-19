@@ -16,6 +16,14 @@ spring:
 server:
   port: ${MOTOR_PORT:8082}
   address: ${MOTOR_BIND_ADDRESS:127.0.0.1}
+  # Um cálculo por vez: o motor só tem /api/calculate e o backend espera a
+  # resposta sem tempo limite, então o 2º cálculo fica na fila. Dois juntos
+  # numa área grande passam de 3 GB e, no servidor da AWS (t3.medium, 4 GB),
+  # o Linux matou o motor por falta de memória (2026-11-18).
+  tomcat:
+    threads:
+      max: ${MOTOR_MAX_CALCULOS:1}
+      min-spare: 1
 
 app:
   # Motor de decisão. MOTOR_PROFILE escolhe a base (tecsys | compat-preciso | compat) e qualquer

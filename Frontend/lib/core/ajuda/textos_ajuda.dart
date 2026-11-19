@@ -20,7 +20,8 @@ class TextosAjuda {
     secoes: [
       AjudaSecao('Problemas comuns', [
         AjudaItem('Senha incorreta',
-            'confira maiúsculas e minúsculas. Se esqueceu a senha, fale com um administrador do sistema.'),
+            'confira maiúsculas e minúsculas. Se esqueceu a senha, clique em "Esqueceu a senha?": '
+                'um administrador define uma senha temporária para você.'),
         AjudaItem('Conta desativada',
             'um administrador removeu seu acesso; fale com ele.'),
       ]),
@@ -37,6 +38,47 @@ class TextosAjuda {
     ],
   );
 
+  static const redefinirSenha = AjudaTela(
+    titulo: 'Redefinir a senha',
+    objetivo:
+        'Troque a sua senha a qualquer momento pelo menu da conta. Se esqueceu a senha, '
+        'um administrador define uma senha temporária para você.',
+    passos: [
+      'Logado: abra o menu da conta e clique em Redefinir Senha.',
+      'Digite a senha atual, a senha nova (mínimo de 6 caracteres) e repita a nova.',
+      'Clique em Salvar nova senha. A sessão continua aberta, já com a senha nova.',
+    ],
+    secoes: [
+      AjudaSecao('Esqueceu a senha', [
+        AjudaItem('Peça a um administrador',
+            'ele abre a tela Usuários, clica na chave do seu cartão e define uma senha temporária.'),
+        AjudaItem('Entre com a senha temporária',
+            'no próximo acesso o sistema pede para você criar uma senha nova antes de continuar.'),
+      ]),
+    ],
+  );
+
+  static const comparacao = AjudaTela(
+    titulo: 'Comparar cenários',
+    objetivo:
+        'Coloca lado a lado os resultados de projetos concluídos para ver qual cenário cobre mais '
+        'consumidores e com quantos gateways.',
+    passos: [
+      'O primeiro projeto marcado (A) é a referência; os outros são comparados com ele.',
+      'O Δ mostra a diferença para a referência: verde é melhor (mais cobertura ou menos gateways), '
+          'vermelho é pior e cinza é igual.',
+      'Toque no mapa de um cenário para abri-lo em tela cheia.',
+    ],
+    secoes: [
+      AjudaSecao('Como ler o Δ', [
+        AjudaItem('Cobertura',
+            'em pontos percentuais (p.p.): de 80% para 85% é +5,00 p.p.'),
+        AjudaItem('Gateways',
+            'quantos gateways a mais (+) ou a menos (−) que a referência.'),
+      ]),
+    ],
+  );
+
   // ─────────────────────────── Projetos ───────────────────────────
 
   static const projetos = AjudaTela(
@@ -49,6 +91,7 @@ class TextosAjuda {
       'Use a seção Recentes para voltar rápido aos últimos projetos que você mexeu.',
       'Clique em um projeto concluído para abrir o relatório; nos demais status, ele abre no mapa.',
       'Use a busca e o filtro de status para achar um projeto na lista.',
+      'Para comparar cenários, clique em Comparar projetos, marque 2 ou mais projetos concluídos e clique em Comparar.',
     ],
     secoes: [
       AjudaSecao('Status do projeto', [
@@ -320,6 +363,8 @@ class TextosAjuda {
       'Clique em Novo Usuário e informe nome, e-mail, perfil e uma senha inicial.',
       'Passe o e-mail e a senha inicial para a pessoa. No primeiro acesso, ela troca a senha.',
       'Use a busca e o filtro de perfil para achar um usuário.',
+      'Esqueceu a senha? Clique na chave do cartão do usuário e defina uma senha temporária. '
+          'No próximo acesso, ele cria uma senha nova.',
     ],
     secoes: [
       AjudaSecao('Perfis', [

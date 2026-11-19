@@ -25,12 +25,18 @@ class ProjectsListView extends StatelessWidget {
   });
 
   Widget _card(Project p) {
+    final comparando = controller.comparando;
     return ProjectCard(
       key: ValueKey(p.id),
       data: p,
       creatorName: p.criadoPorLabel,
       onOpen: () => onOpenProject(p),
       onDelete: () => controller.excluir(p.id),
+      selecionando: comparando,
+      selecionado: comparando && controller.estaSelecionado(p.id),
+      onSelecionar: comparando && ProjectsListController.podeComparar(p)
+          ? () => controller.alternarSelecao(p)
+          : null,
     );
   }
 

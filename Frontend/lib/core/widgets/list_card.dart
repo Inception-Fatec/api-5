@@ -35,6 +35,13 @@ class ListCard extends StatelessWidget {
   /// Oculta o controle de exclusão em cards que representam itens imutáveis.
   final bool showDelete;
 
+  /// Ações extras no topo, antes da lixeira (ex.: redefinir senha, marcar
+  /// para comparar).
+  final List<Widget> actions;
+
+  /// Borda de destaque (ex.: projeto marcado para comparar).
+  final bool selected;
+
   const ListCard({
     super.key,
     required this.leading,
@@ -47,10 +54,24 @@ class ListCard extends StatelessWidget {
     this.onTap,
     this.dimmed = false,
     this.showDelete = true,
+    this.actions = const [],
+    this.selected = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final card = _card();
+    if (!selected) return card;
+    return Container(
+      foregroundDecoration: BoxDecoration(
+        borderRadius: AppRadius.xl,
+        border: Border.all(color: AppColors.primary, width: 2),
+      ),
+      child: card,
+    );
+  }
+
+  Widget _card() {
     return HoverCard(
       clickable: onTap != null,
       child: Opacity(
@@ -112,6 +133,10 @@ class ListCard extends StatelessWidget {
         Row(
           children: [
             badge,
+            for (final acao in actions) ...[
+              const SizedBox(width: AppSpacing.xs),
+              acao,
+            ],
             if (showDelete) ...[
               const SizedBox(width: AppSpacing.xs),
               InkWell(

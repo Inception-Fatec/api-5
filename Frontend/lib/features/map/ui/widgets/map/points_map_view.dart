@@ -357,6 +357,14 @@ class PointsMapViewState extends State<PointsMapView>
     if (_selecionando) _focoTeclado.requestFocus();
   }
 
+  /// Voltar do Android: sai do modo de seleção de área, se estiver nele.
+  /// Devolve `true` quando consumiu o voltar.
+  bool sairDaSelecao() {
+    if (!_selecionando) return false;
+    _alternarSelecao();
+    return true;
+  }
+
   void _confirmarArea(SelectedArea area) {
     setState(() => _selecionando = false);
     _selecao.value = null;
@@ -470,6 +478,10 @@ class PointsMapViewState extends State<PointsMapView>
   @override
   Widget build(BuildContext context) {
     final areas = widget.areas;
+    // O "Salvar Projeto" fica acima da barra de navegação do Android
+    // (SafeArea); as distâncias de baixo daqui contam sem ela. Soma a altura
+    // da barra para a legenda e os botões não ficarem embaixo do botão.
+    final barraInferior = MediaQuery.viewPaddingOf(context).bottom;
     return LayoutBuilder(
       builder: (context, constraints) {
         _tamanhoMapa = Size(constraints.maxWidth, constraints.maxHeight);
@@ -580,7 +592,7 @@ class PointsMapViewState extends State<PointsMapView>
                 ),
               Positioned(
                 left: MapStyles.coordsLeft,
-                bottom: MapStyles.coordsBottom,
+                bottom: MapStyles.coordsBottom + barraInferior,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -597,7 +609,7 @@ class PointsMapViewState extends State<PointsMapView>
               ),
               Positioned(
                 right: MapStyles.toolbarRight,
-                bottom: MapStyles.toolbarBottom,
+                bottom: MapStyles.toolbarBottom + barraInferior,
                 child: MapToolbar(
                   itens: [
                     MapToolbarItem(
@@ -645,7 +657,7 @@ class PointsMapViewState extends State<PointsMapView>
                 Positioned(
                   left: MapStyles.zoomHintSideMargin,
                   right: MapStyles.zoomHintSideMargin,
-                  bottom: MapStyles.zoomHintBottom,
+                  bottom: MapStyles.zoomHintBottom + barraInferior,
                   child: Center(
                     child: Container(
                       padding: MapStyles.zoomHintPadding,
@@ -673,7 +685,7 @@ class PointsMapViewState extends State<PointsMapView>
                 Positioned(
                   left: MapStyles.zoomHintSideMargin,
                   right: MapStyles.zoomHintSideMargin,
-                  bottom: MapStyles.selectionHintBottom,
+                  bottom: MapStyles.selectionHintBottom + barraInferior,
                   child: Center(
                     child: DrawingControls(
                       modo: _modo,
@@ -681,6 +693,7 @@ class PointsMapViewState extends State<PointsMapView>
                       desenho: _desenho,
                       onDesfazer: _desenho.desfazer,
                       onCancelar: _desenho.limpar,
+                      onSair: _alternarSelecao,
                       onConcluir: _concluirPoligono,
                     ),
                   ),

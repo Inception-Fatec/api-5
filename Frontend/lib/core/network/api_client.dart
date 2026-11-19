@@ -29,7 +29,11 @@ class ApiConfig {
   static String get baseUrl {
     if (kIsWeb) return 'http://$_devHost:$_devPort/api/v1';
     if (defaultTargetPlatform == TargetPlatform.android) {
-      return 'http://10.0.2.2:$_devPort/api/v1';
+      // Sem API_HOST no build: emulador (10.0.2.2 = localhost do PC).
+      // Com API_HOST: aparelho físico falando com o IP informado.
+      const hasHost = bool.hasEnvironment('API_HOST');
+      const host = hasHost ? _devHost : '10.0.2.2';
+      return 'http://$host:$_devPort/api/v1';
     }
     return 'http://$_devHost:$_devPort/api/v1';
   }

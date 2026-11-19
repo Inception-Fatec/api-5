@@ -22,12 +22,23 @@ class ProjectCard extends StatefulWidget {
   /// Exclui de verdade; se lançar, o card avisa que falhou.
   final Future<void> Function() onDelete;
 
+  /// Modo "comparar projetos": o toque marca/desmarca em vez de abrir e a
+  /// lixeira dá lugar à caixa de marcar.
+  final bool selecionando;
+  final bool selecionado;
+
+  /// Null = projeto que não pode ser comparado (não está concluído).
+  final VoidCallback? onSelecionar;
+
   const ProjectCard({
     super.key,
     required this.data,
     required this.creatorName,
     required this.onOpen,
     required this.onDelete,
+    this.selecionando = false,
+    this.selecionado = false,
+    this.onSelecionar,
   });
 
   @override
@@ -56,14 +67,42 @@ class _ProjectCardState extends State<ProjectCard> {
     }
   }
 
+  void _tocarSelecionando() {
+    final selecionar = widget.onSelecionar;
+    if (selecionar != null) {
+      selecionar();
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(
+          content: Text('Só projetos concluídos podem ser comparados.')));
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
     final statusColor = ProjectStatusStyle.color(data.status);
+    final selecionando = widget.selecionando;
 
     return ListCard(
-      dimmed: _excluindo,
-      onTap: _excluindo ? null : widget.onOpen,
+      dimmed: _excluindo || (selecionando && widget.onSelecionar == null),
+      selected: selecionando && widget.selecionado,
+      onTap: _excluindo
+          ? null
+          : (selecionando ? _tocarSelecionando : widget.onOpen),
+      showDelete: !selecionando,
+      actions: [
+        if (selecionando)
+          Checkbox(
+            key: Key('comparar-${data.id}'),
+            value: widget.selecionado,
+            visualDensity: VisualDensity.compact,
+            onChanged: widget.onSelecionar == null
+                ? null
+                : (_) => widget.onSelecionar!(),
+          ),
+      ],
       onDelete: _excluindo ? null : _confirmarExclusao,
       leading: Row(
         mainAxisSize: MainAxisSize.min,

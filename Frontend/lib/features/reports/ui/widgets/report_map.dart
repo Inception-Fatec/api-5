@@ -341,8 +341,12 @@ class _GatewayMarker extends StatelessWidget {
                   ),
                 ],
               );
+    // Toque mostra os dados (no celular o padrão do Tooltip é segurar);
+    // no computador o mouse por cima continua mostrando.
     return Tooltip(
       message: label,
+      triggerMode: TooltipTriggerMode.tap,
+      showDuration: const Duration(seconds: 5),
       child: Semantics(label: label, child: visual),
     );
   }

@@ -7,6 +7,7 @@ import 'package:tecsys_app/features/users/data/services/user_api_service.dart';
 import 'package:tecsys_app/features/users/state/user_store.dart';
 import 'package:tecsys_app/features/users/ui/styles/user_role_style.dart';
 import 'package:tecsys_app/features/users/ui/widgets/add_user_dialog.dart';
+import 'package:tecsys_app/features/users/ui/widgets/reset_user_password_dialog.dart';
 import 'package:tecsys_app/features/users/ui/widgets/users/role_filter_dropdown.dart';
 import 'package:tecsys_app/features/users/ui/widgets/users/users_view.dart';
 
@@ -126,6 +127,26 @@ class _UsersScreenState extends State<UsersScreen> {
     }
   }
 
+  /// Esqueceu a senha: define uma senha temporária; o usuário cria uma
+  /// nova no próximo acesso. Erros do backend (403/422) vão na snackbar.
+  Future<void> _handleResetPassword(AppUser member) async {
+    final senha = await showResetUserPasswordDialog(context, member);
+    if (senha == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await UserApiService.instance.resetPassword(member.id, senha);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+            content: Text('Senha de ${member.name} redefinida. Passe a senha '
+                'temporária para ele; no próximo acesso, ele cria uma nova.')));
+    } catch (e) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('Erro ao redefinir a senha: $e')));
+    }
+  }
+
   Widget _buildError() {
     return Center(
       child: Padding(
@@ -171,6 +192,7 @@ class _UsersScreenState extends State<UsersScreen> {
             onAddUser: _openAddUser,
             onRefresh: () => _loadUsers(force: true),
             onDelete: _handleDelete,
+            onResetPassword: _handleResetPassword,
           );
         },
       ),

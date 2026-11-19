@@ -1,5 +1,11 @@
 import 'package:flutter/material.dart';
 
+/// Projeto concluído ou ainda calculando abre no relatório (que mostra o
+/// andamento e troca sozinho para o resultado); com falha, abre no mapa
+/// para ajustar e recalcular. Vale para os Recentes e para o ícone deles.
+bool abreNoRelatorio(String status) =>
+    status != 'FALHA' && status != 'ERRO';
+
 /// Rótulo e cores de cada status de projeto (só apresentação — o
 /// model [Project] guarda apenas o status cru vindo do backend).
 class ProjectStatusStyle {

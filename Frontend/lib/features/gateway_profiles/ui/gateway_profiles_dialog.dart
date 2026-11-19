@@ -222,14 +222,19 @@ class _CartaoPerfil extends StatelessWidget {
               ],
             ),
           ),
-          // O padrão não é editável (é a referência da Tecsys): só dá para
-          // duplicar e ajustar a cópia.
+          // O padrão não é editável nem excluível (é a referência da
+          // Tecsys): só dá para duplicar e ajustar a cópia. Botão com texto
+          // porque no celular a dica de um ícone só aparece segurando.
           if (perfil.isDefault)
-            IconButton(
-              key: const Key('duplicar-padrao'),
-              tooltip: 'Duplicar (o perfil padrão não pode ser alterado)',
-              icon: const Icon(Icons.copy_outlined),
-              onPressed: onDuplicar,
+            Tooltip(
+              message: 'O perfil padrão não pode ser alterado: duplique e '
+                  'ajuste a cópia',
+              child: TextButton.icon(
+                key: const Key('duplicar-padrao'),
+                icon: const Icon(Icons.copy_outlined, size: 18),
+                label: const Text('Duplicar'),
+                onPressed: onDuplicar,
+              ),
             )
           else
             IconButton(

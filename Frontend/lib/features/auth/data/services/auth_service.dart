@@ -104,6 +104,16 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// "Redefinir Senha" do menu da conta: o usuário logado troca a própria
+  /// senha informando a atual (POST /auth/update-password). Senha atual
+  /// errada volta como [ApiException] com a mensagem do backend.
+  Future<void> updatePassword(String senhaAtual, String novaSenha) async {
+    await ApiClient.instance.postRaw('/auth/update-password', {
+      'currentPassword': senhaAtual,
+      'newPassword': novaSenha,
+    });
+  }
+
   /// Chamar no boot do app (ex.: splash / main) pra manter o usuário
   /// logado entre sessões em vez de sempre cair na tela de login.
   /// Token vencido (ou ilegível) é apagado e o usuário vai pro login.

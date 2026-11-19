@@ -5,7 +5,6 @@ import 'package:tecsys_app/features/map/ui/screens/points_map_screen.dart';
 import 'package:tecsys_app/features/projects/data/models/project_model.dart';
 import 'package:tecsys_app/features/projects/data/services/ibge_service.dart';
 import 'package:tecsys_app/features/projects/data/services/project_service.dart';
-import 'package:tecsys_app/features/projects/state/project_store.dart';
 
 /// Abre um projeto salvo no mapa com a área, os filtros e as cidades da
 /// última versão do histórico (#TG-86), para ajustar e recalcular.
@@ -38,8 +37,8 @@ Future<Project?> abrirProjetoNoMapa(
         versao.munCodes.isNotEmpty ? versao.munCodes : project.munCodes;
     if (!context.mounted) return null;
 
-    final recalculou = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
+    return await Navigator.of(context).push<Project>(
+      MaterialPageRoute<Project>(
         builder: (_) => PointsMapScreen(
           nomeProjeto: project.name,
           distCode: project.distCode,
@@ -49,12 +48,6 @@ Future<Project?> abrirProjetoNoMapa(
           versaoInicial: versao,
         ),
       ),
-    );
-    if (recalculou != true) return null;
-    // O mapa já pôs a versão recalculada no store (status Enviado).
-    return ProjectsStore.instance.projects.firstWhere(
-      (p) => p.id == project.id,
-      orElse: () => project.copyWith(status: 'ENVIADO'),
     );
   } catch (_) {
     avisar('Não foi possível abrir o projeto no mapa agora.');

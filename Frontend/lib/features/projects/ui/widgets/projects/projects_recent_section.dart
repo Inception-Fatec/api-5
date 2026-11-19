@@ -96,7 +96,7 @@ class _CartaoRecente extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = projeto.status;
-    final concluido = status == 'SUCESSO';
+    final relatorio = abreNoRelatorio(status);
     return Material(
       color: AppColors.surface,
       shape: const RoundedRectangleBorder(
@@ -113,9 +113,9 @@ class _CartaoRecente extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  // Concluído abre o relatório; os demais abrem o mapa (CA2).
+                  // Mesmo destino do toque (abreNoRelatorio).
                   Icon(
-                    concluido ? Icons.description_outlined : Icons.map_outlined,
+                    relatorio ? Icons.description_outlined : Icons.map_outlined,
                     size: 16,
                     color: AppColors.primary,
                   ),
