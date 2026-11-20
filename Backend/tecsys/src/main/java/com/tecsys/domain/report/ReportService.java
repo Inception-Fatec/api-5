@@ -31,7 +31,8 @@ public class ReportService {
     public ProjectCoverageResponseDto getCoverageByProjectId(Long projectId) {
         return projectCoverageRepository.findById(projectId)
                 .map(c -> ProjectCoverageResponseDto.fromEntity(c,
-                        projectHistoryRepository.findFirstByProject_IdOrderByCreatedAtDescIdDesc(projectId)
+                        projectRepository.findById(projectId)
+                                .flatMap(projectHistoryRepository::findVersaoAtual)
                                 .map(com.tecsys.domain.project.ProjectHistory::getFilterParams)
                                 .orElse(null)))
                 .orElseThrow(() -> new BusinessRuleException("Relatório de cobertura não encontrado para o projeto informado. O motor de cálculo pode ainda não ter finalizado."));
@@ -79,9 +80,9 @@ public class ReportService {
                 .toList();
     }
 
-    /** Parâmetros usados no cálculo: o último project_history, o mesmo que o motor lê. */
+    /** Parâmetros usados no cálculo: a versão em uso, a mesma que o motor lê. */
     private JsonNode filterParamsDe(Project projeto) {
-        return projectHistoryRepository.findFirstByProject_IdOrderByCreatedAtDescIdDesc(projeto.getId())
+        return projectHistoryRepository.findVersaoAtual(projeto)
                 .map(com.tecsys.domain.project.ProjectHistory::getFilterParams)
                 .orElse(null);
     }

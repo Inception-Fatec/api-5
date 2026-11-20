@@ -52,6 +52,14 @@ public class ProjectController {
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(projectService.recalculate(id, request));
     }
 
+    /** Volta o projeto para uma versão antiga: vira a versão mais recente e recalcula. */
+    @PostMapping("/{id}/history/{historyId}/restore")
+    public ResponseEntity<ProjectResponseDto> restoreVersion(
+            @PathVariable Long id,
+            @PathVariable Long historyId) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(projectService.restoreVersion(id, historyId));
+    }
+
     /** Registra uma atividade (ex.: abriu o relatório) para os Recentes (#TG-87). */
     @PostMapping("/{id}/activity")
     public ResponseEntity<Void> registrarAtividade(@PathVariable Long id) {

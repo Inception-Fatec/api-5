@@ -63,14 +63,16 @@ class _IbgeFalso extends IbgeService {
       const [Municipio(codigoIbge: 3508504, nome: 'Caçapava', uf: 'SP')];
 }
 
-Future<void> _abrirTela(WidgetTester tester, _PerfisFalsos service) async {
+Future<void> _abrirTela(WidgetTester tester, _PerfisFalsos service,
+    {bool podeEditar = true}) async {
   await tester.binding.setSurfaceSize(const Size(900, 1400));
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(MaterialApp(
     home: Scaffold(
       body: Builder(
         builder: (context) => TextButton(
-          onPressed: () => GatewayProfilesDialog.mostrar(context, service: service),
+          onPressed: () => GatewayProfilesDialog.mostrar(context,
+              service: service, podeEditar: podeEditar),
           child: const Text('abrir'),
         ),
       ),
@@ -137,6 +139,20 @@ void main() {
   });
 
   group('tela de perfis', () {
+    testWidgets('usuário comum só consulta: sem criar, editar, duplicar ou excluir',
+        (tester) async {
+      final perfil2 = GatewayProfile.fromJson(
+          {...GatewayProfile.referenciaTecsys.toJson(), 'id': 2, 'name': 'Urbano'});
+      await _abrirTela(tester, _PerfisFalsos([_padrao, perfil2]),
+          podeEditar: false);
+      expect(find.text('Urbano'), findsOneWidget);
+      expect(find.byKey(const Key('perfis-somente-leitura')), findsOneWidget);
+      expect(find.byKey(const Key('novo-perfil')), findsNothing);
+      expect(find.byKey(const Key('duplicar-padrao')), findsNothing);
+      expect(find.byIcon(Icons.edit_outlined), findsNothing);
+      expect(find.byIcon(Icons.delete_outline), findsNothing);
+    });
+
     testWidgets('lista mostra o padrão sem opção de excluir', (tester) async {
       await _abrirTela(tester, _PerfisFalsos());
       expect(find.text('Perfis de gateway'), findsOneWidget);

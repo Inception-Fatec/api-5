@@ -65,9 +65,12 @@ class TextosAjuda {
         'consumidores e com quantos gateways.',
     passos: [
       'O primeiro projeto marcado (A) é a referência; os outros são comparados com ele.',
-      'O Δ mostra a diferença para a referência: verde é melhor (mais cobertura ou menos gateways), '
-          'vermelho é pior e cinza é igual.',
-      'Toque no mapa de um cenário para abri-lo em tela cheia.',
+      'No Comparativo, as barras mostram cada indicador lado a lado e quem tem o melhor valor; '
+          'a lâmpada resume cada cenário em uma frase.',
+      'Nos cards, o Δ mostra a diferença para a referência: verde é melhor (mais cobertura, '
+          'menos gateways, mais consumidores por gateway), vermelho é pior e cinza é igual.',
+      'Toque em um card para abrir o relatório completo do projeto, ou em Expandir mapa para ver o mapa em tela cheia.',
+      'Se os cenários forem de cidades diferentes, compare a cobertura %: o número de gateways depende do tamanho da área.',
     ],
     secoes: [
       AjudaSecao('Como ler o Δ', [
@@ -123,7 +126,7 @@ class TextosAjuda {
         AjudaItem(
             'Perfil de gateway',
             'parâmetros de rádio usados no cálculo (frequência, potência, sensibilidade, alturas). '
-                'Em "Gerenciar perfis" você cria e edita perfis.'),
+                'Em "Ver perfis" você confere os valores de cada um; só o administrador cria e edita perfis.'),
       ]),
     ],
   );
@@ -250,6 +253,7 @@ class TextosAjuda {
       'Confira a lista de gateways, na ordem em que mais acrescentam cobertura.',
       'Exporte em PDF pelo botão no canto superior direito.',
       'Para mudar filtros, área ou perfil, use "Editar no mapa e recalcular". Cada recálculo vira uma nova versão (botão Versões).',
+      'Em Versões, "Voltar para esta versão" coloca aquela versão em uso e recalcula com a área e os filtros dela. Nenhuma versão é criada nem apagada, então dá para avançar de novo.',
     ],
     secoes: [
       AjudaSecao('Indicadores', [
@@ -298,6 +302,7 @@ class TextosAjuda {
     objetivo:
         'Um perfil guarda os parâmetros de rádio de um modelo de gateway. O projeto usa o perfil escolhido no cálculo do alcance.',
     passos: [
+      'Só o administrador cria, edita e exclui perfis, porque eles valem para todos os projetos. O usuário consulta os valores e escolhe o perfil no projeto.',
       'Para criar, clique em Novo perfil (ou em Duplicar no perfil padrão) e preencha os campos.',
       'O perfil padrão (Tecsys) não pode ser alterado: duplique e ajuste a cópia.',
       'Um perfil usado em algum projeto não pode ser excluído.',
@@ -369,9 +374,9 @@ class TextosAjuda {
     secoes: [
       AjudaSecao('Perfis', [
         AjudaItem('Administrador',
-            'acessa tudo, inclusive ETL & Geodados e Usuários.'),
+            'acessa tudo, inclusive ETL & Geodados, Usuários e a criação de perfis de gateway.'),
         AjudaItem('Usuário',
-            'cria e consulta projetos, relatórios e perfis de gateway.'),
+            'cria e consulta projetos e relatórios; consulta os perfis de gateway.'),
       ]),
     ],
   );

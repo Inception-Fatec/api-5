@@ -3,11 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:tecsys_app/core/utils/distributors.dart';
 import 'package:tecsys_app/features/map/ui/screens/points_map_screen.dart';
 import 'package:tecsys_app/features/projects/data/models/project_model.dart';
+import 'package:tecsys_app/features/projects/data/models/project_version.dart';
 import 'package:tecsys_app/features/projects/data/services/ibge_service.dart';
 import 'package:tecsys_app/features/projects/data/services/project_service.dart';
 
 /// Abre um projeto salvo no mapa com a área, os filtros e as cidades da
-/// última versão do histórico (#TG-86), para ajustar e recalcular.
+/// versão em uso do histórico (#TG-86), para ajustar e recalcular.
 /// Usado pelo relatório e pelos Recentes (#TG-88).
 ///
 /// Devolve o projeto atualizado (status Enviado) se o usuário recalculou,
@@ -31,7 +32,8 @@ Future<Project?> abrirProjetoNoMapa(
       avisar('Este projeto não tem área nem filtros salvos para abrir.');
       return null;
     }
-    final versao = versoes.first;
+    // A versão em uso (pode ser uma antiga, se o usuário voltou para ela).
+    final versao = ProjectVersion.versaoEmUso(versoes)!;
     await IbgeService().precarregar();
     final codigos =
         versao.munCodes.isNotEmpty ? versao.munCodes : project.munCodes;

@@ -45,6 +45,12 @@ class TokenStorage {
       await _storage.read(key: _mustChangeKey) == 'true';
 
   Future<void> clear() async {
+    // Dados ilegíveis (chave de criptografia perdida) podem falhar chave a
+    // chave: deleteAll zera o armazenamento do app de uma vez.
+    try {
+      await _storage.deleteAll();
+      return;
+    } catch (_) {}
     await _storage.delete(key: _tokenKey);
     await _storage.delete(key: _roleKey);
     await _storage.delete(key: _emailKey);

@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -17,7 +18,10 @@ public class GatewayProfileController {
 
     private final GatewayProfileService service;
 
+    // Perfis são compartilhados por todos os projetos: só o ADM cria, edita e
+    // exclui. O usuário comum lista e escolhe um perfil no projeto.
     @PostMapping
+    @PreAuthorize("hasRole('ADM')")
     public ResponseEntity<GatewayProfileResponseDto> create(@RequestBody @Valid GatewayProfileRequestDto dto) {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.create(dto));
     }
@@ -33,11 +37,13 @@ public class GatewayProfileController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADM')")
     public ResponseEntity<GatewayProfileResponseDto> update(@PathVariable Long id, @RequestBody @Valid GatewayProfileRequestDto dto) {
         return ResponseEntity.ok(service.update(id, dto));
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADM')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         service.delete(id);
         return ResponseEntity.noContent().build();

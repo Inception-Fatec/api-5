@@ -120,6 +120,21 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     }
   }
 
+  /// Versões do projeto. Voltando a uma versão antiga, o projeto recalcula:
+  /// abre o relatório de novo, que mostra "Cálculo em andamento" e se
+  /// atualiza sozinho ao terminar.
+  Future<void> _versoes() async {
+    final restaurado = await ProjectVersionsSheet.mostrar(
+      context,
+      widget.project,
+      podeRestaurar: _controller.status != ReportStatus.calculating,
+    );
+    if (restaurado != null && mounted) {
+      Navigator.of(context).pushReplacement(MaterialPageRoute<Project>(
+          builder: (_) => ProjectDetailScreen(project: restaurado)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -141,8 +156,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   ? null
                   : _abrirNoMapa,
               abrindoMapa: _abrindoMapa,
-              onVersions: () =>
-                  ProjectVersionsSheet.mostrar(context, widget.project),
+              onVersions: _versoes,
             ),
           ),
           Expanded(

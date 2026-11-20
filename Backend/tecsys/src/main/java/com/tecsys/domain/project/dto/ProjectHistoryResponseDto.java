@@ -28,7 +28,11 @@ public record ProjectHistoryResponseDto(
         // área desenhada como objeto GeoJSON (o banco já devolve via ST_AsGeoJSON)
         @JsonProperty("polygon")
         @JsonRawValue
-        String polygonGeojson
+        String polygonGeojson,
+
+        // versão em uso: a que o relatório mostra e o motor calculou
+        @JsonProperty("current")
+        boolean current
 ) {
     /** Perfil de gateway salvo no filter_params ("gateway_profile"), ou null. */
     public static String perfilDe(JsonNode filterParams) {

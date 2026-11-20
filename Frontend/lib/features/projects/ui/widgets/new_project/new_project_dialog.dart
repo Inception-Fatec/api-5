@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'package:tecsys_app/core/theme/app_theme.dart';
 import 'package:tecsys_app/core/widgets/field_label.dart';
+import 'package:tecsys_app/features/auth/data/services/auth_service.dart';
 import 'package:tecsys_app/features/gateway_profiles/ui/gateway_profiles_dialog.dart';
 import 'package:tecsys_app/features/projects/data/models/novo_projeto_resultado.dart';
 import 'package:tecsys_app/features/projects/state/new_project_dialog_controller.dart';
@@ -96,7 +97,10 @@ class _NewProjectDialogState extends State<NewProjectDialog> {
                 await _controller.carregarPerfis(selecionar: id);
               },
               icon: const Icon(Icons.tune, size: 16),
-              label: const Text('Gerenciar perfis'),
+              // Só o ADM altera perfis; os outros consultam.
+              label: Text(AuthService.instance.role == 'ADM'
+                  ? 'Gerenciar perfis'
+                  : 'Ver perfis'),
             ),
           ],
         ),

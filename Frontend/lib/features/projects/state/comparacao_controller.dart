@@ -15,19 +15,38 @@ class CenarioComparado {
   bool get carregando => relatorio == null && erro == null;
 }
 
+/// Consumidores atendidos por gateway (0 sem gateways), como no relatório.
+double consumidoresPorGateway(ReportSummary s) =>
+    s.selectedGateways > 0 ? s.coveredPoints / s.selectedGateways : 0;
+
 /// Diferença de um cenário para a referência (o 1º projeto marcado).
 class DeltaCenario {
-  const DeltaCenario({required this.coberturaPp, required this.gateways});
+  const DeltaCenario({
+    required this.coberturaPp,
+    required this.gateways,
+    this.atendidos = 0,
+    this.porGateway = 0,
+  });
 
   /// Em pontos percentuais: 80% → 85% = +5 p.p.
   final double coberturaPp;
   final int gateways;
 
-  /// Mesmos números do relatório: cobertura % e "Gateways selecionados".
+  /// Consumidores atendidos a mais (+) ou a menos (−).
+  final int atendidos;
+
+  /// Consumidores por gateway a mais (+) ou a menos (−).
+  final double porGateway;
+
+  /// Mesmos números do relatório: cobertura %, "Gateways selecionados" e
+  /// consumidores atendidos.
   factory DeltaCenario.entre(ReportSummary referencia, ReportSummary cenario) =>
       DeltaCenario(
         coberturaPp: cenario.coveragePercentage - referencia.coveragePercentage,
         gateways: cenario.selectedGateways - referencia.selectedGateways,
+        atendidos: cenario.coveredPoints - referencia.coveredPoints,
+        porGateway:
+            consumidoresPorGateway(cenario) - consumidoresPorGateway(referencia),
       );
 }
 
@@ -61,6 +80,29 @@ class ComparacaoController extends ChangeNotifier {
       c.erro = 'Não foi possível carregar o relatório deste projeto.';
     }
     if (!_descartado) notifyListeners();
+  }
+
+  /// Já chegaram todos os relatórios (com ou sem erro).
+  bool get carregou => cenarios.every((c) => !c.carregando);
+
+  /// Os cenários não cobrem a mesma área (cidades ou distribuidora
+  /// diferentes): o nº de gateways e de consumidores não se compara direto.
+  bool get areasDiferentes {
+    final ref = referencia.projeto;
+    final cidades = ref.munCodes.toSet();
+    return cenarios.any((c) =>
+        c.projeto.distCode != ref.distCode ||
+        !setEquals(c.projeto.munCodes.toSet(), cidades));
+  }
+
+  /// Mesma área, mas totais de consumidores diferentes (filtros ou área
+  /// desenhada diferentes).
+  bool get totaisDiferentes {
+    final totais = {
+      for (final c in cenarios)
+        if (c.relatorio != null) c.relatorio!.summary.totalPoints,
+    };
+    return totais.length > 1;
   }
 
   /// Δ para a referência; null na própria referência ou enquanto um dos
