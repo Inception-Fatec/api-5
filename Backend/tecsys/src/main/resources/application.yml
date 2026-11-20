@@ -16,6 +16,13 @@ spring:
     hikari:
       maximum-pool-size: 8
       minimum-idle: 1
+      # Tempo máximo esperando resposta do banco (s). Sem ele, se o Postgres
+      # cai no meio de uma consulta (o Supabase gratuito reinicia sob carga),
+      # a thread espera para sempre, segura a conexão e, com as 8 presas,
+      # todo pedido vira erro 500 até reiniciar o backend. 150 s fica acima
+      # do statement_timeout de 120 s do Supabase: só corta conexão morta.
+      data-source-properties:
+        socketTimeout: ${DB_SOCKET_TIMEOUT_S:150}
 
   jpa:
     hibernate:

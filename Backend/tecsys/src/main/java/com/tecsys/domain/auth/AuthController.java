@@ -3,6 +3,7 @@ package com.tecsys.domain.auth;
 import com.tecsys.domain.auth.dto.AuthRequestDto;
 import com.tecsys.domain.auth.dto.AuthResponseDto;
 import com.tecsys.domain.auth.dto.ChangePasswordDto;
+import com.tecsys.domain.auth.dto.UpdatePasswordDto;
 import com.tecsys.domain.user.User;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -45,5 +46,14 @@ public class AuthController {
             @AuthenticationPrincipal User user) {
         authService.changePassword(user.getEmail(), dto.newPassword());
         return ResponseEntity.ok("Senha redefinida com sucesso. Acesso liberado ao sistema.");
+    }
+
+    /** Usuário logado troca a própria senha informando a atual. */
+    @PostMapping("/update-password")
+    public ResponseEntity<String> updatePassword(
+            @RequestBody @Valid UpdatePasswordDto dto,
+            @AuthenticationPrincipal User user) {
+        authService.updatePassword(user.getEmail(), dto.currentPassword(), dto.newPassword());
+        return ResponseEntity.ok("Senha redefinida com sucesso.");
     }
 }

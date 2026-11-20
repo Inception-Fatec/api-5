@@ -74,33 +74,39 @@ public class ProjectService {
         return toDto(projectRepository.save(project));
     }
 
-    /** Versões do projeto, mais recente primeiro. Projeto inexistente ou excluído → 404. */
+    /**
+     * Versões do projeto, mais recente primeiro, com a versão em uso marcada
+     * ({@code current}). Projeto inexistente ou excluído → 404.
+     */
     @Transactional(readOnly = true)
     public List<ProjectHistoryResponseDto> findHistory(Long id) {
-        getProjectOrThrow(id);
+        Project project = getProjectOrThrow(id);
+        Long atual = projectHistoryRepository.findVersaoAtual(project).map(ProjectHistory::getId).orElse(null);
         return projectHistoryRepository.findAllByProject_IdOrderByCreatedAtDescIdDesc(id).stream()
                 .map(h -> new ProjectHistoryResponseDto(
                         h.getId(),
                         h.getCreatedAt(),
                         h.getFilterParams(),
                         ProjectHistoryResponseDto.perfilDe(h.getFilterParams()),
-                        h.getPolygonGeojson()
+                        h.getPolygonGeojson(),
+                        h.getId().equals(atual)
                 ))
                 .toList();
     }
 
     /**
      * Recalcula o projeto (#TG-84): grava uma versão nova no histórico, volta o
-     * status para ENVIADO e chama o motor depois do commit. O motor lê sempre a
-     * versão mais recente e substitui o resultado anterior em project_coverage.
-     * Se o motor estiver fora do ar, o projeto vai para FALHA.
+     * status para ENVIADO e chama o motor depois do commit. A versão nova passa a
+     * ser a versão em uso, que o motor lê; o resultado anterior em
+     * project_coverage é substituído. Se o motor estiver fora do ar, o projeto
+     * vai para FALHA.
      */
     @Transactional
     public ProjectResponseDto recalculate(Long id, ProjectRecalculateRequestDto request) {
         Project project = getProjectOrThrow(id);
 
-        ProjectHistory anterior = projectHistoryRepository.findFirstByProject_IdOrderByCreatedAtDescIdDesc(id)
-                .orElse(null);
+        // Base dos valores que não vierem no pedido: a versão em uso.
+        ProjectHistory anterior = projectHistoryRepository.findVersaoAtual(project).orElse(null);
 
         String area = request.geometry();
         if ((area == null || area.isBlank()) && anterior != null) {
@@ -120,12 +126,43 @@ public class ProjectService {
             filtros.put(GatewayProfileResolver.CAMPO, perfilId);
         }
 
-        projectHistoryRepository.save(ProjectHistory.builder()
+        ProjectHistory nova = projectHistoryRepository.save(ProjectHistory.builder()
                 .project(project)
                 .polygonGeojson(area)
                 .filterParams(filtros)
                 .build());
+        project.setCurrentVersionId(nova != null ? nova.getId() : null);
+        return calcular(project, filtros);
+    }
 
+    /**
+     * Volta o projeto para uma versão do histórico: ela passa a ser a versão em
+     * uso (nenhuma versão é criada nem apagada) e o projeto é recalculado com a
+     * área e os filtros dela.
+     */
+    @Transactional
+    public ProjectResponseDto restoreVersion(Long id, Long historyId) {
+        Project project = getProjectOrThrow(id);
+        if (project.getStatus() == ProjectStatus.ENVIADO || project.getStatus() == ProjectStatus.PROCESSANDO) {
+            throw new BusinessRuleException("Aguarde o cálculo atual terminar para voltar a uma versão.");
+        }
+        ProjectHistory versao = projectHistoryRepository.findById(historyId)
+                .filter(h -> h.getProject() != null && id.equals(h.getProject().getId()))
+                .orElseThrow(() -> new EntityNotFoundException("Versão não encontrada neste projeto."));
+        boolean jaEmUso = projectHistoryRepository.findVersaoAtual(project)
+                .map(h -> historyId.equals(h.getId()))
+                .orElse(false);
+        if (jaEmUso && project.getStatus() == ProjectStatus.SUCESSO) {
+            throw new BusinessRuleException("Essa já é a versão em uso.");
+        }
+
+        project.setCurrentVersionId(versao.getId());
+        return calcular(project, versao.getFilterParams());
+    }
+
+    /** Volta o status para ENVIADO e chama o motor depois do commit. */
+    private ProjectResponseDto calcular(Project project, com.fasterxml.jackson.databind.JsonNode filtros) {
+        Long id = project.getId();
         project.setStatus(ProjectStatus.ENVIADO);
         project.setStatusMessage(null);
         project.registrarAtividade();
@@ -194,7 +231,7 @@ public class ProjectService {
                 project.getCreatedAt(),
                 project.getUpdatedAt(),
                 project.isActive(),
-                projectHistoryRepository.findFirstByProject_IdOrderByCreatedAtDescIdDesc(project.getId())
+                projectHistoryRepository.findVersaoAtual(project)
                         .map(h -> ProjectResponseDto.munCodesDe(h.getFilterParams()))
                         .orElse(List.of()),
                 project.getStatusMessage(),

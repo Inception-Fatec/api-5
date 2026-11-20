@@ -45,6 +45,14 @@ class UserApiService {
     return AppUser.fromJson(data);
   }
 
+  /// Esqueceu a senha: o ADM define uma senha temporária e o usuário cria
+  /// uma nova no próximo acesso. Outro ADM ou a própria conta voltam 403/422.
+  Future<void> resetPassword(int id, String senhaTemporaria) async {
+    await ApiClient.instance.postRaw('$_basePath/$id/reset-password', {
+      'temporaryPassword': senhaTemporaria,
+    });
+  }
+
   /// RN03/CA05/CA06 — exclusão de USER ou auto-exclusão de ADM são
   /// permitidas; excluir outro ADM retorna 403 (tratado no backend).
   Future<void> deleteUser(int id) {

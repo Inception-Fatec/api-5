@@ -127,8 +127,12 @@ class _PainelAjuda extends StatelessWidget {
           child: ListView(
             controller: scroll,
             shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(
-                AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.lg),
+            // No celular a folha passa por baixo da barra de navegação do
+            // Android (useSafeArea só protege o topo): soma a altura dela
+            // para o fim do texto não ficar escondido.
+            padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm,
+                AppSpacing.lg,
+                AppSpacing.lg + MediaQuery.viewPaddingOf(context).bottom),
             children: [
               Text(ajuda.objetivo, style: AppTextStyles.bodyMuted),
               if (ajuda.passos.isNotEmpty) ...[

@@ -2,6 +2,8 @@ import 'dart:typed_data';
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:tecsys_app/features/projects/data/services/distribuidoras_service.dart';
 
@@ -210,9 +212,14 @@ class _UploadModalDialogState extends State<UploadModalDialog> {
         await _selecionarArquivo(nome: arquivo.nome, arquivo: arquivo);
         return;
       }
+      // No Android o filtro por extensão depende do tipo MIME que cada
+      // aparelho associa ao .csv e deixa o arquivo cinza em vários modelos.
+      // Lá o seletor mostra tudo e _selecionarArquivo recusa o que não
+      // for .zip ou .csv.
+      final bool filtrar = defaultTargetPlatform != TargetPlatform.android;
       final FilePickerResult? resultado = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const ['zip', 'csv'],
+        type: filtrar ? FileType.custom : FileType.any,
+        allowedExtensions: filtrar ? const ['zip', 'csv'] : null,
         allowMultiple: false,
       );
       if (resultado == null || resultado.files.isEmpty) return;

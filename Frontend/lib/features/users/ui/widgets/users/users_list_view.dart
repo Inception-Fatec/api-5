@@ -14,18 +14,28 @@ class UsersListView extends StatelessWidget {
   final bool grid;
   final ValueChanged<AppUser> onDelete;
 
+  /// Redefinir a senha de quem esqueceu. Só para o perfil Usuário: a senha
+  /// de outro administrador não pode ser redefinida (regra do backend) e a
+  /// própria se troca pelo menu da conta.
+  final ValueChanged<AppUser>? onResetPassword;
+
   const UsersListView({
     super.key,
     required this.members,
     required this.hasAnyUser,
     required this.grid,
     required this.onDelete,
+    this.onResetPassword,
   });
 
   Widget _card(AppUser member) => UserCard(
         key: ValueKey(member.id),
         member: member,
         onDelete: () => onDelete(member),
+        onResetPassword:
+            onResetPassword == null || member.role != UserRoleType.user
+                ? null
+                : () => onResetPassword!(member),
       );
 
   @override

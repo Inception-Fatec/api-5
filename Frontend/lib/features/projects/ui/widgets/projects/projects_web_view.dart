@@ -5,6 +5,7 @@ import 'package:tecsys_app/core/widgets/app_footer.dart';
 import 'package:tecsys_app/features/projects/data/models/project_model.dart';
 import 'package:tecsys_app/features/projects/state/projects_list_controller.dart';
 import 'package:tecsys_app/features/projects/ui/styles/projects_styles.dart';
+import 'package:tecsys_app/features/projects/ui/widgets/projects/compare_projects_bar.dart';
 import 'package:tecsys_app/features/projects/ui/widgets/projects/new_project_button.dart';
 import 'package:tecsys_app/features/projects/ui/widgets/projects/projects_list_view.dart';
 import 'package:tecsys_app/features/projects/ui/widgets/projects/projects_metrics.dart';
@@ -68,7 +69,13 @@ class ProjectsWebView extends StatelessWidget {
                     initialText: controller.busca,
                     onChanged: controller.setBusca),
                 const SizedBox(height: AppSpacing.sm),
-                ProjectsStatusFilter(controller: controller),
+                Row(
+                  children: [
+                    Expanded(child: ProjectsStatusFilter(controller: controller)),
+                    const SizedBox(width: AppSpacing.md),
+                    CompareProjectsButton(controller: controller),
+                  ],
+                ),
                 const SizedBox(height: AppSpacing.lg),
                 ProjectsListView(
                   controller: controller,
@@ -76,7 +83,7 @@ class ProjectsWebView extends StatelessWidget {
                   onNewProject: onNewProject,
                   onOpenProject: onOpenProject,
                 ),
-                const SizedBox(height: AppSpacing.lg),
+                SizedBox(height: controller.comparando ? 88 : AppSpacing.lg),
               ],
             ),
           ),

@@ -35,6 +35,7 @@ class ProjectRecalculateTest {
     void setUp() {
         projectRepository = mock(ProjectRepository.class);
         historyRepository = mock(ProjectHistoryRepository.class);
+        when(historyRepository.findVersaoAtual(any())).thenCallRealMethod();
         engine = mock(DecisionEngineClient.class);
         service = new ProjectService(projectRepository, mock(UserRepository.class), historyRepository, engine,
                 mock(com.tecsys.domain.gateway.GatewayProfileResolver.class));

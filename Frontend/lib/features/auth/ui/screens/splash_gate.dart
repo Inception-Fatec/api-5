@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:tecsys_app/app/app_shell.dart';
 import 'package:tecsys_app/features/auth/data/services/auth_service.dart';
+import 'package:tecsys_app/features/auth/data/services/token_storage.dart';
 import 'package:tecsys_app/app/navigation/account_menu_sheet.dart'
     show showAccountMenu;
 import 'package:tecsys_app/features/auth/ui/screens/login_screen.dart';
@@ -19,7 +20,13 @@ import 'package:tecsys_app/features/auth/ui/widgets/first_access_modal.dart';
 /// decidir se mostra o [AppShell] (sessão restaurada) ou o
 /// [LoginScreen] (sem sessão salva / token expirado).
 class SplashGate extends StatefulWidget {
-  const SplashGate({super.key});
+  const SplashGate({super.key, this.restaurar, this.limiteRestauracao});
+
+  /// Para os testes; por padrão [AuthService.restoreSession].
+  final Future<void> Function()? restaurar;
+
+  /// Quanto esperar a leitura da sessão salva antes de desistir.
+  final Duration? limiteRestauracao;
 
   @override
   State<SplashGate> createState() => _SplashGateState();
@@ -36,7 +43,21 @@ class _SplashGateState extends State<SplashGate> {
   }
 
   Future<void> _restore() async {
-    await AuthService.instance.restoreSession();
+    // A sessão salva fica no armazenamento seguro do Android. Se ele não
+    // conseguir ler (ex.: dados restaurados de outra instalação, cuja chave
+    // de criptografia não existe mais) a leitura falha ou demora: sem este
+    // tratamento o app ficava para sempre no carregamento. Nesses casos
+    // apaga a sessão salva e mostra o login.
+    try {
+      await (widget.restaurar ?? AuthService.instance.restoreSession)()
+          .timeout(widget.limiteRestauracao ?? const Duration(seconds: 6));
+    } catch (_) {
+      try {
+        await TokenStorage.instance
+            .clear()
+            .timeout(const Duration(seconds: 3));
+      } catch (_) {}
+    }
     if (!mounted) return;
     setState(() => _checked = true);
 

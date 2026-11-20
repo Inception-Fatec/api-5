@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'package:tecsys_app/core/theme/app_theme.dart';
 import 'package:tecsys_app/core/widgets/field_label.dart';
+import 'package:tecsys_app/features/auth/data/services/auth_service.dart';
 import 'package:tecsys_app/features/gateway_profiles/data/gateway_profile.dart';
 import 'package:tecsys_app/features/gateway_profiles/data/gateway_profile_service.dart';
 
@@ -12,17 +13,29 @@ import 'package:tecsys_app/features/gateway_profiles/data/gateway_profile_servic
 ///
 /// Devolve o id do último perfil criado ou editado (para o novo projeto já
 /// selecioná-lo), ou null.
+///
+/// Os perfis valem para todos os projetos, então só o ADM cria, edita e
+/// exclui (o backend também recusa). O usuário comum só consulta os
+/// parâmetros e escolhe o perfil no projeto.
 class GatewayProfilesDialog extends StatefulWidget {
-  const GatewayProfilesDialog({super.key, this.service});
+  const GatewayProfilesDialog(
+      {super.key, this.service, this.podeEditar = false});
 
   /// Para os testes; no app usa o serviço padrão.
   final GatewayProfileService? service;
 
+  /// ADM: cria, edita, duplica e exclui. Os outros só consultam.
+  final bool podeEditar;
+
+  /// [podeEditar] por padrão vem do papel de quem está logado.
   static Future<int?> mostrar(BuildContext context,
-          {GatewayProfileService? service}) =>
+          {GatewayProfileService? service, bool? podeEditar}) =>
       showDialog<int>(
         context: context,
-        builder: (_) => GatewayProfilesDialog(service: service),
+        builder: (_) => GatewayProfilesDialog(
+          service: service,
+          podeEditar: podeEditar ?? AuthService.instance.role == 'ADM',
+        ),
       );
 
   @override
@@ -142,6 +155,14 @@ class _GatewayProfilesDialogState extends State<GatewayProfilesDialog> {
           'O perfil padrão é usado quando o projeto não escolhe outro.',
           style: AppTextStyles.bodyMuted,
         ),
+        if (!widget.podeEditar) ...[
+          const SizedBox(height: AppSpacing.xs),
+          const Text(
+            'Só o administrador cria e altera perfis.',
+            key: Key('perfis-somente-leitura'),
+            style: AppTextStyles.bodySmallMuted,
+          ),
+        ],
         const SizedBox(height: AppSpacing.md),
         if (_erroLista != null) ...[
           Text(_erroLista!, style: AppTextStyles.bodySmallError),
@@ -159,21 +180,24 @@ class _GatewayProfilesDialogState extends State<GatewayProfilesDialog> {
               separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
               itemBuilder: (_, i) => _CartaoPerfil(
                 perfil: perfis[i],
+                podeEditar: widget.podeEditar,
                 onEditar: () => setState(() => _editando = perfis[i]),
                 onDuplicar: () => setState(() => _editando = perfis[i].copia()),
                 onExcluir: perfis[i].isDefault ? null : () => _excluir(perfis[i]),
               ),
             ),
           ),
-        const SizedBox(height: AppSpacing.md),
-        ElevatedButton.icon(
-          key: const Key('novo-perfil'),
-          onPressed: () =>
-              setState(() => _editando = GatewayProfile.referenciaTecsys),
-          style: AppButtonStyles.primary(),
-          icon: const Icon(Icons.add),
-          label: const Text('Novo perfil', style: AppTextStyles.buttonText),
-        ),
+        if (widget.podeEditar) ...[
+          const SizedBox(height: AppSpacing.md),
+          ElevatedButton.icon(
+            key: const Key('novo-perfil'),
+            onPressed: () =>
+                setState(() => _editando = GatewayProfile.referenciaTecsys),
+            style: AppButtonStyles.primary(),
+            icon: const Icon(Icons.add),
+            label: const Text('Novo perfil', style: AppTextStyles.buttonText),
+          ),
+        ],
       ],
     );
   }
@@ -182,12 +206,14 @@ class _GatewayProfilesDialogState extends State<GatewayProfilesDialog> {
 class _CartaoPerfil extends StatelessWidget {
   const _CartaoPerfil({
     required this.perfil,
+    required this.podeEditar,
     required this.onEditar,
     required this.onDuplicar,
     required this.onExcluir,
   });
 
   final GatewayProfile perfil;
+  final bool podeEditar;
   final VoidCallback onEditar;
   final VoidCallback onDuplicar;
   final VoidCallback? onExcluir;
@@ -222,14 +248,22 @@ class _CartaoPerfil extends StatelessWidget {
               ],
             ),
           ),
-          // O padrão não é editável (é a referência da Tecsys): só dá para
-          // duplicar e ajustar a cópia.
-          if (perfil.isDefault)
-            IconButton(
-              key: const Key('duplicar-padrao'),
-              tooltip: 'Duplicar (o perfil padrão não pode ser alterado)',
-              icon: const Icon(Icons.copy_outlined),
-              onPressed: onDuplicar,
+          // O padrão não é editável nem excluível (é a referência da
+          // Tecsys): só dá para duplicar e ajustar a cópia. Botão com texto
+          // porque no celular a dica de um ícone só aparece segurando.
+          // Usuário comum: só consulta, sem ações.
+          if (!podeEditar)
+            const SizedBox(width: AppSpacing.sm)
+          else if (perfil.isDefault)
+            Tooltip(
+              message: 'O perfil padrão não pode ser alterado: duplique e '
+                  'ajuste a cópia',
+              child: TextButton.icon(
+                key: const Key('duplicar-padrao'),
+                icon: const Icon(Icons.copy_outlined, size: 18),
+                label: const Text('Duplicar'),
+                onPressed: onDuplicar,
+              ),
             )
           else
             IconButton(
@@ -237,7 +271,8 @@ class _CartaoPerfil extends StatelessWidget {
               icon: const Icon(Icons.edit_outlined),
               onPressed: onEditar,
             ),
-          IconButton(
+          if (podeEditar)
+            IconButton(
             tooltip: onExcluir == null
                 ? 'O perfil padrão não pode ser excluído'
                 : 'Excluir',

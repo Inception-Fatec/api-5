@@ -28,6 +28,17 @@ class DropdownFilterButton extends StatefulWidget {
 
   @override
   State<DropdownFilterButton> createState() => _DropdownFilterButtonState();
+
+  static final List<_DropdownFilterButtonState> _abertos = [];
+
+  /// Voltar do Android: o painel é um overlay, não uma rota, então o
+  /// Navigator não o vê. Fecha o último painel aberto e devolve `true`
+  /// quando havia um.
+  static bool fecharAberto() {
+    if (_abertos.isEmpty) return false;
+    _abertos.last._fechar();
+    return true;
+  }
 }
 
 class _DropdownFilterButtonState extends State<DropdownFilterButton> {
@@ -127,17 +138,20 @@ class _DropdownFilterButtonState extends State<DropdownFilterButton> {
       },
     );
     overlayState.insert(_overlay!);
+    DropdownFilterButton._abertos.add(this);
   }
 
   void _fechar() {
     _overlay?.remove();
     _overlay = null;
+    DropdownFilterButton._abertos.remove(this);
     if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
     _overlay?.remove();
+    DropdownFilterButton._abertos.remove(this);
     super.dispose();
   }
 

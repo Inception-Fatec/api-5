@@ -5,6 +5,7 @@ import 'package:tecsys_app/core/widgets/app_footer.dart';
 import 'package:tecsys_app/features/projects/data/models/project_model.dart';
 import 'package:tecsys_app/features/projects/state/projects_list_controller.dart';
 import 'package:tecsys_app/features/projects/ui/styles/projects_styles.dart';
+import 'package:tecsys_app/features/projects/ui/widgets/projects/compare_projects_bar.dart';
 import 'package:tecsys_app/features/projects/ui/widgets/projects/new_project_button.dart';
 import 'package:tecsys_app/features/projects/ui/widgets/projects/projects_list_view.dart';
 import 'package:tecsys_app/features/projects/ui/widgets/projects/projects_metrics.dart';
@@ -59,13 +60,20 @@ class ProjectsMobileView extends StatelessWidget {
                   onChanged: controller.setBusca),
               const SizedBox(height: AppSpacing.sm),
               ProjectsStatusFilter(controller: controller),
-              const SizedBox(height: AppSpacing.lg),
+              const SizedBox(height: AppSpacing.sm),
+              Align(
+                alignment: Alignment.centerRight,
+                child: CompareProjectsButton(controller: controller),
+              ),
+              const SizedBox(height: AppSpacing.md),
               ProjectsListView(
                 controller: controller,
                 grid: false,
                 onNewProject: onNewProject,
                 onOpenProject: onOpenProject,
               ),
+              // Espaço para a barra de comparação não cobrir o último card.
+              if (controller.comparando) const SizedBox(height: 88),
             ]),
           ),
         ),

@@ -5,6 +5,7 @@ import 'package:tecsys_app/features/map/data/constants/map_config.dart';
 import 'package:tecsys_app/features/map/data/constants/map_regions.dart';
 import 'package:tecsys_app/features/map/state/points_map_controller.dart';
 import 'package:tecsys_app/features/map/ui/styles/map_styles.dart';
+import 'package:tecsys_app/features/map/ui/widgets/filters/dropdown_filter_button.dart';
 import 'package:tecsys_app/features/map/ui/widgets/filters/filter_dropdown_bar.dart';
 import 'package:tecsys_app/features/map/ui/widgets/map/map_back_button.dart';
 import 'package:tecsys_app/features/map/ui/widgets/map/points_map_view.dart';
@@ -19,7 +20,8 @@ import 'package:tecsys_app/features/projects/data/services/ibge_service.dart';
 ///
 /// Com [projetoId] e [versaoInicial], abre um projeto salvo com a área e os
 /// filtros da versão (#TG-86) e o botão vira "Recalcular" (#TG-84). Fecha
-/// devolvendo `true` quando recalculou.
+/// devolvendo o [Project] salvo ou recalculado (null se só voltou), para
+/// quem abriu seguir direto para o relatório.
 class PointsMapScreen extends StatefulWidget {
   final String nomeProjeto;
   final String distCode;
@@ -91,7 +93,7 @@ class _PointsMapScreenState extends State<PointsMapScreen> {
 
     if (salvou) {
       await Future.delayed(MapConfig.savedConfirmationDelay);
-      if (mounted) Navigator.of(context).pop(true);
+      if (mounted) Navigator.of(context).pop(_controller.ultimoSalvo);
       return;
     }
     ScaffoldMessenger.of(context)
@@ -105,9 +107,21 @@ class _PointsMapScreenState extends State<PointsMapScreen> {
       ));
   }
 
+  /// Voltar do Android: fecha primeiro o painel de filtro aberto, depois o
+  /// modo de seleção de área e só então sai do mapa.
+  void _aoVoltar(bool didPop, Object? _) {
+    if (didPop) return;
+    if (DropdownFilterButton.fecharAberto()) return;
+    if (_mapKey.currentState?.sairDaSelecao() ?? false) return;
+    Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: _aoVoltar,
+      child: Scaffold(
       body: ListenableBuilder(
         listenable: _controller,
         builder: (context, _) => Stack(
@@ -140,19 +154,23 @@ class _PointsMapScreenState extends State<PointsMapScreen> {
               ),
             ),
             // RN02 (US #11): sem pontos a cobrir, avisa e não deixa salvar.
+            // Mais a barra de navegação do Android: o "Salvar Projeto" sobe
+            // junto com ela (SafeArea) e cobriria o aviso.
             if (_controller.semPontos)
-              const Positioned(
-                bottom: MapStyles.zoomHintBottom,
+              Positioned(
+                bottom: MapStyles.zoomHintBottom +
+                    MediaQuery.viewPaddingOf(context).bottom,
                 left: MapStyles.zoomHintSideMargin,
                 right: MapStyles.zoomHintSideMargin,
-                child: _AvisoSemPontos(),
+                child: const _AvisoSemPontos(),
               )
             else if (_controller.zoomBaixoDemais)
-              const Positioned(
-                bottom: MapStyles.zoomHintBottom,
+              Positioned(
+                bottom: MapStyles.zoomHintBottom +
+                    MediaQuery.viewPaddingOf(context).bottom,
                 left: MapStyles.zoomHintSideMargin,
                 right: MapStyles.zoomHintSideMargin,
-                child: ZoomHintBanner(),
+                child: const ZoomHintBanner(),
               ),
             Positioned(
               left: MapStyles.saveBarInset,
@@ -172,6 +190,7 @@ class _PointsMapScreenState extends State<PointsMapScreen> {
           ],
         ),
       ),
+    ),
     );
   }
 }

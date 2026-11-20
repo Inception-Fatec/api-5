@@ -20,7 +20,8 @@ class TextosAjuda {
     secoes: [
       AjudaSecao('Problemas comuns', [
         AjudaItem('Senha incorreta',
-            'confira maiúsculas e minúsculas. Se esqueceu a senha, fale com um administrador do sistema.'),
+            'confira maiúsculas e minúsculas. Se esqueceu a senha, clique em "Esqueceu a senha?": '
+                'um administrador define uma senha temporária para você.'),
         AjudaItem('Conta desativada',
             'um administrador removeu seu acesso; fale com ele.'),
       ]),
@@ -37,6 +38,50 @@ class TextosAjuda {
     ],
   );
 
+  static const redefinirSenha = AjudaTela(
+    titulo: 'Redefinir a senha',
+    objetivo:
+        'Troque a sua senha a qualquer momento pelo menu da conta. Se esqueceu a senha, '
+        'um administrador define uma senha temporária para você.',
+    passos: [
+      'Logado: abra o menu da conta e clique em Redefinir Senha.',
+      'Digite a senha atual, a senha nova (mínimo de 6 caracteres) e repita a nova.',
+      'Clique em Salvar nova senha. A sessão continua aberta, já com a senha nova.',
+    ],
+    secoes: [
+      AjudaSecao('Esqueceu a senha', [
+        AjudaItem('Peça a um administrador',
+            'ele abre a tela Usuários, clica na chave do seu cartão e define uma senha temporária.'),
+        AjudaItem('Entre com a senha temporária',
+            'no próximo acesso o sistema pede para você criar uma senha nova antes de continuar.'),
+      ]),
+    ],
+  );
+
+  static const comparacao = AjudaTela(
+    titulo: 'Comparar cenários',
+    objetivo:
+        'Coloca lado a lado os resultados de projetos concluídos para ver qual cenário cobre mais '
+        'consumidores e com quantos gateways.',
+    passos: [
+      'O primeiro projeto marcado (A) é a referência; os outros são comparados com ele.',
+      'No Comparativo, as barras mostram cada indicador lado a lado e quem tem o melhor valor; '
+          'a lâmpada resume cada cenário em uma frase.',
+      'Nos cards, o Δ mostra a diferença para a referência: verde é melhor (mais cobertura, '
+          'menos gateways, mais consumidores por gateway), vermelho é pior e cinza é igual.',
+      'Toque em um card para abrir o relatório completo do projeto, ou em Expandir mapa para ver o mapa em tela cheia.',
+      'Se os cenários forem de cidades diferentes, compare a cobertura %: o número de gateways depende do tamanho da área.',
+    ],
+    secoes: [
+      AjudaSecao('Como ler o Δ', [
+        AjudaItem('Cobertura',
+            'em pontos percentuais (p.p.): de 80% para 85% é +5,00 p.p.'),
+        AjudaItem('Gateways',
+            'quantos gateways a mais (+) ou a menos (−) que a referência.'),
+      ]),
+    ],
+  );
+
   // ─────────────────────────── Projetos ───────────────────────────
 
   static const projetos = AjudaTela(
@@ -49,6 +94,7 @@ class TextosAjuda {
       'Use a seção Recentes para voltar rápido aos últimos projetos que você mexeu.',
       'Clique em um projeto concluído para abrir o relatório; nos demais status, ele abre no mapa.',
       'Use a busca e o filtro de status para achar um projeto na lista.',
+      'Para comparar cenários, clique em Comparar projetos, marque 2 ou mais projetos concluídos e clique em Comparar.',
     ],
     secoes: [
       AjudaSecao('Status do projeto', [
@@ -80,7 +126,7 @@ class TextosAjuda {
         AjudaItem(
             'Perfil de gateway',
             'parâmetros de rádio usados no cálculo (frequência, potência, sensibilidade, alturas). '
-                'Em "Gerenciar perfis" você cria e edita perfis.'),
+                'Em "Ver perfis" você confere os valores de cada um; só o administrador cria e edita perfis.'),
       ]),
     ],
   );
@@ -207,6 +253,7 @@ class TextosAjuda {
       'Confira a lista de gateways, na ordem em que mais acrescentam cobertura.',
       'Exporte em PDF pelo botão no canto superior direito.',
       'Para mudar filtros, área ou perfil, use "Editar no mapa e recalcular". Cada recálculo vira uma nova versão (botão Versões).',
+      'Em Versões, "Voltar para esta versão" coloca aquela versão em uso e recalcula com a área e os filtros dela. Nenhuma versão é criada nem apagada, então dá para avançar de novo.',
     ],
     secoes: [
       AjudaSecao('Indicadores', [
@@ -255,6 +302,7 @@ class TextosAjuda {
     objetivo:
         'Um perfil guarda os parâmetros de rádio de um modelo de gateway. O projeto usa o perfil escolhido no cálculo do alcance.',
     passos: [
+      'Só o administrador cria, edita e exclui perfis, porque eles valem para todos os projetos. O usuário consulta os valores e escolhe o perfil no projeto.',
       'Para criar, clique em Novo perfil (ou em Duplicar no perfil padrão) e preencha os campos.',
       'O perfil padrão (Tecsys) não pode ser alterado: duplique e ajuste a cópia.',
       'Um perfil usado em algum projeto não pode ser excluído.',
@@ -320,13 +368,15 @@ class TextosAjuda {
       'Clique em Novo Usuário e informe nome, e-mail, perfil e uma senha inicial.',
       'Passe o e-mail e a senha inicial para a pessoa. No primeiro acesso, ela troca a senha.',
       'Use a busca e o filtro de perfil para achar um usuário.',
+      'Esqueceu a senha? Clique na chave do cartão do usuário e defina uma senha temporária. '
+          'No próximo acesso, ele cria uma senha nova.',
     ],
     secoes: [
       AjudaSecao('Perfis', [
         AjudaItem('Administrador',
-            'acessa tudo, inclusive ETL & Geodados e Usuários.'),
+            'acessa tudo, inclusive ETL & Geodados, Usuários e a criação de perfis de gateway.'),
         AjudaItem('Usuário',
-            'cria e consulta projetos, relatórios e perfis de gateway.'),
+            'cria e consulta projetos e relatórios; consulta os perfis de gateway.'),
       ]),
     ],
   );

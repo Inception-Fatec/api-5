@@ -23,6 +23,13 @@ public class ProjectLookupRepository {
     private static final List<VoltageLevel> TODOS_OS_NIVEIS =
             List.of(VoltageLevel.ALTO, VoltageLevel.MEDIO, VoltageLevel.BAIXO);
 
+    /**
+     * Versão a calcular: a versão em uso do projeto (projects.current_version_id,
+     * escolhida em "voltar para esta versão") ou, sem escolha, a mais recente.
+     */
+    static final String ORDEM_VERSAO_ATUAL =
+            "COALESCE(ph.id = p.current_version_id, false) DESC, ph.created_at DESC, ph.id DESC";
+
     private static final Logger log = LoggerFactory.getLogger(ProjectLookupRepository.class);
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
@@ -40,9 +47,9 @@ public class ProjectLookupRepository {
                 FROM projects p
                 JOIN project_history ph ON ph.project_id = p.id
                 WHERE p.id = :projectId
-                ORDER BY ph.created_at DESC, ph.id DESC
+                ORDER BY %s
                 LIMIT 1
-                """;
+                """.formatted(ORDEM_VERSAO_ATUAL);
 
         return jdbcTemplate.queryForObject(sql,
                 new MapSqlParameterSource("projectId", projectId),
@@ -79,16 +86,17 @@ public class ProjectLookupRepository {
         String sql = """
                 WITH ultima AS (
                     SELECT ph.filter_params ->> 'gateway_profile_id' AS perfil
-                    FROM project_history ph
-                    WHERE ph.project_id = :projectId
-                    ORDER BY ph.created_at DESC, ph.id DESC
+                    FROM projects p
+                    JOIN project_history ph ON ph.project_id = p.id
+                    WHERE p.id = :projectId
+                    ORDER BY %s
                     LIMIT 1
                 )
                 SELECT gp.id, gp.name, gp.frequency_mhz, gp.tx_power_dbm, gp.antenna_gain_dbi,
                        gp.rx_sensitivity_dbm, gp.antenna_height_m, gp.sensor_height_m, gp.extra_loss_db
                 FROM ultima u
                 JOIN gateway_profiles gp ON u.perfil ~ '^[0-9]+$' AND gp.id = u.perfil::bigint
-                """;
+                """.formatted(ORDEM_VERSAO_ATUAL);
         try {
             List<GatewayProfileValues> perfis = jdbcTemplate.query(sql,
                     new MapSqlParameterSource("projectId", projectId),

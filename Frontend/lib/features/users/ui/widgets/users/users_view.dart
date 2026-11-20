@@ -27,6 +27,7 @@ class UsersView extends StatelessWidget {
   final VoidCallback onAddUser;
   final Future<void> Function() onRefresh;
   final ValueChanged<AppUser> onDelete;
+  final ValueChanged<AppUser>? onResetPassword;
 
   const UsersView({
     super.key,
@@ -42,6 +43,7 @@ class UsersView extends StatelessWidget {
     required this.onAddUser,
     required this.onRefresh,
     required this.onDelete,
+    this.onResetPassword,
   });
 
   Widget _title() => PageTitle(
@@ -113,6 +115,7 @@ class UsersView extends StatelessWidget {
                     hasAnyUser: total > 0,
                     grid: isWeb,
                     onDelete: onDelete,
+                    onResetPassword: onResetPassword,
                   ),
                   if (isWeb) const SizedBox(height: AppSpacing.lg),
                 ],

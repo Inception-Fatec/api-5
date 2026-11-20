@@ -49,6 +49,15 @@ class ProjectsService {
         .toList();
   }
 
+  /// POST /projects/{id}/history/{versaoId}/restore: volta para uma versão
+  /// antiga. Ela vira a versão mais recente e o projeto recalcula
+  /// (status ENVIADO); o histórico não perde nada.
+  Future<Project> restaurarVersao(int id, int versaoId) async {
+    final data =
+        await _client.postJson('/projects/$id/history/$versaoId/restore', {});
+    return Project.fromJson(data);
+  }
+
   /// POST /projects/{id}/recalculate (#TG-84): grava uma versão nova com
   /// [filterParams] (e a área [geometry], texto GeoJSON) e reenvia ao
   /// motor. Devolve o projeto com status ENVIADO.

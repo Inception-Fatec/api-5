@@ -179,14 +179,21 @@ class _ReportMapState extends State<ReportMap> {
           if (widget.gatewayMarkers != GatewayMarkerMode.hidden)
             GatewayMarkersLayer(
                 gateways: report.gateways, mode: widget.gatewayMarkers),
-          // Atribuição do OSM é obrigatória (licença dos tiles): em texto
-          // pequeno, sem os ícones (logo do flutter_map e botão "i").
-          const SimpleAttributionWidget(
-            source: Text(
-              '© OpenStreetMap contributors',
-              style: TextStyle(fontSize: 10, color: Color(0xFF3C4350)),
+          // Atribuição do OSM é obrigatória (licença dos tiles). Texto
+          // próprio: o SimpleAttributionWidget prefixa "flutter_map | ©",
+          // que repetia o © e pesava nos mapas pequenos.
+          const Align(
+            alignment: Alignment.bottomRight,
+            child: ColoredBox(
+              color: Color(0xCCFFFFFF),
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                child: Text(
+                  '© OpenStreetMap contributors',
+                  style: TextStyle(fontSize: 9, color: Color(0xFF3C4350)),
+                ),
+              ),
             ),
-            backgroundColor: Color(0xCCFFFFFF),
           ),
         ],
       ),
@@ -341,8 +348,12 @@ class _GatewayMarker extends StatelessWidget {
                   ),
                 ],
               );
+    // Toque mostra os dados (no celular o padrão do Tooltip é segurar);
+    // no computador o mouse por cima continua mostrando.
     return Tooltip(
       message: label,
+      triggerMode: TooltipTriggerMode.tap,
+      showDuration: const Duration(seconds: 5),
       child: Semantics(label: label, child: visual),
     );
   }

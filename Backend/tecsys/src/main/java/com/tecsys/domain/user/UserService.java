@@ -100,4 +100,30 @@ public void deleteUser(Long id, Long currentUserId) {
     userRepository.save(user);
 }
 
+    /**
+     * Administrador redefine a senha de quem esqueceu: grava a senha
+     * temporária e obriga a criar uma nova no próximo acesso (mesmo fluxo do
+     * usuário recém-criado). Mesma regra da exclusão: não vale para outro
+     * administrador; a própria senha se troca pelo menu da conta.
+     */
+    @Transactional
+    public void resetPassword(Long id, String temporaryPassword, Long currentUserId) {
+        User user = userRepository.findById(id)
+                .filter(User::isActive)
+                .orElseThrow(() -> new BusinessRuleException("Utilizador não encontrado."));
+
+        if (user.getId().equals(currentUserId)) {
+            throw new BusinessRuleException(
+                    "Para trocar a sua própria senha, use Redefinir Senha no menu da conta.");
+        }
+        if (user.getRole() == UserRole.ADM) {
+            throw new AccessDeniedException(
+                    "Ação não permitida: não é possível redefinir a senha de outro administrador.");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(temporaryPassword));
+        user.setMustChangePassword(true);
+        userRepository.save(user);
+    }
+
 }

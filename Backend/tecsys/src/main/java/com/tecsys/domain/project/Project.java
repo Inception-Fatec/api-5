@@ -55,6 +55,11 @@ public class Project {
     @Column(name = "last_activity_at", nullable = false)
     private Instant lastActivityAt;
 
+    // Versão em uso (project_history.id). Nulo = a mais recente. Voltar para uma
+    // versão antiga só troca este valor; o motor e o relatório leem esta versão.
+    @Column(name = "current_version_id")
+    private Long currentVersionId;
+
     @PrePersist
     void aoCriar() {
         if (lastActivityAt == null) lastActivityAt = Instant.now();

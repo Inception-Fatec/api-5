@@ -9,13 +9,19 @@ import 'package:tecsys_app/features/map/ui/styles/map_styles.dart';
 enum ModoDesenho { poligono, retangulo }
 
 /// Barra do modo de seleção de área: escolhe Polígono ou Retângulo, mostra
-/// a dica do que fazer e, no polígono, Desfazer / Cancelar / Concluir.
+/// a dica do que fazer e Cancelar; no polígono, também Desfazer / Concluir.
 class DrawingControls extends StatelessWidget {
   final ModoDesenho modo;
   final ValueChanged<ModoDesenho> onModo;
   final DesenhoPoligono desenho;
   final VoidCallback onDesfazer;
+
+  /// Apaga o polígono em andamento.
   final VoidCallback onCancelar;
+
+  /// Sai do modo de seleção. No celular a barra cobre o botão lateral que
+  /// também sai, então o Cancelar sem nada desenhado faz isso.
+  final VoidCallback onSair;
   final VoidCallback onConcluir;
 
   const DrawingControls({
@@ -25,6 +31,7 @@ class DrawingControls extends StatelessWidget {
     required this.desenho,
     required this.onDesfazer,
     required this.onCancelar,
+    required this.onSair,
     required this.onConcluir,
   });
 
@@ -78,19 +85,22 @@ class DrawingControls extends StatelessWidget {
                     selected: {modo},
                     onSelectionChanged: (s) => onModo(s.first),
                   ),
-                  if (poligono) ...[
+                  if (poligono)
                     _Botao(
                       icon: Icons.undo_rounded,
                       texto: 'Desfazer',
                       tooltip: 'Desfazer último ponto (Backspace)',
                       onTap: desenho.vazio ? null : onDesfazer,
                     ),
-                    _Botao(
-                      icon: Icons.close_rounded,
-                      texto: 'Cancelar',
-                      tooltip: 'Cancelar desenho (Esc)',
-                      onTap: desenho.vazio ? null : onCancelar,
-                    ),
+                  _Botao(
+                    icon: Icons.close_rounded,
+                    texto: 'Cancelar',
+                    tooltip: poligono && !desenho.vazio
+                        ? 'Cancelar desenho (Esc)'
+                        : 'Sair da seleção de área (Esc)',
+                    onTap: poligono && !desenho.vazio ? onCancelar : onSair,
+                  ),
+                  if (poligono)
                     _Botao(
                       icon: Icons.check_rounded,
                       texto: 'Concluir',
@@ -100,7 +110,6 @@ class DrawingControls extends StatelessWidget {
                       destaque: true,
                       onTap: desenho.podeConcluir ? onConcluir : null,
                     ),
-                  ],
                 ],
               ),
               const SizedBox(height: 6),

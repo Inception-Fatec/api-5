@@ -108,6 +108,44 @@ class ProjectsListController extends ChangeNotifier {
   /// Exclui de verdade; deixa o erro estourar pra quem chamou avisar.
   Future<void> excluir(int id) => _store.excluir(id);
 
+  // ───────────────────── Comparar projetos ─────────────────────
+
+  bool _comparando = false;
+
+  /// Na ordem em que foram marcados: o 1º é a referência da comparação.
+  final List<int> _selecionados = [];
+
+  /// Modo de seleção para comparar: os cards viram caixas de marcar.
+  bool get comparando => _comparando;
+
+  /// Só projeto com cálculo concluído tem relatório para comparar.
+  static bool podeComparar(Project p) => p.status == 'SUCESSO';
+
+  bool estaSelecionado(int id) => _selecionados.contains(id);
+
+  /// Marcados que ainda existem e continuam concluídos, na ordem da seleção.
+  List<Project> get selecionados => [
+        for (final id in _selecionados)
+          ..._store.projects.where((p) => p.id == id && podeComparar(p)),
+      ];
+
+  bool get podeAbrirComparacao => selecionados.length >= 2;
+
+  /// Entra ou sai do modo de comparação (sempre começa sem nada marcado).
+  void alternarComparacao() {
+    _comparando = !_comparando;
+    _selecionados.clear();
+    notifyListeners();
+  }
+
+  /// Marca/desmarca. Projeto que não está concluído não entra (devolve false).
+  bool alternarSelecao(Project p) {
+    if (!_comparando || !podeComparar(p)) return false;
+    if (!_selecionados.remove(p.id)) _selecionados.add(p.id);
+    notifyListeners();
+    return true;
+  }
+
   @override
   void dispose() {
     _descartado = true;

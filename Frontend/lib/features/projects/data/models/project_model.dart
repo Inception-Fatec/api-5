@@ -1,3 +1,5 @@
+import 'package:tecsys_app/core/utils/data_backend.dart';
+
 /// Projeto devolvido pelo backend (só os campos que a UI usa).
 /// Rótulos/cores de status ficam em `ui/styles/project_status_style.dart`.
 class Project {
@@ -51,6 +53,7 @@ class Project {
         createdById: createdById,
         createdByName: createdByName,
         createdAt: createdAt,
+        updatedAt: updatedAt,
         ativo: ativo,
         munCodes: munCodes,
         statusMessage: statusMessage,
@@ -65,9 +68,10 @@ class Project {
       status: json['status'] as String? ?? 'CRIADO',
       createdById: json['created_by_id'] as int? ?? 0,
       createdByName: (json['created_by_name'] as String? ?? '').trim(),
-      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
-          DateTime.now(),
-      updatedAt: DateTime.tryParse(json['updated_at']?.toString() ?? ''),
+      // O backend manda "dd/MM/yyyy HH:mm:ss": DateTime.tryParse não lê esse
+      // formato e todos os cards ficavam com a data de hoje.
+      createdAt: lerDataBackend(json['created_at']?.toString()) ?? DateTime.now(),
+      updatedAt: lerDataBackend(json['updated_at']?.toString()),
       // Ausente em respostas antigas: conta como ativo.
       ativo: json['active'] as bool? ?? true,
       munCodes: (json['mun_codes'] as List? ?? const [])
@@ -75,8 +79,7 @@ class Project {
           .where((e) => e.isNotEmpty)
           .toList(),
       statusMessage: (json['status_message'] as String?)?.trim(),
-      lastActivityAt:
-          DateTime.tryParse(json['last_activity_at']?.toString() ?? '')?.toLocal(),
+      lastActivityAt: lerDataBackend(json['last_activity_at']?.toString()),
     );
   }
 

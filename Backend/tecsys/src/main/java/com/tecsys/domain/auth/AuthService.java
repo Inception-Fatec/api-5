@@ -24,4 +24,26 @@ public class AuthService {
         user.setMustChangePassword(false);
         userRepository.save(user);
     }
+
+    /**
+     * "Redefinir Senha" do menu da conta: o usuário logado troca a própria
+     * senha. Exige a senha atual, para uma sessão esquecida aberta não
+     * bastar para tomar a conta.
+     */
+    @Transactional
+    public void updatePassword(String email, String currentPassword, String newPassword) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new BusinessRuleException("Usuário não encontrado."));
+
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            throw new BusinessRuleException("A senha atual está incorreta.");
+        }
+        if (passwordEncoder.matches(newPassword, user.getPasswordHash())) {
+            throw new BusinessRuleException("A nova senha precisa ser diferente da atual.");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setMustChangePassword(false);
+        userRepository.save(user);
+    }
 }
